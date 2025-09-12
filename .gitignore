@@ -1,0 +1,71 @@
+# Compiled Object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+bin/
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# CMake build directory
+/build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+*.cmake
+
+# IDE and Editor directories and files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Temporary files
+*~
+*.tmp
+*.swp
+*.swo
+
+# Scripts build artifacts
+/build/
+*.sh~
+
+# MIDAS specific
+*.mid*
+*.odb
+
+# Ignore binary files in scripts directory if any
+scripts/*.bin
+
+# Other files to ignore
+.DS_Store
+Thumbs.db

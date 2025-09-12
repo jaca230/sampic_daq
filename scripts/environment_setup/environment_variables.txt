@@ -1,0 +1,3 @@
+MIDASSYS=/home/pioneer/jcarlton/software/midas
+MIDAS_EXPTAB=/home/pioneer/jcarlton/projects/midas_sampic/midas_data/online/exptab
+MIDAS_EXPT_NAME=SAMPIC

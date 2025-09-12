@@ -1,0 +1,3 @@
+mserver_name = mserver_sampic
+mhttpd_name = mhttpd_sampic
+mlogger_name = mlogger_sampic
