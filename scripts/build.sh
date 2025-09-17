@@ -1,88 +1,70 @@
 #!/bin/bash
 
-# Exit on error
-set -e
+# Resolve absolute paths
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
+BASE_DIR=$(realpath "$SCRIPT_DIR/..")
+BUILD_DIR="$BASE_DIR/build"
+CLEANUP_SCRIPT="$SCRIPT_DIR/cleanup.sh"
 
-# Get the directory of the script
-SOURCE="${BASH_SOURCE[0]}"
-while [ -L "$SOURCE" ]; do
-    DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
-    SOURCE=$(readlink "$SOURCE")
-    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-script_directory=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
-
-# Define default values
+# Default flags
 OVERWRITE=false
-INSTALL=true
-INSTALL_PREFIX=""
+JOBS_ARG="-j"  # Use all processors
 
-# Display help message
+# Help message
 show_help() {
-    echo "Usage: ${script_directory}/build.sh [OPTIONS]"
+    echo "Usage: ./build.sh [OPTIONS]"
     echo
     echo "Options:"
-    echo "  --overwrite       Overwrite existing build, lib, and bin directories"
-    echo "  --install         Run 'make install' to install the built files"
-    echo "  --install-prefix  Specify the installation prefix (default: use CMake's default)"
-    echo "  --help            Display this help message and exit"
-    echo
-    echo "This script configures and builds the project using CMake and Make."
-    exit 0
+    echo "  -o, --overwrite           Remove existing build directory before building"
+    echo "  -j, --jobs <number>       Specify number of processors to use (default: all available)"
+    echo "  -h, --help                Display this help message"
 }
 
-# Parse command-line arguments
+# Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --overwrite) OVERWRITE=true ;;
-        --install) INSTALL=true ;;
-        --install-prefix) INSTALL_PREFIX="$2"; shift ;;
-        --help) show_help ;;
-        *) echo "Unknown parameter passed: $1"; show_help ;;
+        -o|--overwrite)
+            OVERWRITE=true
+            shift
+            ;;
+        -j|--jobs)
+            if [[ -n "$2" && "$2" != -* ]]; then
+                JOBS_ARG="-j$2"
+                shift 2
+            else
+                JOBS_ARG="-j"
+                shift
+            fi
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "[build.sh, ERROR] Unknown option: $1"
+            show_help
+            exit 1
+            ;;
     esac
-    shift
 done
 
-# Define build directories relative to the script directory
-BUILD_DIR="${script_directory}/../build"
-BIN_DIR="${script_directory}/../bin"
-
-# Remove existing build, lib, and bin directories if overwrite is true
+# Optionally clean build
 if [ "$OVERWRITE" = true ]; then
-    echo "Overwriting existing build, and bin directories..."
-    rm -rf "$BUILD_DIR" || true
-    rm -rf "$BIN_DIR" || true
+    echo "[build.sh] Cleaning previous build with: $CLEANUP_SCRIPT"
+    "$CLEANUP_SCRIPT"
 fi
 
-# Create the build directory if it doesn't exist
-if [ ! -d "$BUILD_DIR" ]; then
-    mkdir "$BUILD_DIR"
-fi
+# Create and enter build directory
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR" || exit 1
 
-# Change to the build directory
-cd "$BUILD_DIR"
+# Run CMake and Make
+echo "[build.sh] Running cmake in: $BUILD_DIR"
+cmake "$BASE_DIR"
 
-# Run CMake to configure the project and generate Makefiles
-if [ -n "$INSTALL_PREFIX" ]; then
-    cmake -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" "${script_directory}/.."
-else
-    cmake "${script_directory}/.."
-fi
+echo "[build.sh] Building with make $JOBS_ARG"
+make $JOBS_ARG
 
-# Build the project using Make
-make -j
-
-# Run make install if the --install flag is specified
-if [ "$INSTALL" = true ]; then
-    echo "Installing built files..."
-    make install
-fi
-
-# Notify completion
-echo "Build completed successfully."
-if [ "$INSTALL" = true ]; then
-    echo "Installation completed successfully."
-fi
-
-# Return to the original directory
-cd "$script_directory"
+echo "[build.sh] Build complete."
+echo "[build.sh] Executables are in: $BUILD_DIR/bin/"
+echo "[build.sh] Libraries are in: $BUILD_DIR/lib/"
