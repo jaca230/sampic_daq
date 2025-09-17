@@ -2,7 +2,6 @@
 #define ODB_MANAGER_H
 
 #include "midas.h"
-#include "odbxx.h"
 #include <nlohmann/json.hpp>
 #include <rfl/json.hpp>
 #include <string>
@@ -12,11 +11,13 @@
 
 using json = nlohmann::json;
 
+extern HNDLE hDB;
+
 class OdbManager {
 public:
-    OdbManager();
+    OdbManager(HNDLE handle = hDB) : hDB_handle(handle) {}
 
-    // ---- JSON/String API ----
+    // JSON/String API
     std::string read(const std::string& path);
     json read(const std::string& path, bool return_json_object);
 
@@ -26,43 +27,38 @@ public:
     void initialize(const std::string& path, const std::string& jsonStr);
     void initialize(const std::string& path, const json& j);
 
-    // ---- Generic Struct API (Reflect-C++) ----
+    // Generic template API (Reflect-C++)
     template <typename T>
     T read(const std::string& path) {
-        std::string s = read(path);
-        auto parsed = rfl::json::read<T>(s);
-        if (!parsed)
+        std::string jsonStr = read(path);
+
+        auto parsed = rfl::json::read<T>(jsonStr);
+        if (!parsed.has_value()) {
             throw std::runtime_error("Failed to deserialize ODB JSON at path: " + path);
-        return *parsed;
+        }
+        return parsed.value();
     }
 
     template <typename T>
     void write(const std::string& path, const T& obj) {
-        try {
-            auto j = json::parse(rfl::json::write(obj));
-            write(path, j);
-        } catch (const std::exception& e) {
-            throw std::runtime_error("OdbManager::write failed for path '" + path + "': " + e.what());
-        }
+        auto j = json::parse(rfl::json::write(obj));
+        write(path, j);
     }
 
     template <typename T>
     void initialize(const std::string& path, const T& obj) {
-        try {
-            auto j = json::parse(rfl::json::write(obj));
-            initialize(path, j);
-        } catch (const std::exception& e) {
-            throw std::runtime_error("OdbManager::initialize failed for path '" + path + "': " + e.what());
-        }
+        auto j = json::parse(rfl::json::write(obj));
+        initialize(path, j);
     }
 
 private:
-    enum class OdbMode { WRITE, INITIALIZE };
-    void populateOdbHelper(midas::odb& odb, const json& j, OdbMode mode);
+    HNDLE hDB_handle;
 
-    void populateOdbFromJson(midas::odb& odb, const json& j);
-    void initializeOdbFromJson(midas::odb& odb, const json& j);
+    enum class OdbMode { WRITE, INITIALIZE };
+    void populateOdbHelper(const std::string& basePath, const json& j, OdbMode mode);
+
     json removeKeysContainingKey(const json& j);
+    json readRecursive(HNDLE key, const std::string& fullPath);
 };
 
 #endif // ODB_MANAGER_H

@@ -11,7 +11,6 @@
 
 // Midas
 #include "midas.h"
-#include "odbxx.h"
 #include "mfe.h"
 
 // Sampic
@@ -318,20 +317,22 @@ INT frontend_init() {
     frontend_index = get_frontend_index();
     snprintf(settings_path, sizeof(settings_path), "/Equipment/SAMPIC %02d/Settings", frontend_index);
 
-    SampicSystemSettings config;
-    OdbManager odbManager;
-    odbManager.initialize(settings_path, config);
+    try {
+        OdbManager odbManager;
+        odbManager.initialize(settings_path, SampicSystemSettings{}); // default config
 
-    // Read initial settings
-    std::lock_guard<std::mutex> lock(settings_mutex);
-    midas::odb settings;
-    settings.connect(settings_path);
-    
-    verbose = static_cast<bool>(settings["verbose"]);
-    n_events_per_read = static_cast<int>(settings["events_per_read"]);
-    ctrl_ip_address = static_cast<std::string>(settings["ip_address"]);
-    ctrl_port = static_cast<int>(settings["port"]);
-    
+        std::string path_str(settings_path); // use std::string for concatenation
+
+        // Read ODB values directly
+        verbose = odbManager.read<bool>(path_str + "/verbose");
+        n_events_per_read = odbManager.read<int>(path_str + "/events_per_read");
+        ctrl_ip_address = odbManager.read<std::string>(path_str + "/ip_address");
+        ctrl_port = odbManager.read<int>(path_str + "/port");
+    } catch (const std::exception &e) {
+        cm_msg(MERROR, "SAMPIC", "Error reading ODB settings: %s", e.what());
+        return FE_ERR_HW;
+    }
+
     // Initialize SAMPIC hardware
     int result = InitializeSAMPIC();
     if (result == SAMPIC256CH_Success) {
@@ -341,9 +342,10 @@ INT frontend_init() {
         cm_msg(MERROR, "SAMPIC", "Failed to initialize SAMPIC system");
         return FE_ERR_HW;
     }
-    
+
     return SUCCESS;
 }
+
 
 INT frontend_exit() {
     if (system_initialized) {
@@ -358,19 +360,29 @@ INT begin_of_run(INT run_number, char *error) {
         strcpy(error, "SAMPIC system not initialized");
         return FE_ERR_HW;
     }
-    
-    // Read settings from ODB
-    std::lock_guard<std::mutex> lock(settings_mutex);
-    midas::odb settings;
-    settings.connect(settings_path);
-    
-    verbose = static_cast<bool>(settings["Verbose"]);
-    n_events_per_read = static_cast<int>(settings["Events Per Read"]);
-    polling_interval = std::chrono::microseconds(static_cast<int>(settings["Polling Interval (us)"]));
-    
+
+    try {
+        std::lock_guard<std::mutex> lock(settings_mutex);
+        OdbManager odbManager;
+
+        std::string path_str(settings_path); // allows concatenation
+
+        // Read ODB values directly
+        verbose = odbManager.read<bool>(path_str + "/verbose");
+        n_events_per_read = odbManager.read<int>(path_str + "/events_per_read");
+        polling_interval = std::chrono::microseconds(
+            odbManager.read<int>(path_str + "/polling_interval_us")
+        );
+
+    } catch (const std::exception &e) {
+        sprintf(error, "Failed to read ODB settings at run start: %s", e.what());
+        cm_msg(MERROR, "SAMPIC", "%s", error);
+        return FE_ERR_HW;
+    }
+
     // Set trigger options
     SetTriggerOptions();
-    
+
     // Start SAMPIC run
     SAMPIC256CH_ErrCode errCode = SAMPIC256CH_StartRun(&CrateInfoParams, &CrateParams, TRUE);
     if (errCode == SAMPIC256CH_Success) {
@@ -378,10 +390,10 @@ INT begin_of_run(INT run_number, char *error) {
         cm_msg(MINFO, "SAMPIC", "Run %d started", run_number);
     } else {
         sprintf(error, "Error starting SAMPIC run: %d", errCode);
-        cm_msg(MERROR, "SAMPIC", "Error starting run: %d", errCode);
+        cm_msg(MERROR, "SAMPIC", "%s", error);
         return FE_ERR_HW;
     }
-    
+
     return SUCCESS;
 }
 
