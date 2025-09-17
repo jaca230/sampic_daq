@@ -4,17 +4,16 @@
 #include "midas.h"
 #include "odbxx.h"
 #include <nlohmann/json.hpp>
-#include <string>
 #include <rfl/json.hpp>
+#include <string>
+#include <vector>
 #include <optional>
 #include <iostream>
-#include <vector>
 
 using json = nlohmann::json;
 
 class OdbManager {
 public:
-    // Constructor
     OdbManager();
 
     // ---- JSON/String API ----
@@ -30,11 +29,10 @@ public:
     // ---- Generic Struct API (Reflect-C++) ----
     template <typename T>
     T read(const std::string& path) {
-        std::string s = read(path);  // uses the string-returning overload
+        std::string s = read(path);
         auto parsed = rfl::json::read<T>(s);
-        if (!parsed) {
-            throw std::runtime_error("Failed to deserialize ODB JSON into struct at path: " + path);
-        }
+        if (!parsed)
+            throw std::runtime_error("Failed to deserialize ODB JSON at path: " + path);
         return *parsed;
     }
 
@@ -44,8 +42,7 @@ public:
             auto j = json::parse(rfl::json::write(obj));
             write(path, j);
         } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "OdbManager::write failed for path '" + path + "': " + e.what());
+            throw std::runtime_error("OdbManager::write failed for path '" + path + "': " + e.what());
         }
     }
 
@@ -55,13 +52,14 @@ public:
             auto j = json::parse(rfl::json::write(obj));
             initialize(path, j);
         } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "OdbManager::initialize failed for path '" + path + "': " + e.what());
+            throw std::runtime_error("OdbManager::initialize failed for path '" + path + "': " + e.what());
         }
     }
 
-
 private:
+    enum class OdbMode { WRITE, INITIALIZE };
+    void populateOdbHelper(midas::odb& odb, const json& j, OdbMode mode);
+
     void populateOdbFromJson(midas::odb& odb, const json& j);
     void initializeOdbFromJson(midas::odb& odb, const json& j);
     json removeKeysContainingKey(const json& j);

@@ -1,3 +1,4 @@
+//System Level
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,9 +8,13 @@
 #include <thread>
 #include <mutex>
 #include <unistd.h>
+
+// Midas
 #include "midas.h"
 #include "odbxx.h"
 #include "mfe.h"
+
+// Sampic
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,6 +25,12 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+// Project
+#include "config_structs/sampic_config.h"
+#include "odb/odb_manager.h"
+
+
 
 // Globals
 const char *frontend_name = "SAMPIC_Frontend";
@@ -306,27 +317,20 @@ void CleanupSAMPIC(void)
 INT frontend_init() {
     frontend_index = get_frontend_index();
     snprintf(settings_path, sizeof(settings_path), "/Equipment/SAMPIC %02d/Settings", frontend_index);
-    
-    // Create ODB settings
-    midas::odb o = {
-        {"Verbose", TRUE},
-        {"Polling Interval (us)", 1000000},
-        {"Events Per Read", 1},
-        {"IP Address", "192.168.0.4"},
-        {"Port", 27015}
-    };
-    
-    o.connect(settings_path);
-    
+
+    SampicSystemSettings config;
+    OdbManager odbManager;
+    odbManager.initialize(settings_path, config);
+
     // Read initial settings
     std::lock_guard<std::mutex> lock(settings_mutex);
     midas::odb settings;
     settings.connect(settings_path);
     
-    verbose = static_cast<bool>(settings["Verbose"]);
-    n_events_per_read = static_cast<int>(settings["Events Per Read"]);
-    ctrl_ip_address = static_cast<std::string>(settings["IP Address"]);
-    ctrl_port = static_cast<int>(settings["Port"]);
+    verbose = static_cast<bool>(settings["verbose"]);
+    n_events_per_read = static_cast<int>(settings["events_per_read"]);
+    ctrl_ip_address = static_cast<std::string>(settings["ip_address"]);
+    ctrl_port = static_cast<int>(settings["port"]);
     
     // Initialize SAMPIC hardware
     int result = InitializeSAMPIC();

@@ -121,7 +121,7 @@ fi
 # --------------------------------------------------------------------------
 cd "$BASE_DIR" || exit 1
 
-echo "[INFO] Running Data Simulator with index $INDEX_STR..."
+echo "[INFO] Running Sampic Frontend with index $INDEX_STR..."
 
 if [ "$DEBUG" = true ]; then
     gdb --args "$EXECUTABLE" -i "$INDEX" "${EXE_ARGS[@]}"
