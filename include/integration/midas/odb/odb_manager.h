@@ -4,10 +4,12 @@
 #include "midas.h"
 #include <nlohmann/json.hpp>
 #include <rfl/json.hpp>
+#include <spdlog/spdlog.h>
+
 #include <string>
 #include <vector>
 #include <optional>
-#include <iostream>
+#include <stdexcept>
 
 using json = nlohmann::json;
 
@@ -15,7 +17,7 @@ extern HNDLE hDB;
 
 class OdbManager {
 public:
-    OdbManager(HNDLE handle = hDB) : hDB_handle(handle) {}
+    explicit OdbManager(HNDLE handle = hDB) : hDB_handle(handle) {}
 
     // JSON/String API
     std::string read(const std::string& path);
@@ -34,6 +36,7 @@ public:
 
         auto parsed = rfl::json::read<T>(jsonStr);
         if (!parsed.has_value()) {
+            spdlog::error("Failed to deserialize ODB JSON at path '{}'", path);
             throw std::runtime_error("Failed to deserialize ODB JSON at path: " + path);
         }
         return parsed.value();

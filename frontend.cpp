@@ -1,4 +1,6 @@
-//System Level
+// ======================================================================
+// System Level
+// ======================================================================
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,24 +16,22 @@
 #include "mfe.h"
 
 // Sampic
-#ifdef __cplusplus
 extern "C" {
-#endif
-
 #include <SAMPIC_256Ch_lib.h>
 #include <SAMPIC_256Ch_Type.h>
-
-#ifdef __cplusplus
 }
-#endif
 
 // Project
-#include "config_structs/sampic_config.h"
-#include "odb/odb_manager.h"
+#include "integration/sampic/sampic_config.h"
+#include "integration/midas/frontend_config.h"
+#include "integration/midas/odb/odb_manager.h"
+#include "integration/midas/odb/odb_utils.h"
+#include "integration/spdlog/logger_config.h"
+#include "integration/spdlog/logger_configurator.h"
 
-
-
+// ======================================================================
 // Globals
+// ======================================================================
 const char *frontend_name = "SAMPIC_Frontend";
 const char *frontend_file_name = __FILE__;
 BOOL frontend_call_loop = FALSE;
@@ -40,7 +40,7 @@ INT max_event_size = 128 * 1024 * 1024;
 INT max_event_size_frag = 5 * max_event_size;
 INT event_buffer_size = 5 * max_event_size;
 INT frontend_index;
-char settings_path[100];
+char settings_path[256];
 
 std::mutex settings_mutex;
 
@@ -48,23 +48,25 @@ std::mutex settings_mutex;
 CrateConnectionParamStruct CrateConnectionParams;
 CrateInfoStruct CrateInfoParams;
 CrateParamStruct CrateParams;
-void *EventBuffer = NULL;
-ML_Frame *My_ML_Frames = NULL;
+void *EventBuffer = nullptr;
+ML_Frame *My_ML_Frames = nullptr;
 EventStruct Event;
 char Message[1024];
 
-// Settings
-bool verbose = false;
-int n_events_per_read = 1;
-std::string ctrl_ip_address = "192.168.0.4";
-int ctrl_port = 27015;
 bool system_initialized = false;
 
-//Polling 
+// Polling
 std::chrono::steady_clock::time_point last_poll_time;
 std::chrono::microseconds polling_interval(1000000);
 
+// Configs
+SampicSystemSettings sampic_cfg;
+FrontendConfig fe_config;
+LoggerConfig logger_config;
+
+// ======================================================================
 // Function declarations
+// ======================================================================
 INT frontend_init(void);
 INT frontend_exit(void);
 INT begin_of_run(INT run_number, char *error);
@@ -80,11 +82,12 @@ INT interrupt_configure(INT cmd, INT source, POINTER_T adr);
 // SAMPIC functions
 int InitializeSAMPIC(void);
 void SetTriggerOptions(void);
-void Write_InfoMessage(const char *string);
 int ReadSAMPICEvent(void);
 void CleanupSAMPIC(void);
 
+// ======================================================================
 // Equipment list
+// ======================================================================
 BOOL equipment_common_overwrite = TRUE;
 
 EQUIPMENT equipment[] = {
@@ -96,7 +99,7 @@ EQUIPMENT equipment[] = {
             "MIDAS",
             TRUE,
             RO_RUNNING,
-            100, // poll time in milliseconds
+            100, // poll time in ms
             0,
             0,
             TRUE,
@@ -107,245 +110,198 @@ EQUIPMENT equipment[] = {
 };
 
 // ======================================================================
-void Write_InfoMessage(const char *string)
+// SAMPIC helper functions
 // ======================================================================
-{
-    if (verbose) {
-        printf("[SAMPIC Frontend] %s", string);
-        cm_msg(MINFO, "SAMPIC", "%s", string);
-    }
-}
-
-// ======================================================================
-int InitializeSAMPIC(void)
-// ======================================================================
-{
+int InitializeSAMPIC(void) {
     SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
-    
-    Write_InfoMessage("Initializing SAMPIC system...\n");
-    
+
+    spdlog::info("Initializing SAMPIC system...");
+
     // Set connection parameters
     CrateConnectionParams.ConnectionType = UDP_CONNECTION;
     CrateConnectionParams.ControlBoardControlType = CTRL_AND_DAQ;
-    strncpy(CrateConnectionParams.CtrlIpAddress, ctrl_ip_address.c_str(), sizeof(CrateConnectionParams.CtrlIpAddress) - 1);
+    strncpy(CrateConnectionParams.CtrlIpAddress,
+            sampic_cfg.ip_address.c_str(),
+            sizeof(CrateConnectionParams.CtrlIpAddress) - 1);
     CrateConnectionParams.CtrlIpAddress[sizeof(CrateConnectionParams.CtrlIpAddress) - 1] = '\0';
-    CrateConnectionParams.CtrlPort = ctrl_port;
-    
+    CrateConnectionParams.CtrlPort = sampic_cfg.port;
+
     // Open connection
     errCode = SAMPIC256CH_OpenCrateConnection(CrateConnectionParams, &CrateInfoParams);
-    
+
     if (errCode == SAMPIC256CH_Success) {
-        Write_InfoMessage("Opened connection with SAMPIC-256Ch Crate.\n");
-        sprintf(Message, "Found %d SAMPIC-64Ch Front-End Boards\n", CrateInfoParams.NbOfFeBoards);
-        Write_InfoMessage(Message);
+        spdlog::info("Opened connection with SAMPIC-256Ch Crate ({} FE boards).",
+                     CrateInfoParams.NbOfFeBoards);
     } else {
-        cm_msg(MERROR, "SAMPIC", "No SAMPIC-256Ch Crate found! Error code: %d", errCode);
+        cm_msg(MERROR, "SAMPIC",
+               "No SAMPIC-256Ch Crate found! Error code: %d", errCode);
         return errCode;
     }
-    
+
     // Load default parameters
-    if (errCode == SAMPIC256CH_Success) {
-        Write_InfoMessage("Loading All Hardware Setup parameters...\n");
-        errCode = SAMPIC256CH_SetDefaultParameters(&CrateInfoParams, &CrateParams);
-        
-        if (errCode == SAMPIC256CH_Success) {
-            Write_InfoMessage("All Hardware Setup parameters loaded successfully.\n");
-        } else {
-            if (CrateInfoParams.LastCommErrorInfo.FpgaType == CB_CTRL_FPGA) {
-                sprintf(Message, "Error Type %d while accessing 'CTRL_BOARD_CTRL_FPGA' at subadd %d\n", 
-                       errCode, CrateInfoParams.LastCommErrorInfo.SubAddress);
-            } else if (CrateInfoParams.LastCommErrorInfo.FpgaType == FEB_CTRL_FPGA) {
-                sprintf(Message, "Error Type %d while accessing Front-End-Board [%d] 'CTRL_FPGA' at subadd %d\n", 
-                       errCode, CrateInfoParams.LastCommErrorInfo.FeBoardTarget, CrateInfoParams.LastCommErrorInfo.SubAddress);
-            } else {
-                sprintf(Message, "Error Type %d while accessing Front-End-Board [%d] 'FE_FPGA' index %d at subadd %d\n", 
-                       errCode, CrateInfoParams.LastCommErrorInfo.FeBoardTarget, 
-                       CrateInfoParams.LastCommErrorInfo.FeFpgaTarget, CrateInfoParams.LastCommErrorInfo.SubAddress);
-            }
-            Write_InfoMessage(Message);
-            return errCode;
-        }
+    errCode = SAMPIC256CH_SetDefaultParameters(&CrateInfoParams, &CrateParams);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to load default parameters (err=%d)", errCode);
+        return errCode;
     }
-    
+
     // Load calibration files
-    if (errCode == SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_LoadAllCalibValuesFromFiles(&CrateInfoParams, &CrateParams, ".");
-        if (errCode != SAMPIC256CH_Success) {
-            Write_InfoMessage("Warning: At least one calibration file not found!\n");
-            // Continue anyway - calibration files may not be critical
-            errCode = SAMPIC256CH_Success;
-        }
+    errCode = SAMPIC256CH_LoadAllCalibValuesFromFiles(&CrateInfoParams, &CrateParams,
+                                                  const_cast<char*>("."));
+    if (errCode != SAMPIC256CH_Success) {
+        spdlog::warn("At least one calibration file not found, continuing anyway...");
+        errCode = SAMPIC256CH_Success;
     }
-    
+
     // Allocate event memory
-    if (errCode == SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_AllocateEventMemory(&EventBuffer, &My_ML_Frames);
-        if (errCode != SAMPIC256CH_Success) {
-            cm_msg(MERROR, "SAMPIC", "Failed to allocate event memory! Error code: %d", errCode);
-            return errCode;
-        }
-        Write_InfoMessage("Event memory allocated successfully.\n");
+    errCode = SAMPIC256CH_AllocateEventMemory(&EventBuffer, &My_ML_Frames);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to allocate event memory (err=%d)", errCode);
+        return errCode;
     }
-    
+    spdlog::info("Event memory allocated successfully.");
+
     return errCode;
 }
 
-// ======================================================================
-void SetTriggerOptions(void)
-// ======================================================================
-{
-    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
-    
-    Write_InfoMessage("Setting trigger options...\n");
-    
-    // Setting channels ON
-    if (errCode == SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_SetChannelMode(&CrateInfoParams, &CrateParams, ALL_FE_BOARDs, ALL_CHANNELs, TRUE);
-        if (errCode != SAMPIC256CH_Success) {
-            cm_msg(MERROR, "SAMPIC", "Failed to set channel mode! Error code: %d", errCode);
-            return;
-        }
+void SetTriggerOptions(void) {
+    spdlog::info("Setting trigger options...");
+    SAMPIC256CH_ErrCode errCode;
+
+    errCode = SAMPIC256CH_SetChannelMode(&CrateInfoParams, &CrateParams,
+                                         ALL_FE_BOARDs, ALL_CHANNELs, TRUE);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set channel mode (err=%d)", errCode);
+        return;
     }
-    
-    // Setting Trigger Parameters
-    if (errCode == SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_SetSampicChannelTriggerMode(&CrateInfoParams, &CrateParams, 
-                                                         ALL_FE_BOARDs, ALL_SAMPICs, ALL_CHANNELs, 
-                                                         SAMPIC_CHANNEL_EXT_TRIGGER_MODE);
-        if (errCode != SAMPIC256CH_Success) {
-            cm_msg(MERROR, "SAMPIC", "Failed to set channel trigger mode! Error code: %d", errCode);
-            return;
-        }
+
+    errCode = SAMPIC256CH_SetSampicChannelTriggerMode(&CrateInfoParams, &CrateParams,
+                                                      ALL_FE_BOARDs, ALL_SAMPICs, ALL_CHANNELs,
+                                                      SAMPIC_CHANNEL_EXT_TRIGGER_MODE);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set channel trigger mode (err=%d)", errCode);
+        return;
     }
-    
-    if (errCode == SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_SetSampicTriggerOption(&CrateInfoParams, &CrateParams, 
-                                                    ALL_FE_BOARDs, ALL_SAMPICs, SAMPIC_TRIGGER_IS_L1);
-        if (errCode != SAMPIC256CH_Success) {
-            cm_msg(MERROR, "SAMPIC", "Failed to set trigger option! Error code: %d", errCode);
-            return;
-        }
+
+    errCode = SAMPIC256CH_SetSampicTriggerOption(&CrateInfoParams, &CrateParams,
+                                                 ALL_FE_BOARDs, ALL_SAMPICs,
+                                                 SAMPIC_TRIGGER_IS_L1);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set trigger option (err=%d)", errCode);
+        return;
     }
-    
-    if (errCode == SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_SetExternalTriggerType(&CrateInfoParams, &CrateParams, SOFTWARE);
-        if (errCode != SAMPIC256CH_Success) {
-            cm_msg(MERROR, "SAMPIC", "Failed to set external trigger type! Error code: %d", errCode);
-            return;
-        }
+
+    errCode = SAMPIC256CH_SetExternalTriggerType(&CrateInfoParams, &CrateParams, SOFTWARE);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set external trigger type (err=%d)", errCode);
+        return;
     }
-    
-    if (errCode == SAMPIC256CH_Success) {
-        Write_InfoMessage("Trigger options set successfully.\n");
-    }
+
+    spdlog::info("Trigger options set successfully.");
 }
 
-// ======================================================================
-int ReadSAMPICEvent(void)
-// ======================================================================
-{
+int ReadSAMPICEvent(void) {
     SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
     int numberOfHits = 0;
     int nframes = 0;
     int nloop_for_soft_trig = 0;
     int dummy = 0;
-    
-    // Prepare event (sends software trigger)
+
     SAMPIC256CH_PrepareEvent(&CrateInfoParams, &CrateParams);
-    
+
     errCode = SAMPIC256CH_NoFrameRead;
-    numberOfHits = 0;
-    nframes = 0;
-    nloop_for_soft_trig = 0;
-    
-    // Wait for event data
+
     while (errCode != SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_ReadEventBuffer(&CrateInfoParams, dummy, EventBuffer, My_ML_Frames, &nframes);
-        
+        errCode = SAMPIC256CH_ReadEventBuffer(&CrateInfoParams, dummy,
+                                              EventBuffer, My_ML_Frames, &nframes);
+
         if (errCode == SAMPIC256CH_Success) {
-            errCode = SAMPIC256CH_DecodeEvent(&CrateInfoParams, &CrateParams, My_ML_Frames, &Event, nframes, &numberOfHits);
+            errCode = SAMPIC256CH_DecodeEvent(&CrateInfoParams, &CrateParams,
+                                              My_ML_Frames, &Event, nframes, &numberOfHits);
         }
-        
-        if ((errCode == SAMPIC256CH_AcquisitionError) || (errCode == SAMPIC256CH_ErrInvalidEvent)) {
-            cm_msg(MERROR, "SAMPIC", "Acquisition error! Error code: %d", errCode);
+
+        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent) {
+            cm_msg(MERROR, "SAMPIC", "Acquisition error (err=%d)", errCode);
             return -1;
         }
-        
-        // Retry software trigger periodically if no data
+
         if ((nloop_for_soft_trig % 100) == 0) {
             SAMPIC256CH_PrepareEvent(&CrateInfoParams, &CrateParams);
         }
         nloop_for_soft_trig++;
-        
-        // Add timeout to avoid infinite loop
+
         if (nloop_for_soft_trig > 10000) {
-            cm_msg(MINFO, "SAMPIC", "Timeout waiting for event data");
-            return 0; // Return 0 hits rather than error
+            spdlog::warn("Timeout waiting for event data");
+            return 0;
         }
     }
-    
-    if (errCode == SAMPIC256CH_Success && verbose) {
-        sprintf(Message, "Received %d hits in event\n", numberOfHits);
-        Write_InfoMessage(Message);
+
+    if (errCode == SAMPIC256CH_Success) {
+        spdlog::debug("Received {} hits in event", numberOfHits);
     }
-    
+
     return numberOfHits;
 }
 
-// ======================================================================
-void CleanupSAMPIC(void)
-// ======================================================================
-{
-    Write_InfoMessage("Cleaning up SAMPIC resources...\n");
-    
+void CleanupSAMPIC(void) {
+    spdlog::info("Cleaning up SAMPIC resources...");
     if (EventBuffer) {
-        // Note: SAMPIC library should provide cleanup function
         // SAMPIC256CH_FreeEventMemory(&EventBuffer, &My_ML_Frames);
-        EventBuffer = NULL;
-        My_ML_Frames = NULL;
+        EventBuffer = nullptr;
+        My_ML_Frames = nullptr;
     }
-    
-    // Close connection if needed
     // SAMPIC256CH_CloseCrateConnection(&CrateInfoParams);
 }
 
 // ======================================================================
 // MIDAS Frontend Functions
 // ======================================================================
-
 INT frontend_init() {
     frontend_index = get_frontend_index();
-    snprintf(settings_path, sizeof(settings_path), "/Equipment/SAMPIC %02d/Settings", frontend_index);
+    snprintf(settings_path, sizeof(settings_path),
+             "/Equipment/SAMPIC %02d/Settings", frontend_index);
+    // Set frontend status color → init
+    OdbUtils::odbSetStatusColor(frontend_index, fe_config.init_color);
 
     try {
-        OdbManager odbManager;
-        odbManager.initialize(settings_path, SampicSystemSettings{}); // default config
+        OdbManager odb;
 
-        std::string path_str(settings_path); // use std::string for concatenation
+        // Paths under this frontend’s settings
+        std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
+        std::string logger_cfg_path = std::string(settings_path) + "/Logger";
 
-        // Read ODB values directly
-        verbose = odbManager.read<bool>(path_str + "/verbose");
-        n_events_per_read = odbManager.read<int>(path_str + "/events_per_read");
-        ctrl_ip_address = odbManager.read<std::string>(path_str + "/ip_address");
-        ctrl_port = odbManager.read<int>(path_str + "/port");
-    } catch (const std::exception &e) {
-        cm_msg(MERROR, "SAMPIC", "Error reading ODB settings: %s", e.what());
+        odb.initialize(logger_cfg_path, LoggerConfig{});
+        logger_config = odb.read<LoggerConfig>(logger_cfg_path);
+
+        // Seed configs
+        odb.initialize(settings_path, SampicSystemSettings{});
+        odb.initialize(fe_cfg_path, FrontendConfig{});
+
+        // Read configs
+        sampic_cfg   = odb.read<SampicSystemSettings>(settings_path);
+        fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
+
+        // Apply logger
+        LoggerConfigurator::configure(logger_config);
+
+        // Initialize hardware
+        int result = InitializeSAMPIC();
+        if (result == SAMPIC256CH_Success) {
+            system_initialized = true;
+            spdlog::info("SAMPIC system initialized successfully");
+        } else {
+            cm_msg(MERROR, "SAMPIC", "Failed to initialize SAMPIC system (err=%d)", result);
+            return FE_ERR_HW;
+        }
+
+        // Set frontend status color → init
+        OdbUtils::odbSetStatusColor(frontend_index, fe_config.ready_color);
+        return SUCCESS;
+    } catch (const std::exception& e) {
+        cm_msg(MERROR, __FUNCTION__, "Error during frontend_init: %s", e.what());
         return FE_ERR_HW;
     }
-
-    // Initialize SAMPIC hardware
-    int result = InitializeSAMPIC();
-    if (result == SAMPIC256CH_Success) {
-        system_initialized = true;
-        cm_msg(MINFO, "SAMPIC", "SAMPIC system initialized successfully");
-    } else {
-        cm_msg(MERROR, "SAMPIC", "Failed to initialize SAMPIC system");
-        return FE_ERR_HW;
-    }
-
-    return SUCCESS;
 }
-
 
 INT frontend_exit() {
     if (system_initialized) {
@@ -362,38 +318,36 @@ INT begin_of_run(INT run_number, char *error) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(settings_mutex);
-        OdbManager odbManager;
+        OdbManager odb;
+        std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
+        std::string logger_cfg_path = std::string(settings_path) + "/Logger";
 
-        std::string path_str(settings_path); // allows concatenation
+        // Refresh configs
+        sampic_cfg   = odb.read<SampicSystemSettings>(settings_path);
+        fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
+        logger_config = odb.read<LoggerConfig>(logger_cfg_path);
 
-        // Read ODB values directly
-        verbose = odbManager.read<bool>(path_str + "/verbose");
-        n_events_per_read = odbManager.read<int>(path_str + "/events_per_read");
-        polling_interval = std::chrono::microseconds(
-            odbManager.read<int>(path_str + "/polling_interval_us")
-        );
+        polling_interval  = std::chrono::microseconds(fe_config.polling_interval_us);
+
+        // Reconfigure logger if changed
+        LoggerConfigurator::configure(logger_config);
 
     } catch (const std::exception &e) {
-        sprintf(error, "Failed to read ODB settings at run start: %s", e.what());
-        cm_msg(MERROR, "SAMPIC", "%s", error);
-        return FE_ERR_HW;
+        sprintf(error, "Failed to refresh configs at run start: %s", e.what());
+        cm_msg(MERROR, __FUNCTION__, "%s", error);
+        return FE_ERR_ODB;
     }
 
-    // Set trigger options
+    // Apply trigger options and start run
     SetTriggerOptions();
-
-    // Start SAMPIC run
-    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_StartRun(&CrateInfoParams, &CrateParams, TRUE);
-    if (errCode == SAMPIC256CH_Success) {
-        Write_InfoMessage("SAMPIC Run Started.\n");
-        cm_msg(MINFO, "SAMPIC", "Run %d started", run_number);
-    } else {
-        sprintf(error, "Error starting SAMPIC run: %d", errCode);
-        cm_msg(MERROR, "SAMPIC", "%s", error);
+    SAMPIC256CH_ErrCode err = SAMPIC256CH_StartRun(&CrateInfoParams, &CrateParams, TRUE);
+    if (err != SAMPIC256CH_Success) {
+        sprintf(error, "Error starting SAMPIC run: %d", err);
+        cm_msg(MERROR, __FUNCTION__, "%s", error);
         return FE_ERR_HW;
     }
 
+    spdlog::info("Run {} started", run_number);
     return SUCCESS;
 }
 
@@ -401,30 +355,21 @@ INT end_of_run(INT run_number, char *error) {
     if (system_initialized) {
         SAMPIC256CH_ErrCode errCode = SAMPIC256CH_StopRun(&CrateInfoParams, &CrateParams);
         if (errCode == SAMPIC256CH_Success) {
-            Write_InfoMessage("SAMPIC Run Stopped.\n");
-            cm_msg(MINFO, "SAMPIC", "Run %d stopped", run_number);
+            spdlog::info("Run {} stopped", run_number);
         } else {
             sprintf(error, "Error stopping SAMPIC run: %d", errCode);
-            cm_msg(MERROR, "SAMPIC", "Error stopping run: %d", errCode);
+            cm_msg(MERROR, "SAMPIC", "%s", error);
             return FE_ERR_HW;
         }
     }
     return SUCCESS;
 }
 
-INT pause_run(INT run_number, char *error) {
-    return SUCCESS;
-}
+INT pause_run(INT, char*) { return SUCCESS; }
+INT resume_run(INT, char*) { return SUCCESS; }
+INT frontend_loop() { return SUCCESS; }
 
-INT resume_run(INT run_number, char *error) {
-    return SUCCESS;
-}
-
-INT frontend_loop() {
-    return SUCCESS;
-}
-
-INT poll_event(INT source, INT count, BOOL test) {
+INT poll_event(INT, INT, BOOL test) {
     auto now = std::chrono::steady_clock::now();
     if (now - last_poll_time >= polling_interval) {
         last_poll_time = now;
@@ -433,44 +378,34 @@ INT poll_event(INT source, INT count, BOOL test) {
     return test ? FALSE : 0;
 }
 
-INT interrupt_configure(INT cmd, INT source, POINTER_T adr) {
+INT interrupt_configure(INT, INT, POINTER_T) {
     return SUCCESS;
 }
 
-INT read_sampic_event(char *pevent, INT off) {
+INT read_sampic_event(char *pevent, INT) {
     if (!system_initialized) {
         cm_msg(MERROR, "SAMPIC", "Attempting to read event but system not initialized");
         return 0;
     }
-    
+
     bk_init32(pevent);
-    
-    // Try to read SAMPIC event
+
     int numberOfHits = ReadSAMPICEvent();
-    
     if (numberOfHits < 0) {
-        // Error occurred
         cm_msg(MERROR, "SAMPIC", "Error reading SAMPIC event");
         return 0;
     }
-    
-    if (numberOfHits == 0) {
-        // No data available
-        return 0;
-    }
-    
-    // Create bank for SAMPIC data
+    if (numberOfHits == 0) return 0;
+
+    // Bank for SAMPIC data
     char bank_name[8];
     snprintf(bank_name, sizeof(bank_name), "SMP%02d", frontend_index);
-    
-    // Create bank for hit data
+
     DWORD *pdata;
     bk_create(pevent, bank_name, TID_DWORD, (void **)&pdata);
-    
-    // Store number of hits first
-    *pdata++ = numberOfHits;
-    
+
+    *pdata++ = numberOfHits; // store number of hits
+
     bk_close(pevent, pdata);
-    
     return bk_size(pevent);
 }
