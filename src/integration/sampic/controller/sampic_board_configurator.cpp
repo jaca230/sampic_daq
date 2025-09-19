@@ -1,6 +1,6 @@
 // sampic_board_configurator.cpp
-#include "integration/sampic/sampic_board_configurator.h"
-#include "integration/sampic/sampic_chip_configurator.h"
+#include "integration/sampic/controller/sampic_board_configurator.h"
+#include "integration/sampic/controller/sampic_chip_configurator.h"
 
 #include <spdlog/spdlog.h>
 #include <stdexcept>

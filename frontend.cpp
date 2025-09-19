@@ -22,7 +22,7 @@ extern "C" {
 }
 
 // Project
-#include "integration/sampic/sampic_config.h"
+#include "integration/sampic/config/sampic_crate_config.h"
 #include "integration/midas/frontend_config.h"
 #include "integration/midas/odb/odb_manager.h"
 #include "integration/midas/odb/odb_utils.h"

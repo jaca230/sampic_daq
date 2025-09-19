@@ -1,7 +1,7 @@
 #ifndef SAMPIC_CHANNEL_CONFIGURATOR_H
 #define SAMPIC_CHANNEL_CONFIGURATOR_H
 
-#include "integration/sampic/sampic_config.h"
+#include "integration/sampic/config/sampic_crate_config.h"
 
 extern "C" {
 #include <SAMPIC_256Ch_lib.h>

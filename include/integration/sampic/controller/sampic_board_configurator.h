@@ -1,8 +1,8 @@
 #ifndef SAMPIC_BOARD_CONFIGURATOR_H
 #define SAMPIC_BOARD_CONFIGURATOR_H
 
-#include "integration/sampic/sampic_config.h"
-#include "integration/sampic/sampic_chip_configurator.h"
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/controller/sampic_chip_configurator.h"
 
 extern "C" {
 #include <SAMPIC_256Ch_lib.h>
