@@ -269,20 +269,20 @@ INT frontend_init() {
         // Paths under this frontend’s settings
         std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
         std::string logger_cfg_path = std::string(settings_path) + "/Logger";
+        std::string sampic_cfg_path = std::string(settings_path) + "/Crate";
 
+        // Logger
         odb.initialize(logger_cfg_path, LoggerConfig{});
         logger_config = odb.read<LoggerConfig>(logger_cfg_path);
+        LoggerConfigurator::configure(logger_config);
 
-        // Seed configs
-        odb.initialize(settings_path, SampicSystemSettings{});
+        // Midas Frontend Settings
         odb.initialize(fe_cfg_path, FrontendConfig{});
-
-        // Read configs
-        sampic_cfg   = odb.read<SampicSystemSettings>(settings_path);
         fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
 
-        // Apply logger
-        LoggerConfigurator::configure(logger_config);
+        // SAMPIC Crate Settings
+        odb.initialize(sampic_cfg_path, SampicSystemSettings{});
+        sampic_cfg   = odb.read<SampicSystemSettings>(sampic_cfg_path);
 
         // Initialize hardware
         int result = InitializeSAMPIC();
@@ -319,18 +319,21 @@ INT begin_of_run(INT run_number, char *error) {
 
     try {
         OdbManager odb;
+        // Paths under this frontend’s settings
         std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
         std::string logger_cfg_path = std::string(settings_path) + "/Logger";
+        std::string sampic_cfg_path = std::string(settings_path) + "/Crate";
 
         // Refresh configs
-        sampic_cfg   = odb.read<SampicSystemSettings>(settings_path);
+        sampic_cfg   = odb.read<SampicSystemSettings>(sampic_cfg_path);
         fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
         logger_config = odb.read<LoggerConfig>(logger_cfg_path);
 
-        polling_interval  = std::chrono::microseconds(fe_config.polling_interval_us);
-
         // Reconfigure logger if changed
         LoggerConfigurator::configure(logger_config);
+
+        // Reconfigure polling interval if changed
+        polling_interval  = std::chrono::microseconds(fe_config.polling_interval_us);
 
     } catch (const std::exception &e) {
         sprintf(error, "Failed to refresh configs at run start: %s", e.what());

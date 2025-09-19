@@ -66,6 +66,12 @@ CTestTestfile.cmake
 # Ignore binary files in scripts directory if any
 scripts/*.bin
 
+# Ignore deprecated
+deprecated/
+recycle/
+recycled/
+recycling_bin/
+
 # Other files to ignore
 .DS_Store
 Thumbs.db
