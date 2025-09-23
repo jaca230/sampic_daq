@@ -27,6 +27,9 @@ public:
     void setSourceForCT();    // SAMPIC256CH_SetSampicChannelSourceForCT
     void setPulseMode();      // SAMPIC256CH_SetSampicChannelPulseMode
 
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+
 private:
     int boardIdx_;
     int chipIdx_;
@@ -34,8 +37,6 @@ private:
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     SampicChannelConfig& config_;
-
-    void check(SAMPIC256CH_ErrCode code, const std::string& what);
 };
 
 #endif

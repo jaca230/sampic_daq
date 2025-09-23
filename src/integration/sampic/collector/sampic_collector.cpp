@@ -11,14 +11,14 @@ SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
     : cfg_(cfg), buffer_(buffer)
 {
     switch (cfg.mode) {
-        case SampicCollectorMode::DEFAULT:
+        case SampicCollectorModeType::DEFAULT:
             mode_ = std::make_unique<SampicCollectorModeDefault>(info, params, eventBuffer, mlFrames, cfg);
             break;
-        case SampicCollectorMode::EXAMPLE:
+        case SampicCollectorModeType::EXAMPLE:
             mode_ = std::make_unique<SampicCollectorModeExample>(info, params, eventBuffer, mlFrames, cfg);
             break;
         default:
-            throw std::runtime_error("Unsupported SampicCollectorMode");
+            throw std::runtime_error("Unsupported SampicCollectorModeType");
     }
 }
 
@@ -42,8 +42,7 @@ void SampicCollector::stop() {
 }
 
 void SampicCollector::run() {
-    spdlog::info("SAMPIC Collector started in mode {}",
-                 cfg_.mode == SampicCollectorMode::DEFAULT ? "DEFAULT" : "EXAMPLE");
+    spdlog::info("SAMPIC Collector started in mode {}", static_cast<int>(cfg_.mode));
 
     while (running_) {
         auto start_total = std::chrono::steady_clock::now();

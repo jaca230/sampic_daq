@@ -24,14 +24,15 @@ public:
 
     void applyChips();
 
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+    int indexFromKey(const std::string& key);
+
 private:
     int boardIdx_;
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     SampicFrontEndConfig& config_;
-
-    void check(SAMPIC256CH_ErrCode code, const std::string& what);
-    int indexFromKey(const std::string& key);
 };
 
 #endif

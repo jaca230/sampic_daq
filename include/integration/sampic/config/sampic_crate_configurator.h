@@ -50,13 +50,14 @@ public:
     // Boards
     void applyBoards();
 
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+    int indexFromKey(const std::string& key);
+
 private:
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     SampicSystemSettings& settings_;
-
-    void check(SAMPIC256CH_ErrCode code, const std::string& what);
-    int indexFromKey(const std::string& key);
 };
 
 #endif

@@ -5,14 +5,14 @@
 #include <string>
 
 /// Modes for the collector loop
-enum class SampicCollectorMode {
+enum class SampicCollectorModeType {
     DEFAULT,
     EXAMPLE
 };
 
 /// Configuration for SampicCollector
 struct SampicCollectorConfig {
-    SampicCollectorMode mode = SampicCollectorMode::EXAMPLE;
+    SampicCollectorModeType mode = SampicCollectorModeType::EXAMPLE;
 
     // Buffering
     size_t buffer_size = 1024;      // number of events the buffer can hold

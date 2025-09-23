@@ -33,15 +33,16 @@ public:
 
     void applyChannels();
 
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+    int indexFromKey(const std::string& key);
+
 private:
     int boardIdx_;
     int chipIdx_;
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     SampicChipConfig& config_;
-
-    void check(SAMPIC256CH_ErrCode code, const std::string& what);
-    int indexFromKey(const std::string& key);
 };
 
 #endif
