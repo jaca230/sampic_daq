@@ -1,6 +1,6 @@
 // sampic_crate_configurator.cpp
-#include "integration/sampic/controller/sampic_crate_configurator.h"
-#include "integration/sampic/controller/sampic_board_configurator.h"
+#include "integration/sampic/config/sampic_crate_configurator.h"
+#include "integration/sampic/config/sampic_board_configurator.h"
 
 #include <spdlog/spdlog.h>
 #include <stdexcept>
