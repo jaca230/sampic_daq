@@ -26,6 +26,7 @@ struct TimestampedSampicEvent {
     EventStruct event;
     std::chrono::steady_clock::time_point timestamp;
     SampicEventTiming timing;
+    bool consumed{false};   ///< tracks whether a consumer has read this event
 };
 
 /// Thread-safe buffer for holding timestamped SAMPIC events
@@ -33,11 +34,20 @@ class SampicEventBuffer {
 public:
     explicit SampicEventBuffer(size_t capacity);
 
+    // Producer API
     void push(const TimestampedSampicEvent& ev);
-    std::optional<TimestampedSampicEvent> pop();
-    std::optional<TimestampedSampicEvent> latest();
-    std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t);
 
+    // Consumer API
+    std::optional<TimestampedSampicEvent> pop();   ///< pops one event
+    std::optional<TimestampedSampicEvent> latest(); ///< peek latest, marks consumed
+    std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t); ///< marks consumed
+
+    // Polling helpers
+    bool hasNewSince(std::chrono::steady_clock::time_point t) const;
+    bool waitForNew(std::chrono::steady_clock::time_point t,
+                    std::chrono::milliseconds timeout);
+
+    // Info
     size_t size() const;
     bool empty() const;
 
@@ -46,6 +56,7 @@ private:
     mutable std::mutex mtx_;
     std::condition_variable cv_;
     std::deque<TimestampedSampicEvent> buffer_;
+    std::chrono::steady_clock::time_point last_timestamp_;
 };
 
 #endif // SAMPIC_EVENT_BUFFER_H

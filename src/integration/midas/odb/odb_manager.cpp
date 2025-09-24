@@ -115,53 +115,64 @@ void OdbManager::initialize(const std::string& path, const json& j) {
 
 // --- Populate ODB recursively ---
 void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, OdbMode mode) {
+    HNDLE key;
+    bool exists = (db_find_key(hDB_handle, 0, basePath.c_str(), &key) == DB_SUCCESS);
+
     if (j.is_object()) {
+        // Ensure directory key exists
+        if (!exists && mode == OdbMode::INITIALIZE) {
+            db_create_key(hDB_handle, 0, basePath.c_str(), TID_KEY);
+        }
         // Recurse on object fields
-        for (auto& [key, value] : j.items()) {
-            std::string fullPath = basePath + "/" + key;
-            if (mode == OdbMode::INITIALIZE) {
-                HNDLE subkey;
-                if (db_find_key(hDB_handle, 0, fullPath.c_str(), &subkey) == DB_SUCCESS)
-                    continue; // already exists
-            }
+        for (auto& [subkey, value] : j.items()) {
+            std::string fullPath = basePath + "/" + subkey;
             populateOdbHelper(fullPath, value, mode);
         }
     }
     else if (j.is_array()) {
         if (j.empty()) return;
 
-        // Detect type of first element
+        // Ensure array key exists
+        if (!exists && mode == OdbMode::INITIALIZE) {
+            db_create_key(hDB_handle, 0, basePath.c_str(), TID_KEY);
+        }
+
+        // Detect primitive array vs object array
         if (j.front().is_primitive()) {
-            // Treat as real ODB array of primitives
+            if (mode == OdbMode::INITIALIZE && exists) {
+                return; // skip existing arrays
+            }
+
             if (j.front().is_string()) {
                 std::vector<std::string> vals;
                 for (auto& v : j) vals.push_back(v.get<std::string>());
                 for (size_t i = 0; i < vals.size(); i++) {
                     std::string itemPath = basePath + "/" + std::to_string(i);
                     db_set_value(hDB_handle, 0, itemPath.c_str(),
-                                 vals[i].c_str(), vals[i].size()+1, 1, TID_STRING);
+                                 vals[i].c_str(), vals[i].size() + 1, 1, TID_STRING);
                 }
             }
             else if (j.front().is_boolean()) {
                 std::vector<int> vals;
                 for (auto& v : j) vals.push_back(v.get<bool>() ? 1 : 0);
                 db_set_value(hDB_handle, 0, basePath.c_str(),
-                             vals.data(), sizeof(int)*vals.size(), vals.size(), TID_BOOL);
+                             vals.data(), sizeof(int) * vals.size(), vals.size(), TID_BOOL);
             }
             else if (j.front().is_number_float()) {
                 std::vector<double> vals;
                 for (auto& v : j) vals.push_back(v.get<double>());
                 db_set_value(hDB_handle, 0, basePath.c_str(),
-                             vals.data(), sizeof(double)*vals.size(), vals.size(), TID_FLOAT64);
+                             vals.data(), sizeof(double) * vals.size(), vals.size(), TID_FLOAT64);
             }
             else if (j.front().is_number_integer()) {
                 std::vector<int64_t> vals;
                 for (auto& v : j) vals.push_back(v.get<int64_t>());
                 db_set_value(hDB_handle, 0, basePath.c_str(),
-                             vals.data(), sizeof(int64_t)*vals.size(), vals.size(), TID_INT64);
+                             vals.data(), sizeof(int64_t) * vals.size(), vals.size(), TID_INT64);
             }
-        } else {
-            // Array of objects or nested arrays → recurse with indices
+        }
+        else {
+            // Array of objects → recurse
             for (size_t i = 0; i < j.size(); ++i) {
                 std::string itemPath = basePath + "/" + std::to_string(i);
                 populateOdbHelper(itemPath, j[i], mode);
@@ -169,11 +180,16 @@ void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, O
         }
     }
     else if (j.is_primitive()) {
+        // Skip existing values in INITIALIZE mode
+        if (mode == OdbMode::INITIALIZE && exists) {
+            return;
+        }
+
         // Scalars
         if (j.is_string()) {
             std::string s = j;
             db_set_value(hDB_handle, 0, basePath.c_str(),
-                         s.c_str(), s.size()+1, 1, TID_STRING);
+                         s.c_str(), s.size() + 1, 1, TID_STRING);
         }
         else if (j.is_boolean()) {
             int b = j.get<bool>() ? 1 : 0;
@@ -192,6 +208,7 @@ void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, O
         }
     }
 }
+
 
 
 // --- Utility ---

@@ -1,0 +1,3168 @@
+===== FILE START =====
+Relative Path: frontend.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/frontend.cpp
+Size: 13767 bytes
+-----
+// ======================================================================
+// System Level
+// ======================================================================
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <unistd.h>
+
+// Midas
+#include "midas.h"
+#include "mfe.h"
+
+// Sampic
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+// Project
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/midas/frontend_config.h"
+#include "integration/midas/odb/odb_manager.h"
+#include "integration/midas/odb/odb_utils.h"
+#include "integration/spdlog/logger_config.h"
+#include "integration/spdlog/logger_configurator.h"
+
+// ======================================================================
+// Globals
+// ======================================================================
+const char *frontend_name = "SAMPIC_Frontend";
+const char *frontend_file_name = __FILE__;
+BOOL frontend_call_loop = FALSE;
+INT display_period = 0;
+INT max_event_size = 128 * 1024 * 1024;
+INT max_event_size_frag = 5 * max_event_size;
+INT event_buffer_size = 5 * max_event_size;
+INT frontend_index;
+char settings_path[256];
+
+std::mutex settings_mutex;
+
+// SAMPIC globals
+CrateConnectionParamStruct CrateConnectionParams;
+CrateInfoStruct CrateInfoParams;
+CrateParamStruct CrateParams;
+void *EventBuffer = nullptr;
+ML_Frame *My_ML_Frames = nullptr;
+EventStruct Event;
+char Message[1024];
+
+bool system_initialized = false;
+
+// Polling
+std::chrono::steady_clock::time_point last_poll_time;
+std::chrono::microseconds polling_interval(1000000);
+
+// Configs
+SampicSystemSettings sampic_cfg;
+FrontendConfig fe_config;
+LoggerConfig logger_config;
+
+// ======================================================================
+// Function declarations
+// ======================================================================
+INT frontend_init(void);
+INT frontend_exit(void);
+INT begin_of_run(INT run_number, char *error);
+INT end_of_run(INT run_number, char *error);
+INT pause_run(INT run_number, char *error);
+INT resume_run(INT run_number, char *error);
+INT frontend_loop(void);
+
+INT read_sampic_event(char *pevent, INT off);
+INT poll_event(INT source, INT count, BOOL test);
+INT interrupt_configure(INT cmd, INT source, POINTER_T adr);
+
+// SAMPIC functions
+int InitializeSAMPIC(void);
+void SetTriggerOptions(void);
+int ReadSAMPICEvent(void);
+void CleanupSAMPIC(void);
+
+// ======================================================================
+// Equipment list
+// ======================================================================
+BOOL equipment_common_overwrite = TRUE;
+
+EQUIPMENT equipment[] = {
+    {"SAMPIC %02d",
+        {1, 0,
+            "SYSTEM",
+            EQ_POLLED | EQ_EB,
+            0,
+            "MIDAS",
+            TRUE,
+            RO_RUNNING,
+            100, // poll time in ms
+            0,
+            0,
+            TRUE,
+            "", "", "",},
+        read_sampic_event
+    },
+    {""}
+};
+
+// ======================================================================
+// SAMPIC helper functions
+// ======================================================================
+int InitializeSAMPIC(void) {
+    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
+
+    spdlog::info("Initializing SAMPIC system...");
+
+    // Set connection parameters
+    CrateConnectionParams.ConnectionType = UDP_CONNECTION;
+    CrateConnectionParams.ControlBoardControlType = CTRL_AND_DAQ;
+    strncpy(CrateConnectionParams.CtrlIpAddress,
+            sampic_cfg.ip_address.c_str(),
+            sizeof(CrateConnectionParams.CtrlIpAddress) - 1);
+    CrateConnectionParams.CtrlIpAddress[sizeof(CrateConnectionParams.CtrlIpAddress) - 1] = '\0';
+    CrateConnectionParams.CtrlPort = sampic_cfg.port;
+
+    // Open connection
+    errCode = SAMPIC256CH_OpenCrateConnection(CrateConnectionParams, &CrateInfoParams);
+
+    if (errCode == SAMPIC256CH_Success) {
+        spdlog::info("Opened connection with SAMPIC-256Ch Crate ({} FE boards).",
+                     CrateInfoParams.NbOfFeBoards);
+    } else {
+        cm_msg(MERROR, "SAMPIC",
+               "No SAMPIC-256Ch Crate found! Error code: %d", errCode);
+        return errCode;
+    }
+
+    // Load default parameters
+    errCode = SAMPIC256CH_SetDefaultParameters(&CrateInfoParams, &CrateParams);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to load default parameters (err=%d)", errCode);
+        return errCode;
+    }
+
+    // Load calibration files
+    errCode = SAMPIC256CH_LoadAllCalibValuesFromFiles(&CrateInfoParams, &CrateParams,
+                                                  const_cast<char*>("."));
+    if (errCode != SAMPIC256CH_Success) {
+        spdlog::warn("At least one calibration file not found, continuing anyway...");
+        errCode = SAMPIC256CH_Success;
+    }
+
+    // Allocate event memory
+    errCode = SAMPIC256CH_AllocateEventMemory(&EventBuffer, &My_ML_Frames);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to allocate event memory (err=%d)", errCode);
+        return errCode;
+    }
+    spdlog::info("Event memory allocated successfully.");
+
+    return errCode;
+}
+
+void SetTriggerOptions(void) {
+    spdlog::info("Setting trigger options...");
+    SAMPIC256CH_ErrCode errCode;
+
+    errCode = SAMPIC256CH_SetChannelMode(&CrateInfoParams, &CrateParams,
+                                         ALL_FE_BOARDs, ALL_CHANNELs, TRUE);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set channel mode (err=%d)", errCode);
+        return;
+    }
+
+    errCode = SAMPIC256CH_SetSampicChannelTriggerMode(&CrateInfoParams, &CrateParams,
+                                                      ALL_FE_BOARDs, ALL_SAMPICs, ALL_CHANNELs,
+                                                      SAMPIC_CHANNEL_EXT_TRIGGER_MODE);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set channel trigger mode (err=%d)", errCode);
+        return;
+    }
+
+    errCode = SAMPIC256CH_SetSampicTriggerOption(&CrateInfoParams, &CrateParams,
+                                                 ALL_FE_BOARDs, ALL_SAMPICs,
+                                                 SAMPIC_TRIGGER_IS_L1);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set trigger option (err=%d)", errCode);
+        return;
+    }
+
+    errCode = SAMPIC256CH_SetExternalTriggerType(&CrateInfoParams, &CrateParams, SOFTWARE);
+    if (errCode != SAMPIC256CH_Success) {
+        cm_msg(MERROR, "SAMPIC", "Failed to set external trigger type (err=%d)", errCode);
+        return;
+    }
+
+    spdlog::info("Trigger options set successfully.");
+}
+
+int ReadSAMPICEvent(void) {
+    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
+    int numberOfHits = 0;
+    int nframes = 0;
+    int nloop_for_soft_trig = 0;
+    int dummy = 0;
+
+    SAMPIC256CH_PrepareEvent(&CrateInfoParams, &CrateParams);
+
+    errCode = SAMPIC256CH_NoFrameRead;
+
+    while (errCode != SAMPIC256CH_Success) {
+        errCode = SAMPIC256CH_ReadEventBuffer(&CrateInfoParams, dummy,
+                                              EventBuffer, My_ML_Frames, &nframes);
+
+        if (errCode == SAMPIC256CH_Success) {
+            errCode = SAMPIC256CH_DecodeEvent(&CrateInfoParams, &CrateParams,
+                                              My_ML_Frames, &Event, nframes, &numberOfHits);
+        }
+
+        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent) {
+            cm_msg(MERROR, "SAMPIC", "Acquisition error (err=%d)", errCode);
+            return -1;
+        }
+
+        if ((nloop_for_soft_trig % 100) == 0) {
+            SAMPIC256CH_PrepareEvent(&CrateInfoParams, &CrateParams);
+        }
+        nloop_for_soft_trig++;
+
+        if (nloop_for_soft_trig > 10000) {
+            spdlog::warn("Timeout waiting for event data");
+            return 0;
+        }
+    }
+
+    if (errCode == SAMPIC256CH_Success) {
+        spdlog::debug("Received {} hits in event", numberOfHits);
+    }
+
+    return numberOfHits;
+}
+
+void CleanupSAMPIC(void) {
+    spdlog::info("Cleaning up SAMPIC resources...");
+    if (EventBuffer) {
+        // SAMPIC256CH_FreeEventMemory(&EventBuffer, &My_ML_Frames);
+        EventBuffer = nullptr;
+        My_ML_Frames = nullptr;
+    }
+    // SAMPIC256CH_CloseCrateConnection(&CrateInfoParams);
+}
+
+// ======================================================================
+// MIDAS Frontend Functions
+// ======================================================================
+INT frontend_init() {
+    frontend_index = get_frontend_index();
+    snprintf(settings_path, sizeof(settings_path),
+             "/Equipment/SAMPIC %02d/Settings", frontend_index);
+    // Set frontend status color → init
+    OdbUtils::odbSetStatusColor(frontend_index, fe_config.init_color);
+
+    try {
+        OdbManager odb;
+
+        // Paths under this frontend’s settings
+        std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
+        std::string logger_cfg_path = std::string(settings_path) + "/Logger";
+        std::string sampic_cfg_path = std::string(settings_path) + "/Crate";
+
+        // Logger
+        odb.initialize(logger_cfg_path, LoggerConfig{});
+        logger_config = odb.read<LoggerConfig>(logger_cfg_path);
+        LoggerConfigurator::configure(logger_config);
+
+        // Midas Frontend Settings
+        odb.initialize(fe_cfg_path, FrontendConfig{});
+        fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
+
+        // SAMPIC Crate Settings
+        odb.initialize(sampic_cfg_path, SampicSystemSettings{});
+        sampic_cfg   = odb.read<SampicSystemSettings>(sampic_cfg_path);
+
+        // Initialize hardware
+        int result = InitializeSAMPIC();
+        if (result == SAMPIC256CH_Success) {
+            system_initialized = true;
+            spdlog::info("SAMPIC system initialized successfully");
+        } else {
+            cm_msg(MERROR, "SAMPIC", "Failed to initialize SAMPIC system (err=%d)", result);
+            return FE_ERR_HW;
+        }
+
+        // Set frontend status color → init
+        OdbUtils::odbSetStatusColor(frontend_index, fe_config.ready_color);
+        return SUCCESS;
+    } catch (const std::exception& e) {
+        cm_msg(MERROR, __FUNCTION__, "Error during frontend_init: %s", e.what());
+        return FE_ERR_HW;
+    }
+}
+
+INT frontend_exit() {
+    if (system_initialized) {
+        CleanupSAMPIC();
+        system_initialized = false;
+    }
+    return SUCCESS;
+}
+
+INT begin_of_run(INT run_number, char *error) {
+    if (!system_initialized) {
+        strcpy(error, "SAMPIC system not initialized");
+        return FE_ERR_HW;
+    }
+
+    try {
+        OdbManager odb;
+        // Paths under this frontend’s settings
+        std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
+        std::string logger_cfg_path = std::string(settings_path) + "/Logger";
+        std::string sampic_cfg_path = std::string(settings_path) + "/Crate";
+
+        // Refresh configs
+        sampic_cfg   = odb.read<SampicSystemSettings>(sampic_cfg_path);
+        fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
+        logger_config = odb.read<LoggerConfig>(logger_cfg_path);
+
+        // Reconfigure logger if changed
+        LoggerConfigurator::configure(logger_config);
+
+        // Reconfigure polling interval if changed
+        polling_interval  = std::chrono::microseconds(fe_config.polling_interval_us);
+
+    } catch (const std::exception &e) {
+        sprintf(error, "Failed to refresh configs at run start: %s", e.what());
+        cm_msg(MERROR, __FUNCTION__, "%s", error);
+        return FE_ERR_ODB;
+    }
+
+    // Apply trigger options and start run
+    SetTriggerOptions();
+    SAMPIC256CH_ErrCode err = SAMPIC256CH_StartRun(&CrateInfoParams, &CrateParams, TRUE);
+    if (err != SAMPIC256CH_Success) {
+        sprintf(error, "Error starting SAMPIC run: %d", err);
+        cm_msg(MERROR, __FUNCTION__, "%s", error);
+        return FE_ERR_HW;
+    }
+
+    spdlog::info("Run {} started", run_number);
+    return SUCCESS;
+}
+
+INT end_of_run(INT run_number, char *error) {
+    if (system_initialized) {
+        SAMPIC256CH_ErrCode errCode = SAMPIC256CH_StopRun(&CrateInfoParams, &CrateParams);
+        if (errCode == SAMPIC256CH_Success) {
+            spdlog::info("Run {} stopped", run_number);
+        } else {
+            sprintf(error, "Error stopping SAMPIC run: %d", errCode);
+            cm_msg(MERROR, "SAMPIC", "%s", error);
+            return FE_ERR_HW;
+        }
+    }
+    return SUCCESS;
+}
+
+INT pause_run(INT, char*) { return SUCCESS; }
+INT resume_run(INT, char*) { return SUCCESS; }
+INT frontend_loop() { return SUCCESS; }
+
+INT poll_event(INT, INT, BOOL test) {
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_poll_time >= polling_interval) {
+        last_poll_time = now;
+        return TRUE;
+    }
+    return test ? FALSE : 0;
+}
+
+INT interrupt_configure(INT, INT, POINTER_T) {
+    return SUCCESS;
+}
+
+INT read_sampic_event(char *pevent, INT) {
+    if (!system_initialized) {
+        cm_msg(MERROR, "SAMPIC", "Attempting to read event but system not initialized");
+        return 0;
+    }
+
+    bk_init32(pevent);
+
+    int numberOfHits = ReadSAMPICEvent();
+    if (numberOfHits < 0) {
+        cm_msg(MERROR, "SAMPIC", "Error reading SAMPIC event");
+        return 0;
+    }
+    if (numberOfHits == 0) return 0;
+
+    // Bank for SAMPIC data
+    char bank_name[8];
+    snprintf(bank_name, sizeof(bank_name), "SMP%02d", frontend_index);
+
+    DWORD *pdata;
+    bk_create(pevent, bank_name, TID_DWORD, (void **)&pdata);
+
+    *pdata++ = numberOfHits; // store number of hits
+
+    bk_close(pevent, pdata);
+    return bk_size(pevent);
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/midas/frontend_config.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/midas/frontend_config.h
+Size: 780 bytes
+-----
+#ifndef SAMPIC_DAQ_INTEGRATION_MIDAS_FRONTEND_CONFIG_H
+#define SAMPIC_DAQ_INTEGRATION_MIDAS_FRONTEND_CONFIG_H
+
+#include <string>
+#include <cstddef>
+
+// Configuration for MIDAS frontend integration.
+// These parameters can be populated from the ODB.
+struct FrontendConfig {
+    size_t min_bytes_to_trigger_on = 0;   // minimum event size in bytes
+    std::string init_color = "#8A2BE2";      // initial color code for frontend GUI
+    std::string ready_color = "greenLight";  // ready status color
+    int polling_interval_us = 1000;          // polling interval (microseconds)
+    std::string data_bank_prefix = "AD";     // prefix for data banks
+    std::string timing_bank_prefix = "AT";   // prefix for timing banks
+};
+
+#endif // SAMPIC_DAQ_INTEGRATION_MIDAS_FRONTEND_CONFIG_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/midas/odb/odb_manager.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/midas/odb/odb_manager.h
+Size: 1866 bytes
+-----
+#ifndef ODB_MANAGER_H
+#define ODB_MANAGER_H
+
+#include "midas.h"
+#include <nlohmann/json.hpp>
+#include <rfl/json.hpp>
+#include <spdlog/spdlog.h>
+
+#include <string>
+#include <vector>
+#include <optional>
+#include <stdexcept>
+
+using json = nlohmann::json;
+
+extern HNDLE hDB;
+
+class OdbManager {
+public:
+    explicit OdbManager(HNDLE handle = hDB) : hDB_handle(handle) {}
+
+    // JSON/String API
+    std::string read(const std::string& path);
+    json read(const std::string& path, bool return_json_object);
+
+    void write(const std::string& path, const std::string& jsonStr);
+    void write(const std::string& path, const json& j);
+
+    void initialize(const std::string& path, const std::string& jsonStr);
+    void initialize(const std::string& path, const json& j);
+
+    // Generic template API (Reflect-C++)
+    template <typename T>
+    T read(const std::string& path) {
+        std::string jsonStr = read(path);
+
+        auto parsed = rfl::json::read<T>(jsonStr);
+        if (!parsed.has_value()) {
+            spdlog::error("Failed to deserialize ODB JSON at path '{}'", path);
+            throw std::runtime_error("Failed to deserialize ODB JSON at path: " + path);
+        }
+        return parsed.value();
+    }
+
+    template <typename T>
+    void write(const std::string& path, const T& obj) {
+        auto j = json::parse(rfl::json::write(obj));
+        write(path, j);
+    }
+
+    template <typename T>
+    void initialize(const std::string& path, const T& obj) {
+        auto j = json::parse(rfl::json::write(obj));
+        initialize(path, j);
+    }
+
+private:
+    HNDLE hDB_handle;
+
+    enum class OdbMode { WRITE, INITIALIZE };
+    void populateOdbHelper(const std::string& basePath, const json& j, OdbMode mode);
+
+    json removeKeysContainingKey(const json& j);
+    json readRecursive(HNDLE key, const std::string& fullPath);
+};
+
+#endif // ODB_MANAGER_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/midas/odb/odb_utils.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/midas/odb/odb_utils.h
+Size: 3962 bytes
+-----
+#ifndef SAMPIC_DAQ_INTEGRATION_MIDAS_ODB_UTILS_H
+#define SAMPIC_DAQ_INTEGRATION_MIDAS_ODB_UTILS_H
+
+#include "midas.h"
+#include <string>
+#include <vector>
+#include <spdlog/spdlog.h>
+
+extern HNDLE hDB;
+
+class OdbUtils {
+public:
+    // -------------------------------
+    // Common frontend helpers
+    // -------------------------------
+    static void odbSetStatusColor(int frontend_index, const std::string& color) {
+        char path[256];
+        snprintf(path, sizeof(path),
+                 "/Equipment/SAMPIC %02d/Common/Status color", frontend_index);
+
+        if (db_set_value(hDB, 0, path, color.c_str(),
+                         32, 1, TID_STRING) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set status color '{}' at '{}'", color, path);
+        }
+    }
+
+    static void odbSetStatusMessage(int frontend_index, const std::string& message) {
+        char path[256];
+        snprintf(path, sizeof(path),
+                 "/Equipment/SAMPIC %02d/Common/Status", frontend_index);
+
+        if (db_set_value(hDB, 0, path, message.c_str(),
+                         256, 1, TID_STRING) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set status message '{}' at '{}'", message, path);
+        }
+    }
+
+    // -------------------------------
+    // Generic scalar setters
+    // -------------------------------
+    static void odbSetString(const std::string& path, const std::string& value) {
+        if (db_set_value(hDB, 0, path.c_str(),
+                         value.c_str(), value.size() + 1, 1, TID_STRING) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set string '{}={}'", path, value);
+        }
+    }
+
+    static void odbSetInt(const std::string& path, int value) {
+        if (db_set_value(hDB, 0, path.c_str(),
+                         &value, sizeof(value), 1, TID_INT32) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set int '{}={}'", path, value);
+        }
+    }
+
+    static void odbSetBool(const std::string& path, bool value) {
+        int v = value ? 1 : 0;
+        if (db_set_value(hDB, 0, path.c_str(),
+                         &v, sizeof(v), 1, TID_BOOL) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set bool '{}={}'", path, value);
+        }
+    }
+
+    static void odbSetDouble(const std::string& path, double value) {
+        if (db_set_value(hDB, 0, path.c_str(),
+                         &value, sizeof(value), 1, TID_DOUBLE) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set double '{}={}'", path, value);
+        }
+    }
+
+    // -------------------------------
+    // Array setters
+    // -------------------------------
+    static void odbSetIntArray(const std::string& path, const std::vector<int>& values) {
+        if (db_set_value(hDB, 0, path.c_str(),
+                         values.data(), values.size() * sizeof(int),
+                         values.size(), TID_INT32) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set int array at '{}'", path);
+        }
+    }
+
+    static void odbSetDoubleArray(const std::string& path, const std::vector<double>& values) {
+        if (db_set_value(hDB, 0, path.c_str(),
+                         values.data(), values.size() * sizeof(double),
+                         values.size(), TID_DOUBLE) != DB_SUCCESS) {
+            spdlog::error("ODB: Failed to set double array at '{}'", path);
+        }
+    }
+
+    static void odbSetStringArray(const std::string& path, const std::vector<std::string>& values) {
+        for (size_t i = 0; i < values.size(); ++i) {
+            std::string itemPath = path + "/" + std::to_string(i);
+            if (db_set_value(hDB, 0, itemPath.c_str(),
+                             values[i].c_str(), values[i].size() + 1,
+                             1, TID_STRING) != DB_SUCCESS) {
+                spdlog::error("ODB: Failed to set string array element '{}={}'", itemPath, values[i]);
+            }
+        }
+    }
+};
+
+#endif // SAMPIC_DAQ_INTEGRATION_MIDAS_ODB_UTILS_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/collector/modes/sampic_collector_mode.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/modes/sampic_collector_mode.h
+Size: 1095 bytes
+-----
+#ifndef SAMPIC_COLLECTOR_MODE_H
+#define SAMPIC_COLLECTOR_MODE_H
+
+#include "integration/sampic/collector/sampic_event_buffer.h"
+#include "integration/sampic/config/sampic_collector_config.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+}
+
+/// Abstract base for all SAMPIC collector modes
+class SampicCollectorMode {
+public:
+    SampicCollectorMode(CrateInfoStruct& info,
+                        CrateParamStruct& params,
+                        void* eventBuffer,
+                        ML_Frame* mlFrames,
+                        const SampicCollectorConfig& cfg)
+        : info_(info), params_(params),
+          eventBuffer_(eventBuffer), mlFrames_(mlFrames),
+          cfg_(cfg) {}
+
+    virtual ~SampicCollectorMode() = default;
+
+    /// Perform one acquisition step, filling event + timing
+    virtual int readEvent(EventStruct& event,
+                          SampicEventTiming& timing) = 0;
+
+protected:
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    void* eventBuffer_;
+    ML_Frame* mlFrames_;
+    const SampicCollectorConfig& cfg_;
+};
+
+#endif // SAMPIC_COLLECTOR_MODE_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/collector/modes/sampic_collector_mode_default.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/modes/sampic_collector_mode_default.h
+Size: 794 bytes
+-----
+#ifndef SAMPIC_COLLECTOR_MODE_DEFAULT_H
+#define SAMPIC_COLLECTOR_MODE_DEFAULT_H
+
+#include "integration/sampic/collector/modes/sampic_collector_mode.h"
+
+/// Default collector mode:
+/// Simple Prepare → Read → Decode per event.
+class SampicCollectorModeDefault : public SampicCollectorMode {
+public:
+    SampicCollectorModeDefault(CrateInfoStruct& info,
+                               CrateParamStruct& params,
+                               void* eventBuffer,
+                               ML_Frame* mlFrames,
+                               const SampicCollectorConfig& cfg)
+        : SampicCollectorMode(info, params, eventBuffer, mlFrames, cfg) {}
+
+    int readEvent(EventStruct& event,
+                  SampicEventTiming& timing) override;
+};
+
+#endif // SAMPIC_COLLECTOR_MODE_DEFAULT_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/collector/modes/sampic_collector_mode_example.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/modes/sampic_collector_mode_example.h
+Size: 786 bytes
+-----
+#ifndef SAMPIC_COLLECTOR_MODE_EXAMPLE_H
+#define SAMPIC_COLLECTOR_MODE_EXAMPLE_H
+
+#include "integration/sampic/collector/modes/sampic_collector_mode.h"
+
+/// Example mode: placeholder for testing / prototyping custom logic.
+class SampicCollectorModeExample : public SampicCollectorMode {
+public:
+    SampicCollectorModeExample(CrateInfoStruct& info,
+                               CrateParamStruct& params,
+                               void* eventBuffer,
+                               ML_Frame* mlFrames,
+                               const SampicCollectorConfig& cfg)
+        : SampicCollectorMode(info, params, eventBuffer, mlFrames, cfg) {}
+
+    int readEvent(EventStruct& event,
+                  SampicEventTiming& timing) override;
+};
+
+#endif // SAMPIC_COLLECTOR_MODE_EXAMPLE_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/collector/sampic_collector.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/sampic_collector.h
+Size: 1185 bytes
+-----
+#ifndef SAMPIC_COLLECTOR_H
+#define SAMPIC_COLLECTOR_H
+
+#include "integration/sampic/collector/sampic_event_buffer.h"
+#include "integration/sampic/config/sampic_collector_config.h"
+#include "integration/sampic/collector/modes/sampic_collector_mode.h"
+
+#include <thread>
+#include <atomic>
+#include <memory>
+#include <spdlog/spdlog.h>
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+}
+
+/// Collector thread for reading events from SAMPIC hardware and filling the buffer.
+class SampicCollector {
+public:
+    SampicCollector(const SampicCollectorConfig& cfg,
+                    SampicEventBuffer& buffer,
+                    CrateInfoStruct& info,
+                    CrateParamStruct& params,
+                    void* eventBuffer,
+                    ML_Frame* mlFrames);
+
+    ~SampicCollector();
+
+    void start();
+    void stop();
+    bool running() const { return running_; }
+
+private:
+    void run();
+
+    SampicCollectorConfig cfg_;
+    SampicEventBuffer& buffer_;
+    EventStruct event_{};  ///< reused event struct
+
+    std::unique_ptr<SampicCollectorMode> mode_; ///< polymorphic mode
+
+    std::thread worker_;
+    std::atomic<bool> running_{false};
+};
+
+#endif // SAMPIC_COLLECTOR_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/collector/sampic_event_buffer.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/sampic_event_buffer.h
+Size: 1344 bytes
+-----
+#ifndef SAMPIC_EVENT_BUFFER_H
+#define SAMPIC_EVENT_BUFFER_H
+
+#include <deque>
+#include <mutex>
+#include <condition_variable>
+#include <optional>
+#include <chrono>
+#include <vector>
+#include <spdlog/spdlog.h>
+
+extern "C" {
+#include <SAMPIC_256Ch_Type.h>
+}
+
+/// Timing breakdown for diagnostics
+struct SampicEventTiming {
+    std::chrono::microseconds prepare_duration{0};
+    std::chrono::microseconds read_duration{0};
+    std::chrono::microseconds decode_duration{0};
+    std::chrono::microseconds total_duration{0};
+};
+
+/// Wrapper for EventStruct with timestamp and timing diagnostics
+struct TimestampedSampicEvent {
+    EventStruct event;
+    std::chrono::steady_clock::time_point timestamp;
+    SampicEventTiming timing;
+};
+
+/// Thread-safe buffer for holding timestamped SAMPIC events
+class SampicEventBuffer {
+public:
+    explicit SampicEventBuffer(size_t capacity);
+
+    void push(const TimestampedSampicEvent& ev);
+    std::optional<TimestampedSampicEvent> pop();
+    std::optional<TimestampedSampicEvent> latest();
+    std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t);
+
+    size_t size() const;
+    bool empty() const;
+
+private:
+    size_t capacity_;
+    mutable std::mutex mtx_;
+    std::condition_variable cv_;
+    std::deque<TimestampedSampicEvent> buffer_;
+};
+
+#endif // SAMPIC_EVENT_BUFFER_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_board_configurator.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_board_configurator.h
+Size: 1067 bytes
+-----
+#ifndef SAMPIC_BOARD_CONFIGURATOR_H
+#define SAMPIC_BOARD_CONFIGURATOR_H
+
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_chip_configurator.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+class SampicBoardConfigurator {
+public:
+    SampicBoardConfigurator(int boardIdx,
+                            CrateInfoStruct& info,
+                            CrateParamStruct& params,
+                            SampicFrontEndConfig& config);
+
+    void apply();
+
+    void setGlobalTrigger();     // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
+    void setLevel2ExtTrigGate(); // SAMPIC256CH_SetLevel2ExtTrigGate
+    void setLevel2Coincidence(); // SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate
+
+    void applyChips();
+
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+    int indexFromKey(const std::string& key);
+
+private:
+    int boardIdx_;
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    SampicFrontEndConfig& config_;
+};
+
+#endif
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_channel_configurator.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_channel_configurator.h
+Size: 1336 bytes
+-----
+#ifndef SAMPIC_CHANNEL_CONFIGURATOR_H
+#define SAMPIC_CHANNEL_CONFIGURATOR_H
+
+#include "integration/sampic/config/sampic_crate_config.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+class SampicChannelConfigurator {
+public:
+    SampicChannelConfigurator(int boardIdx,
+                              int chipIdx,
+                              int channelIdx,
+                              CrateInfoStruct& info,
+                              CrateParamStruct& params,
+                              SampicChannelConfig& config);
+
+    void apply();
+
+    void setMode();           // SAMPIC256CH_SetChannelMode
+    void setTriggerMode();    // SAMPIC256CH_SetSampicChannelTriggerMode
+    void setThreshold();      // SAMPIC256CH_SetSampicChannelInternalThreshold
+    void setEdge();           // SAMPIC256CH_SetChannelSelflTriggerEdge
+    void setExtThreshMode();  // SAMPIC256CH_SetSampicExternalThresholdMode
+    void setSourceForCT();    // SAMPIC256CH_SetSampicChannelSourceForCT
+    void setPulseMode();      // SAMPIC256CH_SetSampicChannelPulseMode
+
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+
+private:
+    int boardIdx_;
+    int chipIdx_;
+    int channelIdx_;
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    SampicChannelConfig& config_;
+};
+
+#endif
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_chip_configurator.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_chip_configurator.h
+Size: 1593 bytes
+-----
+#ifndef SAMPIC_CHIP_CONFIGURATOR_H
+#define SAMPIC_CHIP_CONFIGURATOR_H
+
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_channel_configurator.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+class SampicChipConfigurator {
+public:
+    SampicChipConfigurator(int boardIdx,
+                           int chipIdx,
+                           CrateInfoStruct& info,
+                           CrateParamStruct& params,
+                           SampicChipConfig& config);
+
+    void apply();
+
+    void setBaseline();               // SAMPIC256CH_SetBaselineReference
+    void setExtThreshold();           // SAMPIC256CH_SetSampicExternalThreshold
+    void setTOTRange();               // SAMPIC256CH_SetSampicTOTRange
+    void setPostTrigger();            // SAMPIC256CH_SetSampicPostTrigParams
+
+    void setCentralTriggerMode();     // SAMPIC256CH_SetSampicCentralTriggerMode
+    void setCentralTriggerEffect();   // SAMPIC256CH_SetSampicCentralTriggerEffect
+    void setCentralTriggerPrimitives(); // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
+
+    void setTriggerOption();          // SAMPIC256CH_SetSampicTriggerOption
+    void setTOTFilterParams();        // SAMPIC256CH_SetSampicTOTFilterParams
+
+    void applyChannels();
+
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+    int indexFromKey(const std::string& key);
+
+private:
+    int boardIdx_;
+    int chipIdx_;
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    SampicChipConfig& config_;
+};
+
+#endif
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_collector_config.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_collector_config.h
+Size: 757 bytes
+-----
+#ifndef SAMPIC_COLLECTOR_CONFIG_H
+#define SAMPIC_COLLECTOR_CONFIG_H
+
+#include <cstddef>
+#include <string>
+
+/// Modes for the collector loop
+enum class SampicCollectorModeType {
+    DEFAULT,
+    EXAMPLE
+};
+
+/// Configuration for SampicCollector
+struct SampicCollectorConfig {
+    SampicCollectorModeType mode = SampicCollectorModeType::EXAMPLE;
+
+    // Buffering
+    size_t buffer_size = 1024;      // number of events the buffer can hold
+
+    // Timing
+    int sleep_time_us = 1000;       // microseconds to sleep between polls
+
+    // Acquisition loop
+    int soft_trigger_prepare_interval = 100;    // how often to re-call PrepareEvent
+    int soft_trigger_max_loops        = 10000;  // max loops before timing out
+};
+
+#endif // SAMPIC_COLLECTOR_CONFIG_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_controller_config.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_controller_config.h
+Size: 502 bytes
+-----
+#ifndef SAMPIC_CONTROLLER_CONFIG_H
+#define SAMPIC_CONTROLLER_CONFIG_H
+
+#include <cstddef>
+
+enum class SampicInitSettingsModeType {
+    DEFAULT,
+    EXAMPLE
+};
+
+enum class SampicApplySettingsModeType {
+    DEFAULT,
+    EXAMPLE
+};
+
+struct SampicControllerConfig {
+    // Independent mode switches
+    SampicInitSettingsModeType  init_mode  = SampicInitSettingsModeType::EXAMPLE;
+    SampicApplySettingsModeType apply_mode = SampicApplySettingsModeType::EXAMPLE;
+
+};
+
+#endif // SAMPIC_CONTROLLER_CONFIG_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_crate_config.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_crate_config.h
+Size: 7350 bytes
+-----
+#ifndef SAMPIC_CONFIG_H
+#define SAMPIC_CONFIG_H
+
+#include <string>
+#include <cstdint>
+#include <map>
+
+extern "C" {
+#include <SAMPIC_256Ch_Type.h>
+}
+
+// ==============================
+// Channel (lowest level)
+// ==============================
+struct SampicChannelConfig {
+  bool                         enabled  = true;                          // SAMPIC256CH_SetChannelMode
+  SAMPIC_ChannelTriggerMode_t  trigger_mode = SAMPIC_CHANNEL_EXT_TRIGGER_MODE; // SAMPIC256CH_SetSampicChannelTriggerMode
+  float                        internal_threshold = 0.0;                 // SAMPIC256CH_SetSampicChannelInternalThreshold
+  EdgeType_t                   trigger_edge = RISING_EDGE;               // SAMPIC256CH_SetChannelSelflTriggerEdge
+  bool                         external_threshold_mode = false;          // SAMPIC256CH_SetSampicExternalThresholdMode
+  bool                         enable_for_central_trigger = true;        // SAMPIC256CH_SetSampicChannelSourceForCT
+  bool                         pulse_mode = false;                       // SAMPIC256CH_SetSampicChannelPulseMode
+};
+
+using SampicChannelSettings = std::map<std::string, SampicChannelConfig>;
+
+// ==============================
+// Chip (contains channels)
+// ==============================
+struct SampicChipConfig {
+  float                         baseline_reference = DEFAULT_SAMPIC_BASELINE; // SAMPIC256CH_SetBaselineReference
+  float                         external_threshold = 0.5;                    // SAMPIC256CH_SetSampicExternalThreshold
+
+  SAMPIC_TOTRange_t             tot_range = SAMPIC_TOT_RANGE_MAX_25_NS;       // SAMPIC256CH_SetSampicTOTRange
+  bool                          enable_post_trigger = true;                  // SAMPIC256CH_SetSampicPostTrigParams
+  int                           post_trigger_value = 7;                       // SAMPIC256CH_SetSampicPostTrigParams
+
+  SampicCentralTriggerMode_t    central_trigger_mode   = CENTRAL_OR;          // SAMPIC256CH_SetSampicCentralTriggerMode
+  SampicCentralTriggerEffect_t  central_trigger_effect = TRIG_CHANNEL_ONLY_IF_PARTICIPATING_TO_CT; // SAMPIC256CH_SetSampicCentralTriggerEffect
+  SAMPIC_CT_PrimitivesMode_t    primitives_mode        = RAW_PRIMITIVES_FOR_CT; // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
+  int                           primitives_gate_length = DEFAULT_PRIMITIVES_GATE_LENGTH; // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
+
+  bool   tot_filter_enable = false;   // SAMPIC256CH_SetSampicTOTFilterParams
+  bool   tot_wide_cap      = false;   // SAMPIC256CH_SetSampicTOTFilterParams
+  float  tot_min_width_ns  = 0.0;     // SAMPIC256CH_SetSampicTOTFilterParams
+
+  SampicChannelSettings channels {
+    {"channel0", {}}, {"channel1", {}}, {"channel2", {}}, {"channel3", {}},
+    {"channel4", {}}, {"channel5", {}}, {"channel6", {}}, {"channel7", {}},
+    {"channel8", {}}, {"channel9", {}}, {"channel10", {}}, {"channel11", {}},
+    {"channel12", {}}, {"channel13", {}}, {"channel14", {}}, {"channel15", {}}
+  };
+};
+
+using SampicChipSettings = std::map<std::string, SampicChipConfig>;
+
+// ==============================
+// Board (contains chips)
+// ==============================
+struct SampicFrontEndConfig {
+  FebGlobalTrigger_t global_trigger_option = FEB_GLOBAL_TRIGGER_IS_L2;       // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
+
+  unsigned char     level2_ext_trig_gate  = DEFAULT_EXT_TRIG_GATE;           // SAMPIC256CH_SetLevel2ExtTrigGate
+  bool              level2_coincidence_ext_gate = false;                     // SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate
+
+  SampicChipSettings sampics {
+    {"sampic0", {}}, {"sampic1", {}}, {"sampic2", {}}, {"sampic3", {}}
+  };
+};
+
+using SampicFrontEndSettings = std::map<std::string, SampicFrontEndConfig>;
+
+// ==============================
+// Crate (top-level system)
+// ==============================
+struct SampicSystemSettings {
+  std::string    ip_address     = DEFAULT_CTRL_IP_ADDRESS; // Default: "192.168.0.0" (SAMPIC_256Ch_Type.h)
+  int            port           = DEFAULT_UDP_CTRL_PORT;   // UDP control port
+  ConnectionType_t connection_type = UDP_CONNECTION;       // SAMPIC256CH_OpenCrateConnection
+  ControlType_t    control_type    = CTRL_AND_DAQ;         // SAMPIC256CH_OpenCrateConnection
+
+  // Acquisition
+  int  sampling_frequency_mhz = DEFAULT_FREQ_ECH;   // SAMPIC256CH_SetSamplingFrequency
+  bool use_external_clock     = false;
+  int  frames_per_block       = MAX_NB_OF_FRAMES_PER_BLOCK;  // SAMPIC256CH_SetNbOfFramesPerBlock
+  bool enable_tot             = false;              // SAMPIC256CH_SetTOTMeasurementMode
+  int  adc_bits               = DEFAULT_ADC_NB_OF_BITS; // Set_SystemADCNbOfBits
+  bool smart_read_mode        = false;              // SAMPIC256CH_SetSmartReadMode
+  int  read_offset            = 0;
+  int  samples_to_read        = MAX_NB_OF_SAMPLES;
+
+  // Trigger
+  ExternalTriggerType_t external_trigger_type = SOFTWARE;      // SAMPIC256CH_SetExternalTriggerType
+  SignalLevel_t         signal_level          = TTL_SIG;       // SAMPIC256CH_SetExternalTriggerSigLevel
+  EdgeType_t            trigger_edge          = RISING_EDGE;   // SAMPIC256CH_SetExternalTriggerEdge
+  std::uint8_t          triggers_per_event    = DEFAULT_NB_OF_TRIGGERS_PER_TRIGGER_EVENT; // SAMPIC256CH_SetMinNbOfTriggersPerEvent
+  bool                  level2_trigger_build  = false;         // SAMPIC256CH_SetLevel2TriggerBuildOption
+  bool                  level3_trigger_build  = false;         // SAMPIC256CH_SetLevel3TriggerLogic
+  SampicTriggerOption_t trigger_option        = SAMPIC_TRIGGER_IS_L1; // SAMPIC256CH_SetSampicTriggerOption
+  unsigned char         level3_ext_trig_gate  = DEFAULT_EXT_TRIG_GATE; // SAMPIC256CH_SetLevel3ExtTrigGate
+  bool                  level3_coincidence_ext_gate = false;   // SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate
+  unsigned char         primitives_gate_length = DEFAULT_PRIMITIVES_GATE_LENGTH; // SAMPIC256CH_SetPrimitivesGateLength
+  unsigned char         latency_gate_length    = DEFAULT_LEVEL_2_LATENCY_GATE;   // SAMPIC256CH_SetLevel2LatencyGateLength
+
+  // Pulser
+  bool               pulser_enable      = false;           // SAMPIC256CH_SetPulserMode
+  PulserSourceType_t pulser_source      = PULSER_SRC_IS_SOFT_CMD;
+  bool               pulser_synchronous = true;
+  int                pulser_period      = DEFAULT_AUTO_PULSE_PERIOD;   // SAMPIC256CH_SetAutoPulserPeriod
+  unsigned char      pulser_width       = DEFAULT_PULSER_WIDTH;        // SAMPIC256CH_SetSampicPulserWidth
+
+  // Sync + corrections
+  bool        sync_mode        = false;           // SAMPIC256CH_SetCrateSycnhronisationMode
+  bool        master_mode      = false;
+  bool        coincidence_mode = false;
+  EdgeType_t  sync_edge        = RISING_EDGE;     // SAMPIC256CH_SetExternalSyncEdge
+  SignalLevel_t sync_level     = TTL_SIG;         // SAMPIC256CH_SetExternalSyncSigLevel
+
+  bool        adc_linearity_correction   = false; // SAMPIC256CH_SetCrateCorrectionLevels
+  bool        time_inl_correction        = false;
+  bool        residual_pedestal_correction = false;
+  std::string calibration_directory      = ".";   // SAMPIC256CH_LoadAllCalibValuesFromFiles
+
+  SampicFrontEndSettings    front_end_boards {
+    {"feb0", {}}, {"feb1", {}}, {"feb2", {}}, {"feb3", {}}
+  };
+
+  bool verbose = false; // for logging verbosity
+};
+
+#endif // SAMPIC_CONFIG_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/config/sampic_crate_configurator.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_crate_configurator.h
+Size: 2413 bytes
+-----
+#ifndef SAMPIC_CRATE_CONFIGURATOR_H
+#define SAMPIC_CRATE_CONFIGURATOR_H
+
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_board_configurator.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+class SampicCrateConfigurator {
+public:
+    SampicCrateConfigurator(CrateInfoStruct& info,
+                            CrateParamStruct& params,
+                            SampicSystemSettings& settings);
+
+    void apply();
+
+    // Acquisition
+    void setSamplingFrequency();     // SAMPIC256CH_SetSamplingFrequency
+    void setFramesPerBlock();        // SAMPIC256CH_SetNbOfFramesPerBlock
+    void setTOTMode();               // SAMPIC256CH_SetTOTMeasurementMode
+    void setADCBits();               // Set_SystemADCNbOfBits
+    void setSmartReadMode();         // SAMPIC256CH_SetSmartReadMode
+
+    // External triggers
+    void setExternalTriggerType();   // SAMPIC256CH_SetExternalTriggerType
+    void setExternalTriggerLevel();  // SAMPIC256CH_SetExternalTriggerSigLevel
+    void setExternalTriggerEdge();   // SAMPIC256CH_SetExternalTriggerEdge
+    void setMinTriggersPerEvent();   // SAMPIC256CH_SetMinNbOfTriggersPerEvent
+    void setLevel2TriggerBuild();    // SAMPIC256CH_SetLevel2TriggerBuildOption
+    void setLevel3TriggerBuild();    // SAMPIC256CH_SetLevel3TriggerLogic
+
+    // Gates
+    void setPrimitivesGateLength();          // SAMPIC256CH_SetPrimitivesGateLength
+    void setLevel2LatencyGateLength();       // SAMPIC256CH_SetLevel2LatencyGateLength
+    void setLevel3ExtTrigGate();             // SAMPIC256CH_SetLevel3ExtTrigGate
+    void setLevel3CoincidenceWithExtGate();  // SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate
+
+    // Pulser
+    void setPulser();                // Pulser settings
+
+    // Sync + corrections
+    void setSyncMode();              // SAMPIC256CH_SetCrateSycnhronisationMode
+    void setSyncEdge();              // SAMPIC256CH_SetExternalSyncEdge
+    void setSyncLevel();             // SAMPIC256CH_SetExternalSyncSigLevel
+    void setCorrectionLevels();      // SAMPIC256CH_SetCrateCorrectionLevels
+
+    // Boards
+    void applyBoards();
+
+    //Helpers
+    void check(SAMPIC256CH_ErrCode code, const std::string& what);
+    int indexFromKey(const std::string& key);
+
+private:
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    SampicSystemSettings& settings_;
+};
+
+#endif
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h
+Size: 1306 bytes
+-----
+#ifndef SAMPIC_APPLY_SETTINGS_MODE_H
+#define SAMPIC_APPLY_SETTINGS_MODE_H
+
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_crate_configurator.h"
+#include "integration/sampic/config/sampic_board_configurator.h"
+#include "integration/sampic/config/sampic_chip_configurator.h"
+#include "integration/sampic/config/sampic_channel_configurator.h"
+#include "integration/sampic/config/sampic_controller_config.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+/// Abstract base for all "apply settings" modes
+class SampicApplySettingsMode {
+public:
+    SampicApplySettingsMode(CrateInfoStruct& info,
+                            CrateParamStruct& params,
+                            SampicSystemSettings& settings,
+                            const SampicControllerConfig& controllerCfg)
+        : info_(info),
+          params_(params),
+          settings_(settings),
+          controllerCfg_(controllerCfg) {}
+
+    virtual ~SampicApplySettingsMode() = default;
+
+    /// Apply settings to hardware
+    virtual void apply() = 0;
+
+protected:
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    SampicSystemSettings& settings_;
+    const SampicControllerConfig& controllerCfg_;
+};
+
+#endif // SAMPIC_APPLY_SETTINGS_MODE_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.h
+Size: 461 bytes
+-----
+#ifndef SAMPIC_APPLY_SETTINGS_MODE_DEFAULT_H
+#define SAMPIC_APPLY_SETTINGS_MODE_DEFAULT_H
+
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h"
+
+/// Default mode: applies ALL settings using configurators
+class SampicApplySettingsModeDefault : public SampicApplySettingsMode {
+public:
+    using SampicApplySettingsMode::SampicApplySettingsMode;
+
+    void apply() override;
+};
+
+#endif // SAMPIC_APPLY_SETTINGS_MODE_DEFAULT_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h
+Size: 524 bytes
+-----
+#ifndef SAMPIC_APPLY_SETTINGS_MODE_EXAMPLE_H
+#define SAMPIC_APPLY_SETTINGS_MODE_EXAMPLE_H
+
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h"
+
+/// Example mode: simplified trigger-only application,
+/// but still through configurators so we can modify channels etc.
+class SampicApplySettingsModeExample : public SampicApplySettingsMode {
+public:
+    using SampicApplySettingsMode::SampicApplySettingsMode;
+
+    void apply() override;
+};
+
+#endif // SAMPIC_APPLY_SETTINGS_MODE_EXAMPLE_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h
+Size: 1182 bytes
+-----
+#ifndef SAMPIC_INIT_SETTINGS_MODE_H
+#define SAMPIC_INIT_SETTINGS_MODE_H
+
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_controller_config.h"
+
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+class SampicInitSettingsMode {
+public:
+    SampicInitSettingsMode(CrateInfoStruct& info,
+                           CrateParamStruct& params,
+                           void*& eventBuffer,
+                           ML_Frame*& mlFrames,
+                           const SampicSystemSettings& settings,
+                           const SampicControllerConfig& controllerCfg)
+        : info_(info),
+          params_(params),
+          eventBuffer_(eventBuffer),
+          mlFrames_(mlFrames),
+          settings_(settings),
+          controllerCfg_(controllerCfg) {}
+
+    virtual ~SampicInitSettingsMode() = default;
+
+    virtual int initialize() = 0;
+
+protected:
+    CrateInfoStruct& info_;
+    CrateParamStruct& params_;
+    void*& eventBuffer_;
+    ML_Frame*& mlFrames_;
+    const SampicSystemSettings& settings_;
+    const SampicControllerConfig& controllerCfg_;
+};
+
+#endif // SAMPIC_INIT_SETTINGS_MODE_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h
+Size: 396 bytes
+-----
+#ifndef SAMPIC_INIT_SETTINGS_MODE_DEFAULT_H
+#define SAMPIC_INIT_SETTINGS_MODE_DEFAULT_H
+
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h"
+
+class SampicInitSettingsModeDefault : public SampicInitSettingsMode {
+public:
+    using SampicInitSettingsMode::SampicInitSettingsMode;
+    int initialize() override;
+};
+
+#endif // SAMPIC_INIT_SETTINGS_MODE_DEFAULT_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.h
+Size: 396 bytes
+-----
+#ifndef SAMPIC_INIT_SETTINGS_MODE_EXAMPLE_H
+#define SAMPIC_INIT_SETTINGS_MODE_EXAMPLE_H
+
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h"
+
+class SampicInitSettingsModeExample : public SampicInitSettingsMode {
+public:
+    using SampicInitSettingsMode::SampicInitSettingsMode;
+    int initialize() override;
+};
+
+#endif // SAMPIC_INIT_SETTINGS_MODE_EXAMPLE_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/sampic/controller/sampic_controller.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/sampic_controller.h
+Size: 3070 bytes
+-----
+#ifndef SAMPIC_CONTROLLER_H
+#define SAMPIC_CONTROLLER_H
+
+#include <memory>
+#include <optional>
+#include <vector>
+#include <chrono>
+#include <spdlog/spdlog.h>
+
+// External SAMPIC lib
+extern "C" {
+#include <SAMPIC_256Ch_lib.h>
+#include <SAMPIC_256Ch_Type.h>
+}
+
+// Project configs + components
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_controller_config.h"
+#include "integration/sampic/config/sampic_collector_config.h"
+#include "integration/sampic/collector/sampic_event_buffer.h"
+#include "integration/sampic/collector/sampic_collector.h"
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h"
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h"
+
+/// High-level orchestrator for SAMPIC system
+class SampicController {
+public:
+    SampicController(const SampicSystemSettings& sys_cfg,
+                     const SampicControllerConfig& ctrl_cfg,
+                     const SampicCollectorConfig& coll_cfg);
+
+    ~SampicController();
+
+    // ---------------- Config management ----------------
+    void setSystemSettings(const SampicSystemSettings& s);
+    SampicSystemSettings& systemSettings();
+    const SampicSystemSettings& systemSettings() const;
+
+    void setControllerConfig(const SampicControllerConfig& c);
+    SampicControllerConfig& controllerConfig();
+    const SampicControllerConfig& controllerConfig() const;
+
+    void setCollectorConfig(const SampicCollectorConfig& c);
+    SampicCollectorConfig& collectorConfig();
+    const SampicCollectorConfig& collectorConfig() const;
+
+    // ---------------- Lifecycle ----------------
+    int initialize();       ///< Initialize hardware (crate connection, params, calib, memory)
+    int applySettings();    ///< Apply settings (trigger options etc.)
+    int startRun();         ///< Start acquisition
+    int stopRun();          ///< Stop acquisition
+    void cleanup();         ///< Free resources, close connection
+
+    // ---------------- Collector ----------------
+    void startCollector();
+    void stopCollector();
+
+    // ---------------- Buffer access ----------------
+    std::optional<TimestampedSampicEvent> latestEvent();
+    std::optional<TimestampedSampicEvent> popEvent();
+    std::vector<TimestampedSampicEvent> getEventsSince(std::chrono::steady_clock::time_point t);
+    size_t bufferSize() const;
+    bool bufferEmpty() const;
+
+private:
+    // Configs
+    SampicSystemSettings   settings_;
+    SampicControllerConfig ctrl_cfg_;
+    SampicCollectorConfig  coll_cfg_;
+
+    // Hardware handles
+    CrateInfoStruct info_{};
+    CrateParamStruct params_{};
+    void* eventBuffer_{nullptr};
+    ML_Frame* mlFrames_{nullptr};
+    EventStruct event_{};
+
+    // Buffer + collector
+    SampicEventBuffer buffer_;
+    std::unique_ptr<SampicCollector> collector_;
+
+    // Init/apply strategies
+    std::unique_ptr<SampicInitSettingsMode> init_mode_;
+    std::unique_ptr<SampicApplySettingsMode> apply_mode_;
+
+    bool initialized_{false};
+};
+
+#endif // SAMPIC_CONTROLLER_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/spdlog/logger_config.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/spdlog/logger_config.h
+Size: 939 bytes
+-----
+#ifndef SAMPIC_DAQ_INTEGRATION_SPDLOG_LOGGER_CONFIG_H
+#define SAMPIC_DAQ_INTEGRATION_SPDLOG_LOGGER_CONFIG_H
+
+#include <string>
+
+// Configuration for spdlog logger setup.
+// Define parameters to be read from ODB or config files.
+struct LoggerConfig {
+    std::string name = "SAMPIC_DAQ";         // logger name (shows up in [%n])
+    std::string log_level = "info";         // e.g., "trace", "debug", "info", "warn", "error"
+    std::string log_pattern = "[%T] [%^%l%$] [%n] %v"; // include [%n] for logger name
+    std::string log_file = "frontend.log";  // optional log file path
+    bool to_console = true;                 // enable logging to console
+    bool to_file = false;                   // enable logging to file
+    size_t max_file_size = 5 * 1024 * 1024; // 5 MB for rotating file sink
+    size_t max_files = 3;                   // number of rotated files to keep
+};
+
+
+#endif // SAMPIC_DAQ_INTEGRATION_SPDLOG_LOGGER_CONFIG_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/integration/spdlog/logger_configurator.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/spdlog/logger_configurator.h
+Size: 454 bytes
+-----
+#ifndef SAMPIC_DAQ_INTEGRATION_SPDLOG_LOGGER_CONFIGURATOR_H
+#define SAMPIC_DAQ_INTEGRATION_SPDLOG_LOGGER_CONFIGURATOR_H
+
+#include "integration/spdlog/logger_config.h"
+
+class LoggerConfigurator {
+public:
+    // Configure global spdlog default logger from ODB/struct settings
+    static void configure(const LoggerConfig& cfg);
+
+private:
+    LoggerConfigurator() = default; // no instances
+};
+
+#endif // SAMPIC_DAQ_INTEGRATION_SPDLOG_LOGGER_CONFIGURATOR_H
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/processing/sampic_processing/collector/frontend_event_buffer.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/processing/sampic_processing/collector/frontend_event_buffer.h
+Size: 0 bytes
+-----
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/processing/sampic_processing/collector/frontend_event_collector.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/processing/sampic_processing/collector/frontend_event_collector.h
+Size: 0 bytes
+-----
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: include/processing/sampic_processing/config/frontend_event_collector_config.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/processing/sampic_processing/config/frontend_event_collector_config.h
+Size: 0 bytes
+-----
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/midas/odb/odb_manager.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/midas/odb/odb_manager.cpp
+Size: 8236 bytes
+-----
+#include "integration/midas/odb/odb_manager.h"
+#include <cstring>
+
+// --- JSON/String API ---
+std::string OdbManager::read(const std::string& path) {
+    json j = read(path, false);
+    return j.dump();
+}
+
+json OdbManager::read(const std::string& path, bool /*unused*/) {
+    HNDLE key;
+    if (db_find_key(hDB_handle, 0, path.c_str(), &key) != DB_SUCCESS) {
+        // Commented out because this is sometimes expected behavior
+        // spdlog::warn("ODB key '{}' not found", path);
+        return nullptr;
+    }
+    return readRecursive(key, path);
+}
+
+// --- Recursive reader with full path ---
+json OdbManager::readRecursive(HNDLE key, const std::string& fullPath) {
+    json result;
+
+    INT type = 0, num_values = 0, item_size = 0;
+    char name[128] = {0};
+
+    INT ret = db_get_key_info(hDB_handle, key, name, sizeof(name), &type, &num_values, &item_size);
+    if (ret != DB_SUCCESS) {
+        spdlog::error("db_get_key_info failed for path '{}'", fullPath);
+        return result;
+    }
+
+    // Container keys (struct/array) or any node with subkeys
+    HNDLE subkey;
+    INT idx = 0;
+    bool hasSubkeys = false;
+    while (db_enum_key(hDB_handle, key, idx, &subkey) == DB_SUCCESS) {
+        hasSubkeys = true;
+        char subname[128] = {0};
+        INT sub_type = 0, sub_num_values = 0, sub_item_size = 0;
+        if (db_get_key_info(hDB_handle, subkey, subname, sizeof(subname),
+                            &sub_type, &sub_num_values, &sub_item_size) == DB_SUCCESS) {
+            std::string subPath = fullPath + "/" + subname;
+            result[subname] = readRecursive(subkey, subPath);
+        }
+        ++idx;
+    }
+
+    if (hasSubkeys)
+        return result;
+
+    // Scalar leaf keys
+    switch (type) {
+        case TID_UINT8: case TID_INT8: case TID_UINT16: case TID_INT16:
+        case TID_UINT32: case TID_INT32: case TID_INT64: case TID_UINT64: {
+            int64_t val = 0;
+            int read_size = item_size;
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &val, &read_size, type, FALSE);
+            if (ret == DB_SUCCESS) result = val;
+            else spdlog::error("db_get_value failed for path '{}' (int)", fullPath);
+            break;
+        }
+        case TID_FLOAT32: case TID_FLOAT64: {
+            double val = 0;
+            int read_size = item_size;
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &val, &read_size, type, FALSE);
+            if (ret == DB_SUCCESS) result = val;
+            else spdlog::error("db_get_value failed for path '{}' (float)", fullPath);
+            break;
+        }
+        case TID_BOOL: {
+            int val = 0;
+            int read_size = item_size;
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &val, &read_size, type, FALSE);
+            if (ret == DB_SUCCESS) result = (val != 0);
+            else spdlog::error("db_get_value failed for path '{}' (bool)", fullPath);
+            break;
+        }
+        case TID_STRING: {
+            int buf_size = std::max(item_size, 1);
+            std::vector<char> buf(buf_size, 0);
+            int read_size = buf_size;
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), buf.data(), &read_size, type, FALSE);
+            if (ret == DB_SUCCESS) result = std::string(buf.data(), read_size);
+            else spdlog::error("db_get_value failed for path '{}' (string)", fullPath);
+            break;
+        }
+        default:
+            spdlog::warn("Unsupported ODB type {} at path '{}'", type, fullPath);
+            break;
+    }
+
+    return result;
+}
+
+// --- Write / Initialize API ---
+void OdbManager::write(const std::string& path, const std::string& jsonStr) {
+    write(path, json::parse(jsonStr));
+}
+
+void OdbManager::write(const std::string& path, const json& j) {
+    spdlog::info("Writing to ODB at '{}'", path);
+    populateOdbHelper(path, j, OdbMode::WRITE);
+}
+
+void OdbManager::initialize(const std::string& path, const std::string& jsonStr) {
+    initialize(path, json::parse(jsonStr));
+}
+
+void OdbManager::initialize(const std::string& path, const json& j) {
+    // Don't need this info, plus we need to call this before logger is initialized
+    // spdlog::info("Initializing ODB at '{}'", path); 
+    populateOdbHelper(path, j, OdbMode::INITIALIZE);
+}
+
+// --- Populate ODB recursively ---
+void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, OdbMode mode) {
+    if (j.is_object()) {
+        // Recurse on object fields
+        for (auto& [key, value] : j.items()) {
+            std::string fullPath = basePath + "/" + key;
+            if (mode == OdbMode::INITIALIZE) {
+                HNDLE subkey;
+                if (db_find_key(hDB_handle, 0, fullPath.c_str(), &subkey) == DB_SUCCESS)
+                    continue; // already exists
+            }
+            populateOdbHelper(fullPath, value, mode);
+        }
+    }
+    else if (j.is_array()) {
+        if (j.empty()) return;
+
+        // Detect type of first element
+        if (j.front().is_primitive()) {
+            // Treat as real ODB array of primitives
+            if (j.front().is_string()) {
+                std::vector<std::string> vals;
+                for (auto& v : j) vals.push_back(v.get<std::string>());
+                for (size_t i = 0; i < vals.size(); i++) {
+                    std::string itemPath = basePath + "/" + std::to_string(i);
+                    db_set_value(hDB_handle, 0, itemPath.c_str(),
+                                 vals[i].c_str(), vals[i].size()+1, 1, TID_STRING);
+                }
+            }
+            else if (j.front().is_boolean()) {
+                std::vector<int> vals;
+                for (auto& v : j) vals.push_back(v.get<bool>() ? 1 : 0);
+                db_set_value(hDB_handle, 0, basePath.c_str(),
+                             vals.data(), sizeof(int)*vals.size(), vals.size(), TID_BOOL);
+            }
+            else if (j.front().is_number_float()) {
+                std::vector<double> vals;
+                for (auto& v : j) vals.push_back(v.get<double>());
+                db_set_value(hDB_handle, 0, basePath.c_str(),
+                             vals.data(), sizeof(double)*vals.size(), vals.size(), TID_FLOAT64);
+            }
+            else if (j.front().is_number_integer()) {
+                std::vector<int64_t> vals;
+                for (auto& v : j) vals.push_back(v.get<int64_t>());
+                db_set_value(hDB_handle, 0, basePath.c_str(),
+                             vals.data(), sizeof(int64_t)*vals.size(), vals.size(), TID_INT64);
+            }
+        } else {
+            // Array of objects or nested arrays → recurse with indices
+            for (size_t i = 0; i < j.size(); ++i) {
+                std::string itemPath = basePath + "/" + std::to_string(i);
+                populateOdbHelper(itemPath, j[i], mode);
+            }
+        }
+    }
+    else if (j.is_primitive()) {
+        // Scalars
+        if (j.is_string()) {
+            std::string s = j;
+            db_set_value(hDB_handle, 0, basePath.c_str(),
+                         s.c_str(), s.size()+1, 1, TID_STRING);
+        }
+        else if (j.is_boolean()) {
+            int b = j.get<bool>() ? 1 : 0;
+            db_set_value(hDB_handle, 0, basePath.c_str(),
+                         &b, sizeof(int), 1, TID_BOOL);
+        }
+        else if (j.is_number_float()) {
+            double d = j.get<double>();
+            db_set_value(hDB_handle, 0, basePath.c_str(),
+                         &d, sizeof(double), 1, TID_FLOAT64);
+        }
+        else if (j.is_number_integer()) {
+            int64_t v = j.get<int64_t>();
+            db_set_value(hDB_handle, 0, basePath.c_str(),
+                         &v, sizeof(int64_t), 1, TID_INT64);
+        }
+    }
+}
+
+
+// --- Utility ---
+json OdbManager::removeKeysContainingKey(const json& j) {
+    json result = j;
+    for (auto it = result.begin(); it != result.end(); ) {
+        if (it.key().find("/key") != std::string::npos) {
+            spdlog::debug("Removing JSON key '{}'", it.key());
+            it = result.erase(it);
+        } else {
+            if (it.value().is_object() || it.value().is_array()) {
+                it.value() = removeKeysContainingKey(it.value());
+            }
+            ++it;
+        }
+    }
+    return result;
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/collector/modes/sampic_collector_mode_default.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/modes/sampic_collector_mode_default.cpp
+Size: 2508 bytes
+-----
+#include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
+#include <spdlog/spdlog.h>
+
+int SampicCollectorModeDefault::readEvent(EventStruct& event,
+                                          SampicEventTiming& timing) {
+    auto t_start = std::chrono::steady_clock::now();
+    SAMPIC256CH_PrepareEvent(&info_, &params_);
+    auto t_after_prepare = std::chrono::steady_clock::now();
+
+    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_NoFrameRead;
+    int numberOfHits = 0;
+    int nframes = 0;
+    int dummy = 0;
+    int nloop_for_soft_trig = 0;
+
+    while (errCode != SAMPIC256CH_Success) {
+        auto t_read_start = std::chrono::steady_clock::now();
+        errCode = SAMPIC256CH_ReadEventBuffer(&info_, dummy, eventBuffer_, mlFrames_, &nframes);
+        auto t_read_end = std::chrono::steady_clock::now();
+
+        if (errCode == SAMPIC256CH_Success) {
+            auto t_decode_start = std::chrono::steady_clock::now();
+            errCode = SAMPIC256CH_DecodeEvent(&info_, &params_, mlFrames_, &event, nframes, &numberOfHits);
+            auto t_decode_end = std::chrono::steady_clock::now();
+
+            timing.decode_duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(t_decode_end - t_decode_start);
+        }
+
+        timing.read_duration +=
+            std::chrono::duration_cast<std::chrono::microseconds>(t_read_end - t_read_start);
+
+        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent) {
+            spdlog::error("Default mode: Acquisition error (err={})", static_cast<int>(errCode));
+            return -1;
+        }
+
+        if ((nloop_for_soft_trig % cfg_.soft_trigger_prepare_interval) == 0) {
+            SAMPIC256CH_PrepareEvent(&info_, &params_);
+        }
+        nloop_for_soft_trig++;
+
+        if (nloop_for_soft_trig > cfg_.soft_trigger_max_loops) {
+            spdlog::warn("Default mode: Timeout after {} loops", cfg_.soft_trigger_max_loops);
+            return 0;
+        }
+    }
+
+    timing.prepare_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_after_prepare - t_start);
+
+    if (errCode == SAMPIC256CH_Success && numberOfHits > 0) {
+        spdlog::debug("Default mode: Collected {} hits (prepare={}us, read={}us, decode={}us)",
+                      numberOfHits,
+                      timing.prepare_duration.count(),
+                      timing.read_duration.count(),
+                      timing.decode_duration.count());
+    }
+
+    return numberOfHits;
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/collector/modes/sampic_collector_mode_example.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/modes/sampic_collector_mode_example.cpp
+Size: 2508 bytes
+-----
+#include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
+#include <spdlog/spdlog.h>
+
+int SampicCollectorModeExample::readEvent(EventStruct& event,
+                                          SampicEventTiming& timing) {
+    auto t_start = std::chrono::steady_clock::now();
+    SAMPIC256CH_PrepareEvent(&info_, &params_);
+    auto t_after_prepare = std::chrono::steady_clock::now();
+
+    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_NoFrameRead;
+    int numberOfHits = 0;
+    int nframes = 0;
+    int dummy = 0;
+    int nloop_for_soft_trig = 0;
+
+    while (errCode != SAMPIC256CH_Success) {
+        auto t_read_start = std::chrono::steady_clock::now();
+        errCode = SAMPIC256CH_ReadEventBuffer(&info_, dummy, eventBuffer_, mlFrames_, &nframes);
+        auto t_read_end = std::chrono::steady_clock::now();
+
+        if (errCode == SAMPIC256CH_Success) {
+            auto t_decode_start = std::chrono::steady_clock::now();
+            errCode = SAMPIC256CH_DecodeEvent(&info_, &params_, mlFrames_, &event, nframes, &numberOfHits);
+            auto t_decode_end = std::chrono::steady_clock::now();
+
+            timing.decode_duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(t_decode_end - t_decode_start);
+        }
+
+        timing.read_duration +=
+            std::chrono::duration_cast<std::chrono::microseconds>(t_read_end - t_read_start);
+
+        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent) {
+            spdlog::error("Example mode: Acquisition error (err={})", static_cast<int>(errCode));
+            return -1;
+        }
+
+        if ((nloop_for_soft_trig % cfg_.soft_trigger_prepare_interval) == 0) {
+            SAMPIC256CH_PrepareEvent(&info_, &params_);
+        }
+        nloop_for_soft_trig++;
+
+        if (nloop_for_soft_trig > cfg_.soft_trigger_max_loops) {
+            spdlog::warn("Example mode: Timeout after {} loops", cfg_.soft_trigger_max_loops);
+            return 0;
+        }
+    }
+
+    timing.prepare_duration =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_after_prepare - t_start);
+
+    if (errCode == SAMPIC256CH_Success && numberOfHits > 0) {
+        spdlog::debug("Example mode: Collected {} hits (prepare={}us, read={}us, decode={}us)",
+                      numberOfHits,
+                      timing.prepare_duration.count(),
+                      timing.read_duration.count(),
+                      timing.decode_duration.count());
+    }
+
+    return numberOfHits;
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/collector/sampic_collector.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/sampic_collector.cpp
+Size: 2193 bytes
+-----
+#include "integration/sampic/collector/sampic_collector.h"
+#include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
+#include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
+
+SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
+                                 SampicEventBuffer& buffer,
+                                 CrateInfoStruct& info,
+                                 CrateParamStruct& params,
+                                 void* eventBuffer,
+                                 ML_Frame* mlFrames)
+    : cfg_(cfg), buffer_(buffer)
+{
+    switch (cfg.mode) {
+        case SampicCollectorModeType::DEFAULT:
+            mode_ = std::make_unique<SampicCollectorModeDefault>(info, params, eventBuffer, mlFrames, cfg);
+            break;
+        case SampicCollectorModeType::EXAMPLE:
+            mode_ = std::make_unique<SampicCollectorModeExample>(info, params, eventBuffer, mlFrames, cfg);
+            break;
+        default:
+            throw std::runtime_error("Unsupported SampicCollectorModeType");
+    }
+}
+
+SampicCollector::~SampicCollector() {
+    stop();
+}
+
+void SampicCollector::start() {
+    if (running_) return;
+    running_ = true;
+    worker_ = std::thread(&SampicCollector::run, this);
+}
+
+void SampicCollector::stop() {
+    if (running_) {
+        running_ = false;
+        if (worker_.joinable()) {
+            worker_.join();
+        }
+    }
+}
+
+void SampicCollector::run() {
+    spdlog::info("SAMPIC Collector started in mode {}", static_cast<int>(cfg_.mode));
+
+    while (running_) {
+        auto start_total = std::chrono::steady_clock::now();
+
+        SampicEventTiming timing{};
+        int hits = mode_->readEvent(event_, timing);
+
+        auto end_total = std::chrono::steady_clock::now();
+        timing.total_duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
+
+        if (hits > 0) {
+            TimestampedSampicEvent tse{event_, std::chrono::steady_clock::now(), timing};
+            buffer_.push(tse);
+        }
+
+        std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));
+    }
+
+    spdlog::info("SAMPIC Collector stopped");
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/collector/sampic_event_buffer.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/sampic_event_buffer.cpp
+Size: 1512 bytes
+-----
+#include "integration/sampic/collector/sampic_event_buffer.h"
+
+SampicEventBuffer::SampicEventBuffer(size_t capacity) : capacity_(capacity) {}
+
+void SampicEventBuffer::push(const TimestampedSampicEvent& ev) {
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (buffer_.size() >= capacity_) {
+        spdlog::warn("SampicEventBuffer full ({} events). Dropping oldest event.", capacity_);
+        buffer_.pop_front(); // drop oldest
+    }
+    buffer_.push_back(ev);
+    cv_.notify_one();
+}
+
+std::optional<TimestampedSampicEvent> SampicEventBuffer::pop() {
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (buffer_.empty()) {
+        return std::nullopt;
+    }
+    auto ev = buffer_.front();
+    buffer_.pop_front();
+    return ev;
+}
+
+std::optional<TimestampedSampicEvent> SampicEventBuffer::latest() {
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (buffer_.empty()) {
+        return std::nullopt;
+    }
+    return buffer_.back();
+}
+
+std::vector<TimestampedSampicEvent> SampicEventBuffer::getSince(std::chrono::steady_clock::time_point t) {
+    std::unique_lock<std::mutex> lock(mtx_);
+    std::vector<TimestampedSampicEvent> result;
+    for (const auto& ev : buffer_) {
+        if (ev.timestamp > t) {
+            result.push_back(ev);
+        }
+    }
+    return result;
+}
+
+size_t SampicEventBuffer::size() const {
+    std::unique_lock<std::mutex> lock(mtx_);
+    return buffer_.size();
+}
+
+bool SampicEventBuffer::empty() const {
+    std::unique_lock<std::mutex> lock(mtx_);
+    return buffer_.empty();
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/config/sampic_board_configurator.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_board_configurator.cpp
+Size: 3660 bytes
+-----
+// sampic_board_configurator.cpp
+#include "integration/sampic/config/sampic_board_configurator.h"
+#include "integration/sampic/config/sampic_chip_configurator.h"
+
+#include <spdlog/spdlog.h>
+#include <stdexcept>
+
+// ------------------- Ctor -------------------
+SampicBoardConfigurator::SampicBoardConfigurator(int boardIdx,
+                                                 CrateInfoStruct& info,
+                                                 CrateParamStruct& params,
+                                                 SampicFrontEndConfig& config)
+    : boardIdx_(boardIdx), info_(info), params_(params), config_(config) {}
+
+// ------------------- Apply (board-level) -------------------
+void SampicBoardConfigurator::apply() {
+    spdlog::debug("Applying FEB {} settings...", boardIdx_);
+
+    setGlobalTrigger();
+    setLevel2ExtTrigGate();
+    setLevel2Coincidence();
+
+    applyChips();
+
+    spdlog::debug("Finished applying FEB {}.", boardIdx_);
+}
+
+// ------------------- Settings -------------------
+void SampicBoardConfigurator::setGlobalTrigger() {
+    spdlog::trace("FEB {}: SetFrontEndBoardGlobalTriggerOption={}", 
+                  boardIdx_, (int)config_.global_trigger_option);
+
+    auto rc = SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption(&info_, &params_,
+                                                              boardIdx_,
+                                                              config_.global_trigger_option);
+    check(rc, "SetFrontEndBoardGlobalTriggerOption");
+}
+
+void SampicBoardConfigurator::setLevel2ExtTrigGate() {
+    spdlog::trace("FEB {}: SetLevel2ExtTrigGate={}", 
+                  boardIdx_, (int)config_.level2_ext_trig_gate);
+
+    auto rc = SAMPIC256CH_SetLevel2ExtTrigGate(&info_, &params_,
+                                               boardIdx_,
+                                               config_.level2_ext_trig_gate);
+    check(rc, "SetLevel2ExtTrigGate");
+}
+
+void SampicBoardConfigurator::setLevel2Coincidence() {
+    spdlog::trace("FEB {}: SetLevel2CoincidenceModeWithExtTrigGate={}", 
+                  boardIdx_, config_.level2_coincidence_ext_gate);
+
+    auto rc = SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate(&info_, &params_,
+                                                                  boardIdx_,
+                                                                  config_.level2_coincidence_ext_gate);
+    check(rc, "SetLevel2CoincidenceModeWithExtTrigGate");
+}
+
+// ------------------- Chips descend -------------------
+void SampicBoardConfigurator::applyChips() {
+    spdlog::debug("FEB {}: applying {} chips...", boardIdx_, config_.sampics.size());
+    for (auto& [chipKey, chipCfg] : config_.sampics) {
+        int chipIdx = indexFromKey(chipKey);
+        spdlog::debug("  → Apply chip '{}'(index={})", chipKey, chipIdx);
+        SampicChipConfigurator chip(boardIdx_, chipIdx, info_, params_, chipCfg);
+        chip.apply();
+    }
+}
+
+// ------------------- Utility -------------------
+void SampicBoardConfigurator::check(SAMPIC256CH_ErrCode code, const std::string& what) {
+    if (code != SAMPIC256CH_Success) {
+        spdlog::error("SAMPIC error (FEB {}) in {} (code={})",
+                      boardIdx_, what, static_cast<int>(code));
+        throw std::runtime_error("SAMPIC error in " + what +
+                                 " (code " + std::to_string(code) + ")");
+    }
+}
+
+int SampicBoardConfigurator::indexFromKey(const std::string& key) {
+    size_t pos = key.find_last_not_of("0123456789");
+    if (pos == std::string::npos || pos + 1 >= key.size()) {
+        throw std::runtime_error("Invalid config key: " + key);
+    }
+    return std::stoi(key.substr(pos + 1));
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/config/sampic_channel_configurator.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_channel_configurator.cpp
+Size: 5349 bytes
+-----
+// sampic_channel_configurator.cpp
+#include "integration/sampic/config/sampic_channel_configurator.h"
+
+#include <spdlog/spdlog.h>
+#include <stdexcept>
+
+// ------------------- Ctor -------------------
+SampicChannelConfigurator::SampicChannelConfigurator(int boardIdx,
+                                                     int chipIdx,
+                                                     int channelIdx,
+                                                     CrateInfoStruct& info,
+                                                     CrateParamStruct& params,
+                                                     SampicChannelConfig& config)
+    : boardIdx_(boardIdx), chipIdx_(chipIdx), channelIdx_(channelIdx),
+      info_(info), params_(params), config_(config) {}
+
+// ------------------- Apply (channel-level) -------------------
+void SampicChannelConfigurator::apply() {
+    spdlog::debug("Applying channel (FEB={}, chip={}, ch={}) settings...",
+                  boardIdx_, chipIdx_, channelIdx_);
+
+    setMode();
+    setTriggerMode();
+    setThreshold();
+    setEdge();
+    setExtThreshMode();
+    setSourceForCT();
+    setPulseMode();
+
+    spdlog::debug("Finished applying channel (FEB={}, chip={}, ch={}).",
+                  boardIdx_, chipIdx_, channelIdx_);
+}
+
+// ------------------- Settings -------------------
+void SampicChannelConfigurator::setMode() {
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetChannelMode={}",
+                  boardIdx_, chipIdx_, channelIdx_, config_.enabled);
+
+    auto rc = SAMPIC256CH_SetChannelMode(&info_, &params_,
+                                         boardIdx_,
+                                         (chipIdx_ * 16) + channelIdx_,
+                                         config_.enabled);
+    check(rc, "SetChannelMode");
+}
+
+void SampicChannelConfigurator::setTriggerMode() {
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelTriggerMode={}",
+                  boardIdx_, chipIdx_, channelIdx_, (int)config_.trigger_mode);
+
+    auto rc = SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_,
+                                                      boardIdx_, chipIdx_, channelIdx_,
+                                                      config_.trigger_mode);
+    check(rc, "SetSampicChannelTriggerMode");
+}
+
+void SampicChannelConfigurator::setThreshold() {
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelInternalThreshold={}",
+                  boardIdx_, chipIdx_, channelIdx_, config_.internal_threshold);
+
+    auto rc = SAMPIC256CH_SetSampicChannelInternalThreshold(&info_, &params_,
+                                                            boardIdx_, chipIdx_, channelIdx_,
+                                                            config_.internal_threshold);
+    check(rc, "SetSampicChannelInternalThreshold");
+}
+
+void SampicChannelConfigurator::setEdge() {
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetChannelSelfTriggerEdge={}",
+                  boardIdx_, chipIdx_, channelIdx_, (int)config_.trigger_edge);
+
+    auto rc = SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_,
+                                                     boardIdx_, chipIdx_, channelIdx_,
+                                                     config_.trigger_edge);
+    check(rc, "SetChannelSelflTriggerEdge");
+}
+
+void SampicChannelConfigurator::setExtThreshMode() {
+    spdlog::trace("Channel (FEB={}, chip={}): SetSampicExternalThresholdMode={}",
+                  boardIdx_, chipIdx_, config_.external_threshold_mode);
+
+    auto rc = SAMPIC256CH_SetSampicExternalThresholdMode(&info_, &params_,
+                                                         boardIdx_, chipIdx_,
+                                                         config_.external_threshold_mode);
+    check(rc, "SetSampicExternalThresholdMode");
+}
+
+void SampicChannelConfigurator::setSourceForCT() {
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelSourceForCT={}",
+                  boardIdx_, chipIdx_, channelIdx_, config_.enable_for_central_trigger);
+
+    auto rc = SAMPIC256CH_SetSampicChannelSourceForCT(&info_, &params_,
+                                                      boardIdx_, chipIdx_, channelIdx_,
+                                                      config_.enable_for_central_trigger);
+    check(rc, "SetSampicChannelSourceForCT");
+}
+
+void SampicChannelConfigurator::setPulseMode() {
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelPulseMode={}",
+                  boardIdx_, chipIdx_, channelIdx_, config_.pulse_mode);
+
+    auto rc = SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_,
+                                                    boardIdx_, chipIdx_, channelIdx_,
+                                                    config_.pulse_mode);
+    check(rc, "SetSampicChannelPulseMode");
+}
+
+// ------------------- Utility -------------------
+void SampicChannelConfigurator::check(SAMPIC256CH_ErrCode code, const std::string& what) {
+    if (code != SAMPIC256CH_Success) {
+        spdlog::error("SAMPIC error (FEB={}, chip={}, ch={}) in {} (code={})",
+                      boardIdx_, chipIdx_, channelIdx_,
+                      what, static_cast<int>(code));
+        throw std::runtime_error("SAMPIC error in " + what +
+                                 " (code " + std::to_string(code) + ")");
+    }
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/config/sampic_chip_configurator.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_chip_configurator.cpp
+Size: 7359 bytes
+-----
+// sampic_chip_configurator.cpp
+#include "integration/sampic/config/sampic_chip_configurator.h"
+#include "integration/sampic/config/sampic_channel_configurator.h"
+
+#include <spdlog/spdlog.h>
+#include <stdexcept>
+
+// ------------------- Ctor -------------------
+SampicChipConfigurator::SampicChipConfigurator(int boardIdx,
+                                               int chipIdx,
+                                               CrateInfoStruct& info,
+                                               CrateParamStruct& params,
+                                               SampicChipConfig& config)
+    : boardIdx_(boardIdx), chipIdx_(chipIdx),
+      info_(info), params_(params), config_(config) {}
+
+// ------------------- Apply (chip-level) -------------------
+void SampicChipConfigurator::apply() {
+    spdlog::debug("Applying chip (FEB={}, chip={}) settings...", boardIdx_, chipIdx_);
+
+    setBaseline();
+    setExtThreshold();
+    setTOTRange();
+    setPostTrigger();
+
+    setCentralTriggerMode();
+    setCentralTriggerEffect();
+    setCentralTriggerPrimitives();
+
+    setTriggerOption();
+    setTOTFilterParams();
+
+    applyChannels();
+
+    spdlog::debug("Finished applying chip (FEB={}, chip={}).", boardIdx_, chipIdx_);
+}
+
+// ------------------- Settings -------------------
+void SampicChipConfigurator::setBaseline() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetBaselineReference={}",
+                  boardIdx_, chipIdx_, config_.baseline_reference);
+    auto rc = SAMPIC256CH_SetBaselineReference(&info_, &params_,
+                                               boardIdx_, chipIdx_,
+                                               config_.baseline_reference);
+    check(rc, "SetBaselineReference");
+}
+
+void SampicChipConfigurator::setExtThreshold() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicExternalThreshold={}",
+                  boardIdx_, chipIdx_, config_.external_threshold);
+    auto rc = SAMPIC256CH_SetSampicExternalThreshold(&info_, &params_,
+                                                     boardIdx_, chipIdx_,
+                                                     config_.external_threshold);
+    check(rc, "SetSampicExternalThreshold");
+}
+
+void SampicChipConfigurator::setTOTRange() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicTOTRange={}",
+                  boardIdx_, chipIdx_, (int)config_.tot_range);
+    auto rc = SAMPIC256CH_SetSampicTOTRange(&info_, &params_,
+                                            boardIdx_, chipIdx_,
+                                            config_.tot_range);
+    check(rc, "SetSampicTOTRange");
+}
+
+void SampicChipConfigurator::setPostTrigger() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicPostTrigParams enable={}, value={}",
+                  boardIdx_, chipIdx_, config_.enable_post_trigger, config_.post_trigger_value);
+    auto rc = SAMPIC256CH_SetSampicPostTrigParams(&info_, &params_,
+                                                  boardIdx_, chipIdx_,
+                                                  config_.enable_post_trigger,
+                                                  config_.post_trigger_value);
+    check(rc, "SetSampicPostTrigParams");
+}
+
+void SampicChipConfigurator::setCentralTriggerMode() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicCentralTriggerMode={}",
+                  boardIdx_, chipIdx_, (int)config_.central_trigger_mode);
+    auto rc = SAMPIC256CH_SetSampicCentralTriggerMode(&info_, &params_,
+                                                      boardIdx_, chipIdx_,
+                                                      config_.central_trigger_mode);
+    check(rc, "SetSampicCentralTriggerMode");
+}
+
+void SampicChipConfigurator::setCentralTriggerEffect() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicCentralTriggerEffect={}",
+                  boardIdx_, chipIdx_, (int)config_.central_trigger_effect);
+    auto rc = SAMPIC256CH_SetSampicCentralTriggerEffect(&info_, &params_,
+                                                        boardIdx_, chipIdx_,
+                                                        config_.central_trigger_effect);
+    check(rc, "SetSampicCentralTriggerEffect");
+}
+
+void SampicChipConfigurator::setCentralTriggerPrimitives() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicCentralTriggerPrimitivesOptions mode={}, gate_len={}",
+                  boardIdx_, chipIdx_, (int)config_.primitives_mode, config_.primitives_gate_length);
+    auto rc = SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions(&info_, &params_,
+                                                                   boardIdx_, chipIdx_,
+                                                                   config_.primitives_mode,
+                                                                   config_.primitives_gate_length);
+    check(rc, "SetSampicCentralTriggerPrimitivesOptions");
+}
+
+void SampicChipConfigurator::setTriggerOption() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicTriggerOption={}",
+                  boardIdx_, chipIdx_, (int)config_.central_trigger_mode);
+    auto rc = SAMPIC256CH_SetSampicTriggerOption(&info_, &params_,
+                                                 boardIdx_, chipIdx_,
+                                                 SAMPIC_TRIGGER_IS_L1); // TODO: map properly if needed
+    check(rc, "SetSampicTriggerOption");
+}
+
+void SampicChipConfigurator::setTOTFilterParams() {
+    spdlog::trace("Chip (FEB={}, chip={}): SetSampicTOTFilterParams en={}, wide={}, minWidthNs={}",
+                  boardIdx_, chipIdx_,
+                  config_.tot_filter_enable,
+                  config_.tot_wide_cap,
+                  config_.tot_min_width_ns);
+    auto rc = SAMPIC256CH_SetSampicTOTFilterParams(&info_, &params_,
+                                                   boardIdx_, chipIdx_,
+                                                   config_.tot_filter_enable,
+                                                   config_.tot_wide_cap,
+                                                   config_.tot_min_width_ns);
+    check(rc, "SetSampicTOTFilterParams");
+}
+
+// ------------------- Channels descend -------------------
+void SampicChipConfigurator::applyChannels() {
+    spdlog::debug("Chip (FEB={}, chip={}): applying {} channels...",
+                  boardIdx_, chipIdx_, config_.channels.size());
+    for (auto& [chKey, chCfg] : config_.channels) {
+        int chIdx = indexFromKey(chKey);
+        spdlog::debug("  → Apply channel '{}'(index={})", chKey, chIdx);
+        SampicChannelConfigurator ch(boardIdx_, chipIdx_, chIdx, info_, params_, chCfg);
+        ch.apply();
+    }
+}
+
+// ------------------- Utility -------------------
+void SampicChipConfigurator::check(SAMPIC256CH_ErrCode code, const std::string& what) {
+    if (code != SAMPIC256CH_Success) {
+        spdlog::error("SAMPIC error (FEB={}, chip={}) in {} (code={})",
+                      boardIdx_, chipIdx_, what, static_cast<int>(code));
+        throw std::runtime_error("SAMPIC error in " + what +
+                                 " (code " + std::to_string(code) + ")");
+    }
+}
+
+int SampicChipConfigurator::indexFromKey(const std::string& key) {
+    size_t pos = key.find_last_not_of("0123456789");
+    if (pos == std::string::npos || pos + 1 >= key.size()) {
+        throw std::runtime_error("Invalid config key: " + key);
+    }
+    return std::stoi(key.substr(pos + 1));
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/config/sampic_crate_configurator.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_crate_configurator.cpp
+Size: 12180 bytes
+-----
+// sampic_crate_configurator.cpp
+#include "integration/sampic/config/sampic_crate_configurator.h"
+#include "integration/sampic/config/sampic_board_configurator.h"
+
+#include <spdlog/spdlog.h>
+#include <stdexcept>
+#include <string>
+
+// ------------------- Ctor -------------------
+SampicCrateConfigurator::SampicCrateConfigurator(CrateInfoStruct& info,
+                                                 CrateParamStruct& params,
+                                                 SampicSystemSettings& settings)
+    : info_(info), params_(params), settings_(settings) {}
+
+// ------------------- Apply (top-level) -------------------
+void SampicCrateConfigurator::apply() {
+    spdlog::info("Applying SAMPIC crate settings...");
+
+    // Acquisition
+    setSamplingFrequency();
+    setADCBits();
+    setFramesPerBlock();
+    setTOTMode();
+    setSmartReadMode();
+
+    // External trigger & build logic
+    setExternalTriggerType();
+    setExternalTriggerLevel();
+    setExternalTriggerEdge();
+    setMinTriggersPerEvent();
+    setLevel2TriggerBuild();
+    setLevel3TriggerBuild();
+
+    // Global gates
+    setPrimitivesGateLength();
+    setLevel2LatencyGateLength();
+    setLevel3ExtTrigGate();
+    setLevel3CoincidenceWithExtGate();
+
+    // Pulser
+    setPulser();
+
+    // Sync & corrections
+    setSyncMode();
+    setSyncEdge();
+    setSyncLevel();
+    setCorrectionLevels();
+
+    // Descend to boards/chips/channels
+    applyBoards();
+
+    spdlog::info("SAMPIC crate settings applied.");
+}
+
+// ------------------- Acquisition -------------------
+void SampicCrateConfigurator::setSamplingFrequency() {
+    spdlog::debug("SetSamplingFrequency: {} MS/s (use_external_clock={})",
+                  settings_.sampling_frequency_mhz, settings_.use_external_clock);
+    auto rc = SAMPIC256CH_SetSamplingFrequency(&info_, &params_,
+                                               settings_.sampling_frequency_mhz,
+                                               settings_.use_external_clock);
+    check(rc, "SetSamplingFrequency");
+}
+
+void SampicCrateConfigurator::setFramesPerBlock() {
+    spdlog::debug("SetNbOfFramesPerBlock: {}", settings_.frames_per_block);
+    auto rc = SAMPIC256CH_SetNbOfFramesPerBlock(&info_, &params_, settings_.frames_per_block);
+    check(rc, "SetNbOfFramesPerBlock");
+}
+
+void SampicCrateConfigurator::setTOTMode() {
+    spdlog::debug("SetTOTMeasurementMode: {}", settings_.enable_tot);
+    auto rc = SAMPIC256CH_SetTOTMeasurementMode(&info_, &params_, settings_.enable_tot);
+    check(rc, "SetTOTMeasurementMode");
+}
+
+void SampicCrateConfigurator::setADCBits() {
+    spdlog::debug("Set_SystemADCNbOfBits: {}", settings_.adc_bits);
+    auto rc = Set_SystemADCNbOfBits(&info_, &params_, settings_.adc_bits);
+    check(rc, "Set_SystemADCNbOfBits");
+}
+
+void SampicCrateConfigurator::setSmartReadMode() {
+    spdlog::debug("SetSmartReadMode: mode={}, samples={}, offset={}",
+                  settings_.smart_read_mode, settings_.samples_to_read, settings_.read_offset);
+    auto rc = SAMPIC256CH_SetSmartReadMode(&info_, &params_,
+                                           settings_.smart_read_mode,
+                                           settings_.samples_to_read,
+                                           settings_.read_offset);
+    check(rc, "SetSmartReadMode");
+}
+
+// ------------------- External trigger + build -------------------
+void SampicCrateConfigurator::setExternalTriggerType() {
+    spdlog::debug("SetExternalTriggerType: {}", (int)settings_.external_trigger_type);
+    auto rc = SAMPIC256CH_SetExternalTriggerType(&info_, &params_, settings_.external_trigger_type);
+    check(rc, "SetExternalTriggerType");
+}
+
+void SampicCrateConfigurator::setExternalTriggerLevel() {
+    spdlog::debug("SetExternalTriggerSigLevel: {}", (int)settings_.signal_level);
+    auto rc = SAMPIC256CH_SetExternalTriggerSigLevel(&info_, &params_, settings_.signal_level);
+    check(rc, "SetExternalTriggerSigLevel");
+}
+
+void SampicCrateConfigurator::setExternalTriggerEdge() {
+    spdlog::debug("SetExternalTriggerEdge: {}", (int)settings_.trigger_edge);
+    auto rc = SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_, settings_.trigger_edge);
+    check(rc, "SetExternalTriggerEdge");
+}
+
+void SampicCrateConfigurator::setMinTriggersPerEvent() {
+    spdlog::debug("SetMinNbOfTriggersPerEvent: {}", (int)settings_.triggers_per_event);
+    auto rc = SAMPIC256CH_SetMinNbOfTriggersPerEvent(&info_, &params_,
+                                                     (unsigned char)settings_.triggers_per_event);
+    check(rc, "SetMinNbOfTriggersPerEvent");
+}
+
+void SampicCrateConfigurator::setLevel2TriggerBuild() {
+    spdlog::debug("SetLevel2TriggerBuildOption: {}", settings_.level2_trigger_build);
+    auto rc = SAMPIC256CH_SetLevel2TriggerBuildOption(&info_, &params_, settings_.level2_trigger_build);
+    check(rc, "SetLevel2TriggerBuildOption");
+}
+
+void SampicCrateConfigurator::setLevel3TriggerBuild() {
+    spdlog::debug("SetLevel3TriggerLogic: enable={}", settings_.level3_trigger_build);
+    TriggerLogicParamStruct l3params{}; // default params if none provided in settings
+    auto rc = SAMPIC256CH_SetLevel3TriggerLogic(&info_, &params_,
+                                                settings_.level3_trigger_build, l3params);
+    check(rc, "SetLevel3TriggerLogic");
+}
+
+// ------------------- Global gates -------------------
+void SampicCrateConfigurator::setPrimitivesGateLength() {
+    spdlog::debug("SetPrimitivesGateLength: {}", (int)settings_.primitives_gate_length);
+    auto rc = SAMPIC256CH_SetPrimitivesGateLength(&info_, &params_,
+                                                  (unsigned char)settings_.primitives_gate_length);
+    check(rc, "SetPrimitivesGateLength");
+}
+
+void SampicCrateConfigurator::setLevel2LatencyGateLength() {
+    spdlog::debug("SetLevel2LatencyGateLength: {}", (int)settings_.latency_gate_length);
+    auto rc = SAMPIC256CH_SetLevel2LatencyGateLength(&info_, &params_,
+                                                     (unsigned char)settings_.latency_gate_length);
+    check(rc, "SetLevel2LatencyGateLength");
+}
+
+void SampicCrateConfigurator::setLevel3ExtTrigGate() {
+    spdlog::debug("SetLevel3ExtTrigGate: {}", (int)settings_.level3_ext_trig_gate);
+    auto rc = SAMPIC256CH_SetLevel3ExtTrigGate(&info_, &params_,
+                                               (unsigned char)settings_.level3_ext_trig_gate);
+    check(rc, "SetLevel3ExtTrigGate");
+}
+
+void SampicCrateConfigurator::setLevel3CoincidenceWithExtGate() {
+    spdlog::debug("SetLevel3CoincidenceModeWithExtTrigGate: {}", settings_.level3_coincidence_ext_gate);
+    auto rc = SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate(&info_, &params_,
+                                                                  settings_.level3_coincidence_ext_gate);
+    check(rc, "SetLevel3CoincidenceModeWithExtTrigGate");
+}
+
+// ------------------- Pulser -------------------
+void SampicCrateConfigurator::setPulser() {
+    spdlog::debug("SetPulserMode: enable={}, src={}, sync={}",
+                  settings_.pulser_enable, (int)settings_.pulser_source, settings_.pulser_synchronous);
+    auto rc = SAMPIC256CH_SetPulserMode(&info_, &params_,
+                                        settings_.pulser_enable,
+                                        settings_.pulser_source,
+                                        settings_.pulser_synchronous);
+    check(rc, "SetPulserMode");
+
+    spdlog::debug("SetAutoPulserPeriod: {}", settings_.pulser_period);
+    rc = SAMPIC256CH_SetAutoPulserPeriod(&info_, &params_, settings_.pulser_period);
+    check(rc, "SetAutoPulserPeriod");
+
+    // NOTE: pulser width is a per-chip setting in the C API; apply across all (board, chip).
+    for (const auto& [febKey, febCfg] : settings_.front_end_boards) {
+        int febIdx = indexFromKey(febKey);
+        // We’ll apply the *crate-level* width to every chip unless a chip-level configurator later overrides it.
+        for (const auto& [chipKey, chipCfg] : febCfg.sampics) {
+            int chipIdx = indexFromKey(chipKey);
+            spdlog::trace("SetSampicPulserWidth: feb={}, chip={}, width={}",
+                          febIdx, chipIdx, (int)settings_.pulser_width);
+            auto rc2 = SAMPIC256CH_SetSampicPulserWidth(&info_, &params_, febIdx, chipIdx,
+                                                        (unsigned char)settings_.pulser_width);
+            check(rc2, "SetSampicPulserWidth");
+        }
+    }
+}
+
+// ------------------- Sync + corrections -------------------
+void SampicCrateConfigurator::setSyncMode() {
+    spdlog::debug("SetCrateSycnhronisationMode: sync={}, master={}, coinc={}",
+                  settings_.sync_mode, settings_.master_mode, settings_.coincidence_mode);
+    auto rc = SAMPIC256CH_SetCrateSycnhronisationMode(&info_, &params_,
+                                                      settings_.sync_mode,
+                                                      settings_.master_mode,
+                                                      settings_.coincidence_mode);
+    check(rc, "SetCrateSycnhronisationMode");
+}
+
+void SampicCrateConfigurator::setSyncEdge() {
+    spdlog::debug("SetExternalSyncEdge: {}", (int)settings_.sync_edge);
+    auto rc = SAMPIC256CH_SetExternalSyncEdge(&info_, &params_, settings_.sync_edge);
+    check(rc, "SetExternalSyncEdge");
+}
+
+void SampicCrateConfigurator::setSyncLevel() {
+    spdlog::debug("SetExternalSyncSigLevel: {}", (int)settings_.sync_level);
+    auto rc = SAMPIC256CH_SetExternalSyncSigLevel(&info_, &params_, settings_.sync_level);
+    check(rc, "SetExternalSyncSigLevel");
+}
+
+void SampicCrateConfigurator::setCorrectionLevels() {
+    spdlog::debug("SetCrateCorrectionLevels: adc={}, inl={}, ped={}",
+                  settings_.adc_linearity_correction,
+                  settings_.time_inl_correction,
+                  settings_.residual_pedestal_correction);
+    auto rc = SAMPIC256CH_SetCrateCorrectionLevels(&info_, &params_,
+                                                   settings_.adc_linearity_correction,
+                                                   settings_.time_inl_correction,
+                                                   settings_.residual_pedestal_correction);
+    check(rc, "SetCrateCorrectionLevels");
+
+    // Optional: auto-load all calibration values if directory provided (non-empty)
+    if (!settings_.calibration_directory.empty()) {
+        spdlog::debug("LoadAllCalibValuesFromFiles: dir='{}'", settings_.calibration_directory);
+        char dirbuf[MAX_PATHNAME_LENGTH] = {0};
+        std::snprintf(dirbuf, sizeof(dirbuf), "%s", settings_.calibration_directory.c_str());
+        auto rc2 = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_, dirbuf);
+        if (rc2 != SAMPIC256CH_Success) {
+            // Not fatal for general operation; log and continue (some users don't ship full calib sets).
+            spdlog::warn("LoadAllCalibValuesFromFiles failed (code={}), continuing without file-based calib.",
+                         (int)rc2);
+        }
+    }
+}
+
+// ------------------- Boards descend -------------------
+void SampicCrateConfigurator::applyBoards() {
+    spdlog::debug("Applying front-end boards settings...");
+    for (auto& [key, febCfg] : settings_.front_end_boards) {
+        int febIdx = indexFromKey(key);
+        spdlog::debug("Apply FEB '{}'(index={})", key, febIdx);
+        SampicBoardConfigurator feb(febIdx, info_, params_, febCfg);
+        feb.apply();
+    }
+    spdlog::debug("Front-end boards applied.");
+}
+
+// ------------------- Utility -------------------
+void SampicCrateConfigurator::check(SAMPIC256CH_ErrCode code, const std::string& what) {
+    if (code != SAMPIC256CH_Success) {
+        spdlog::error("SAMPIC error in {} (code={})", what, static_cast<int>(code));
+        throw std::runtime_error("SAMPIC error in " + what +
+                                 " (code " + std::to_string(code) + ")");
+    }
+}
+
+int SampicCrateConfigurator::indexFromKey(const std::string& key) {
+    size_t pos = key.find_last_not_of("0123456789");
+    if (pos == std::string::npos || pos + 1 >= key.size()) {
+        throw std::runtime_error("Invalid config key: " + key);
+    }
+    return std::stoi(key.substr(pos + 1));
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.cpp
+Size: 737 bytes
+-----
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.h"
+#include "integration/sampic/config/sampic_crate_configurator.h"
+#include <spdlog/spdlog.h>
+
+void SampicApplySettingsModeDefault::apply() {
+    spdlog::info("ApplySettingsModeDefault: Applying full crate configuration...");
+
+    try {
+        // Use the configurator to apply *everything* from settings_
+        SampicCrateConfigurator crateCfg(info_, params_, settings_);
+        crateCfg.apply();
+
+        spdlog::info("ApplySettingsModeDefault: All settings applied successfully.");
+    } catch (const std::exception& e) {
+        spdlog::error("ApplySettingsModeDefault: Exception during apply: {}", e.what());
+        throw;
+    }
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.cpp
+Size: 2022 bytes
+-----
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h"
+#include "integration/sampic/config/sampic_crate_configurator.h"
+#include "integration/sampic/config/sampic_board_configurator.h"
+#include "integration/sampic/config/sampic_chip_configurator.h"
+#include "integration/sampic/config/sampic_channel_configurator.h"
+#include <spdlog/spdlog.h>
+
+void SampicApplySettingsModeExample::apply() {
+    spdlog::info("ApplySettingsModeExample: Setting trigger options...");
+
+    try {
+        // --- Crate-level ---
+        SampicCrateConfigurator crateCfg(info_, params_, settings_);
+        crateCfg.setExternalTriggerType();
+
+        // --- Loop over boards / chips / channels ---
+        for (auto& [boardKey, boardCfg] : settings_.front_end_boards) {
+            int boardIdx = crateCfg.indexFromKey(boardKey);
+            SampicBoardConfigurator boardConfigurator(boardIdx, info_, params_, boardCfg);
+
+            for (auto& [chipKey, chipCfg] : boardCfg.sampics) {
+                int chipIdx = boardConfigurator.indexFromKey(chipKey);
+                SampicChipConfigurator chipConfigurator(boardIdx, chipIdx, info_, params_, chipCfg);
+
+                // SAMPIC_TRIGGER_IS_L1
+                chipConfigurator.setTriggerOption();
+
+                for (auto& [chKey, chCfg] : chipCfg.channels) {
+                    int chIdx = chipConfigurator.indexFromKey(chKey);
+                    SampicChannelConfigurator chConfigurator(boardIdx, chipIdx, chIdx,
+                                                             info_, params_, chCfg);
+
+                    // Enable channel + set EXT_TRIGGER_MODE
+                    chConfigurator.setMode();
+                    chConfigurator.setTriggerMode();
+                }
+            }
+        }
+
+        spdlog::info("ApplySettingsModeExample: Trigger options set successfully.");
+
+    } catch (const std::exception& e) {
+        spdlog::error("ApplySettingsModeExample: Exception during apply: {}", e.what());
+        throw;
+    }
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.cpp
+Size: 1893 bytes
+-----
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h"
+#include <spdlog/spdlog.h>
+#include <cstring>
+
+int SampicInitSettingsModeDefault::initialize() {
+    spdlog::info("InitSettingsModeDefault: Initializing SAMPIC system...");
+
+    CrateConnectionParamStruct conn{};
+    conn.ConnectionType = settings_.connection_type;
+    conn.ControlBoardControlType = settings_.control_type;
+    strncpy(conn.CtrlIpAddress, settings_.ip_address.c_str(), sizeof(conn.CtrlIpAddress) - 1);
+    conn.CtrlIpAddress[sizeof(conn.CtrlIpAddress) - 1] = '\0';
+    conn.CtrlPort = settings_.port;
+
+    auto err = SAMPIC256CH_OpenCrateConnection(conn, &info_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeDefault: Failed to open crate connection (err={})", static_cast<int>(err));
+        return err;
+    }
+    spdlog::info("InitSettingsModeDefault: Connection opened with {} FE boards.", info_.NbOfFeBoards);
+
+    err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeDefault: Failed to open crate connection (err={})", static_cast<int>(err));
+        return err;
+    }
+
+    err = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_,
+                                                  const_cast<char*>(settings_.calibration_directory.c_str()));
+    if (err != SAMPIC256CH_Success) {
+        spdlog::warn("InitSettingsModeDefault: Calibration files missing, continuing anyway...");
+    }
+
+    err = SAMPIC256CH_AllocateEventMemory(&eventBuffer_, &mlFrames_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeDefault: Failed to allocate event memory (err={})", static_cast<int>(err));
+        return err;
+    }
+    spdlog::info("InitSettingsModeDefault: Event memory allocated successfully.");
+
+    return SAMPIC256CH_Success;
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.cpp
+Size: 1894 bytes
+-----
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.h"
+#include <spdlog/spdlog.h>
+#include <cstring>
+
+int SampicInitSettingsModeExample::initialize() {
+    spdlog::info("InitSettingsModeExample: Initializing SAMPIC system...");
+
+    CrateConnectionParamStruct conn{};
+    conn.ConnectionType = settings_.connection_type;
+    conn.ControlBoardControlType = settings_.control_type;
+    strncpy(conn.CtrlIpAddress, settings_.ip_address.c_str(), sizeof(conn.CtrlIpAddress) - 1);
+    conn.CtrlIpAddress[sizeof(conn.CtrlIpAddress) - 1] = '\0';
+    conn.CtrlPort = settings_.port;
+
+    auto err = SAMPIC256CH_OpenCrateConnection(conn, &info_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeExample: Failed to open crate connection (err={})", static_cast<int>(err));
+        return err;
+    }
+    spdlog::info("InitSettingsModeExample: Connection opened with {} FE boards.", info_.NbOfFeBoards);
+
+    err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeExample: Failed to set default parameters (err={})", static_cast<int>(err));
+        return err;
+    }
+
+    err = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_,
+                                                  const_cast<char*>(settings_.calibration_directory.c_str()));
+    if (err != SAMPIC256CH_Success) {
+        spdlog::warn("InitSettingsModeExample: Calibration files missing, continuing anyway...");
+    }
+
+    err = SAMPIC256CH_AllocateEventMemory(&eventBuffer_, &mlFrames_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeExample: Failed to allocate event memory (err={})", static_cast<int>(err));
+        return err;
+    }
+    spdlog::info("InitSettingsModeExample: Event memory allocated successfully.");
+
+    return SAMPIC256CH_Success;
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/sampic/controller/sampic_controller.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/sampic_controller.cpp
+Size: 5084 bytes
+-----
+#include "integration/sampic/controller/sampic_controller.h"
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h"
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.h"
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.h"
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h"
+
+SampicController::SampicController(const SampicSystemSettings& sys_cfg,
+                                   const SampicControllerConfig& ctrl_cfg,
+                                   const SampicCollectorConfig& coll_cfg)
+    : settings_(sys_cfg),
+      ctrl_cfg_(ctrl_cfg),
+      coll_cfg_(coll_cfg),
+      buffer_(coll_cfg.buffer_size)
+{
+    // Select init mode
+    switch (ctrl_cfg_.init_mode) {
+        case SampicInitSettingsMode::DEFAULT:
+            init_mode_ = std::make_unique<SampicInitSettingsModeDefault>(info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
+            break;
+        case SampicInitSettingsMode::EXAMPLE:
+            init_mode_ = std::make_unique<SampicInitSettingsModeExample>(info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
+            break;
+    }
+
+    // Select apply mode
+    switch (ctrl_cfg_.apply_mode) {
+        case SampicApplySettingsMode::DEFAULT:
+            apply_mode_ = std::make_unique<SampicApplySettingsModeDefault>(info_, params_, settings_, ctrl_cfg_);
+            break;
+        case SampicApplySettingsMode::EXAMPLE:
+            apply_mode_ = std::make_unique<SampicApplySettingsModeExample>(info_, params_, settings_, ctrl_cfg_);
+            break;
+    }
+
+    // Create collector
+    collector_ = std::make_unique<SampicCollector>(coll_cfg_, buffer_, info_, params_, eventBuffer_, mlFrames_);
+}
+
+SampicController::~SampicController() {
+    stopCollector();
+    stopRun();
+    cleanup();
+}
+
+// ---------------- Config management ----------------
+void SampicController::setSystemSettings(const SampicSystemSettings& s) { settings_ = s; }
+SampicSystemSettings& SampicController::systemSettings() { return settings_; }
+const SampicSystemSettings& SampicController::systemSettings() const { return settings_; }
+
+void SampicController::setControllerConfig(const SampicControllerConfig& c) { ctrl_cfg_ = c; }
+SampicControllerConfig& SampicController::controllerConfig() { return ctrl_cfg_; }
+const SampicControllerConfig& SampicController::controllerConfig() const { return ctrl_cfg_; }
+
+void SampicController::setCollectorConfig(const SampicCollectorConfig& c) { coll_cfg_ = c; }
+SampicCollectorConfig& SampicController::collectorConfig() { return coll_cfg_; }
+const SampicCollectorConfig& SampicController::collectorConfig() const { return coll_cfg_; }
+
+// ---------------- Lifecycle ----------------
+int SampicController::initialize() {
+    if (!init_mode_) {
+        spdlog::error("Init mode not configured");
+        return -1;
+    }
+    int rc = init_mode_->initialize();
+    initialized_ = (rc == SAMPIC256CH_Success);
+    return rc;
+}
+
+int SampicController::applySettings() {
+    if (!apply_mode_) {
+        spdlog::error("Apply mode not configured");
+        return -1;
+    }
+    try {
+        apply_mode_->apply();
+        return 0;
+    } catch (const std::exception& e) {
+        spdlog::error("Apply settings failed: {}", e.what());
+        return -1;
+    }
+}
+
+int SampicController::startRun() {
+    spdlog::info("Starting SAMPIC run...");
+    auto err = SAMPIC256CH_StartRun(&info_, &params_, TRUE);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("Failed to start run (err={})", static_cast<int>(err));
+        return err;
+    }
+    return 0;
+}
+
+int SampicController::stopRun() {
+    spdlog::info("Stopping SAMPIC run...");
+    auto err = SAMPIC256CH_StopRun(&info_, &params_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("Failed to stop run (err={})", static_cast<int>(err));
+        return err;
+    }
+    return 0;
+}
+
+void SampicController::cleanup() {
+    spdlog::info("Cleaning up SAMPIC resources...");
+    if (eventBuffer_ || mlFrames_) {
+        SAMPIC256CH_FreeEventMemory(&eventBuffer_, &mlFrames_);
+        eventBuffer_ = nullptr;
+        mlFrames_ = nullptr;
+    }
+    SAMPIC256CH_CloseCrateConnection(&info_);
+    initialized_ = false;
+}
+
+// ---------------- Collector ----------------
+void SampicController::startCollector() {
+    if (collector_) collector_->start();
+}
+void SampicController::stopCollector() {
+    if (collector_) collector_->stop();
+}
+
+// ---------------- Buffer access ----------------
+std::optional<TimestampedSampicEvent> SampicController::latestEvent() {
+    return buffer_.latest();
+}
+std::optional<TimestampedSampicEvent> SampicController::popEvent() {
+    return buffer_.pop();
+}
+std::vector<TimestampedSampicEvent> SampicController::getEventsSince(std::chrono::steady_clock::time_point t) {
+    return buffer_.getSince(t);
+}
+size_t SampicController::bufferSize() const {
+    return buffer_.size();
+}
+bool SampicController::bufferEmpty() const {
+    return buffer_.empty();
+}
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/integration/splog/logger_configurator.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/splog/logger_configurator.cpp
+Size: 1241 bytes
+-----
+#include "integration/spdlog/logger_configurator.h"
+
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/spdlog.h>
+
+void LoggerConfigurator::configure(const LoggerConfig& cfg) {
+    std::vector<spdlog::sink_ptr> sinks;
+
+    if (cfg.to_console) {
+        sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+    }
+
+    if (cfg.to_file) {
+        sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+            cfg.log_file, cfg.max_file_size, cfg.max_files));
+    }
+
+    if (sinks.empty()) {
+        // fallback to console if nothing is selected
+        sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+    }
+
+    auto logger = std::make_shared<spdlog::logger>(cfg.name, sinks.begin(), sinks.end());
+
+    // Apply pattern and level
+    logger->set_pattern(cfg.log_pattern);
+    auto level = spdlog::level::from_str(cfg.log_level);
+    logger->set_level(level);
+    logger->flush_on(spdlog::level::err);
+
+    // Install as global default logger
+    spdlog::set_default_logger(logger);
+    spdlog::set_level(level); // global filter level
+
+    spdlog::info("Logger '{}' initialized at level {}", cfg.name, cfg.log_level);
+}
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/processing/sampic_processing/collector/frontend_event_buffer.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/processing/sampic_processing/collector/frontend_event_buffer.cpp
+Size: 0 bytes
+-----
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/processing/sampic_processing/collector/frontend_event_collector.h
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/processing/sampic_processing/collector/frontend_event_collector.h
+Size: 0 bytes
+-----
+
+===== FILE END =====
+
+===== FILE START =====
+Relative Path: src/processing/sampic_processing/config/frontend_event_collector_config.cpp
+Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/processing/sampic_processing/config/frontend_event_collector_config.cpp
+Size: 0 bytes
+-----
+
+===== FILE END =====
+

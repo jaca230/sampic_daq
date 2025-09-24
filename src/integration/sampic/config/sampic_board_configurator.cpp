@@ -61,6 +61,13 @@ void SampicBoardConfigurator::applyChips() {
     spdlog::debug("FEB {}: applying {} chips...", boardIdx_, config_.sampics.size());
     for (auto& [chipKey, chipCfg] : config_.sampics) {
         int chipIdx = indexFromKey(chipKey);
+
+        if (!chipCfg.enabled) {
+            spdlog::info("Skipping chip '{}' (FEB={}, idx={}) because it is disabled.",
+                         chipKey, boardIdx_, chipIdx);
+            continue;
+        }
+
         spdlog::debug("  → Apply chip '{}'(index={})", chipKey, chipIdx);
         SampicChipConfigurator chip(boardIdx_, chipIdx, info_, params_, chipCfg);
         chip.apply();

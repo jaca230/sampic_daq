@@ -6,6 +6,7 @@
 #include "integration/sampic/config/sampic_board_configurator.h"
 #include "integration/sampic/config/sampic_chip_configurator.h"
 #include "integration/sampic/config/sampic_channel_configurator.h"
+#include "integration/sampic/config/sampic_controller_config.h"
 
 extern "C" {
 #include <SAMPIC_256Ch_lib.h>
@@ -17,8 +18,12 @@ class SampicApplySettingsMode {
 public:
     SampicApplySettingsMode(CrateInfoStruct& info,
                             CrateParamStruct& params,
-                            SampicSystemSettings& settings)
-        : info_(info), params_(params), settings_(settings) {}
+                            SampicSystemSettings& settings,
+                            const SampicControllerConfig& controllerCfg)
+        : info_(info),
+          params_(params),
+          settings_(settings),
+          controllerCfg_(controllerCfg) {}
 
     virtual ~SampicApplySettingsMode() = default;
 
@@ -29,6 +34,7 @@ protected:
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     SampicSystemSettings& settings_;
+    const SampicControllerConfig& controllerCfg_;
 };
 
 #endif // SAMPIC_APPLY_SETTINGS_MODE_H

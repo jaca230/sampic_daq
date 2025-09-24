@@ -15,10 +15,20 @@ void SampicApplySettingsModeExample::apply() {
 
         // --- Loop over boards / chips / channels ---
         for (auto& [boardKey, boardCfg] : settings_.front_end_boards) {
+            if (!boardCfg.enabled) {
+                spdlog::debug("Skipping disabled board '{}'", boardKey);
+                continue;
+            }
+
             int boardIdx = crateCfg.indexFromKey(boardKey);
             SampicBoardConfigurator boardConfigurator(boardIdx, info_, params_, boardCfg);
 
             for (auto& [chipKey, chipCfg] : boardCfg.sampics) {
+                if (!chipCfg.enabled) {
+                    spdlog::debug("Skipping disabled chip '{}:{}'", boardKey, chipKey);
+                    continue;
+                }
+
                 int chipIdx = boardConfigurator.indexFromKey(chipKey);
                 SampicChipConfigurator chipConfigurator(boardIdx, chipIdx, info_, params_, chipCfg);
 
@@ -26,6 +36,12 @@ void SampicApplySettingsModeExample::apply() {
                 chipConfigurator.setTriggerOption();
 
                 for (auto& [chKey, chCfg] : chipCfg.channels) {
+                    if (!chCfg.enabled) {
+                        spdlog::trace("Skipping disabled channel '{}:{}:{}'",
+                                      boardKey, chipKey, chKey);
+                        continue;
+                    }
+
                     int chIdx = chipConfigurator.indexFromKey(chKey);
                     SampicChannelConfigurator chConfigurator(boardIdx, chipIdx, chIdx,
                                                              info_, params_, chCfg);

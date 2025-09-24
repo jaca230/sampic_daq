@@ -3,20 +3,20 @@
 
 #include <cstddef>
 
-enum class SampicInitSettingsMode {
+enum class SampicInitSettingsModeType {
     DEFAULT,
     EXAMPLE
 };
 
-enum class SampicApplySettingsMode {
+enum class SampicApplySettingsModeType {
     DEFAULT,
     EXAMPLE
 };
 
 struct SampicControllerConfig {
     // Independent mode switches
-    SampicInitSettingsMode  init_mode  = SampicInitSettingsMode::EXAMPLE;
-    SampicApplySettingsMode apply_mode = SampicApplySettingsMode::EXAMPLE;
+    SampicInitSettingsModeType  init_mode  = SampicInitSettingsModeType::EXAMPLE;
+    SampicApplySettingsModeType apply_mode = SampicApplySettingsModeType::EXAMPLE;
 
 };
 

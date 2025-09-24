@@ -18,7 +18,6 @@ extern "C" {
 class SampicCollector {
 public:
     SampicCollector(const SampicCollectorConfig& cfg,
-                    SampicEventBuffer& buffer,
                     CrateInfoStruct& info,
                     CrateParamStruct& params,
                     void* eventBuffer,
@@ -30,11 +29,15 @@ public:
     void stop();
     bool running() const { return running_; }
 
+    // Buffer access
+    SampicEventBuffer& buffer() { return *buffer_; }
+    const SampicEventBuffer& buffer() const { return *buffer_; }
+
 private:
     void run();
 
     SampicCollectorConfig cfg_;
-    SampicEventBuffer& buffer_;
+    std::unique_ptr<SampicEventBuffer> buffer_;
     EventStruct event_{};  ///< reused event struct
 
     std::unique_ptr<SampicCollectorMode> mode_; ///< polymorphic mode

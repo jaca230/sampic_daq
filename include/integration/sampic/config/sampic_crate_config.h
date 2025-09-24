@@ -13,7 +13,7 @@ extern "C" {
 // Channel (lowest level)
 // ==============================
 struct SampicChannelConfig {
-  bool                         enabled  = true;                          // SAMPIC256CH_SetChannelMode
+  bool                         enabled  = true;                          // Global enable for channel
   SAMPIC_ChannelTriggerMode_t  trigger_mode = SAMPIC_CHANNEL_EXT_TRIGGER_MODE; // SAMPIC256CH_SetSampicChannelTriggerMode
   float                        internal_threshold = 0.0;                 // SAMPIC256CH_SetSampicChannelInternalThreshold
   EdgeType_t                   trigger_edge = RISING_EDGE;               // SAMPIC256CH_SetChannelSelflTriggerEdge
@@ -28,6 +28,8 @@ using SampicChannelSettings = std::map<std::string, SampicChannelConfig>;
 // Chip (contains channels)
 // ==============================
 struct SampicChipConfig {
+  bool                          enabled = true;                          // Global enable for chip
+
   float                         baseline_reference = DEFAULT_SAMPIC_BASELINE; // SAMPIC256CH_SetBaselineReference
   float                         external_threshold = 0.5;                    // SAMPIC256CH_SetSampicExternalThreshold
 
@@ -58,6 +60,8 @@ using SampicChipSettings = std::map<std::string, SampicChipConfig>;
 // Board (contains chips)
 // ==============================
 struct SampicFrontEndConfig {
+  bool enabled = true;   // Global enable for this FE board
+
   FebGlobalTrigger_t global_trigger_option = FEB_GLOBAL_TRIGGER_IS_L2;       // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
 
   unsigned char     level2_ext_trig_gate  = DEFAULT_EXT_TRIG_GATE;           // SAMPIC256CH_SetLevel2ExtTrigGate
@@ -74,7 +78,7 @@ using SampicFrontEndSettings = std::map<std::string, SampicFrontEndConfig>;
 // Crate (top-level system)
 // ==============================
 struct SampicSystemSettings {
-  std::string    ip_address     = DEFAULT_CTRL_IP_ADDRESS; // Default: "192.168.0.0" (SAMPIC_256Ch_Type.h)
+  std::string    ip_address     = "192.168.0.4"; //DEFAULT_CTRL_IP_ADDRESS
   int            port           = DEFAULT_UDP_CTRL_PORT;   // UDP control port
   ConnectionType_t connection_type = UDP_CONNECTION;       // SAMPIC256CH_OpenCrateConnection
   ControlType_t    control_type    = CTRL_AND_DAQ;         // SAMPIC256CH_OpenCrateConnection

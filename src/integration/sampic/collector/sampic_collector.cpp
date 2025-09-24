@@ -3,12 +3,12 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
 
 SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
-                                 SampicEventBuffer& buffer,
                                  CrateInfoStruct& info,
                                  CrateParamStruct& params,
                                  void* eventBuffer,
                                  ML_Frame* mlFrames)
-    : cfg_(cfg), buffer_(buffer)
+    : cfg_(cfg),
+      buffer_(std::make_unique<SampicEventBuffer>(cfg.buffer_size))
 {
     switch (cfg.mode) {
         case SampicCollectorModeType::DEFAULT:
@@ -56,7 +56,7 @@ void SampicCollector::run() {
 
         if (hits > 0) {
             TimestampedSampicEvent tse{event_, std::chrono::steady_clock::now(), timing};
-            buffer_.push(tse);
+            buffer_->push(tse);
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));

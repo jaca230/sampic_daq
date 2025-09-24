@@ -241,6 +241,12 @@ void SampicCrateConfigurator::applyBoards() {
     spdlog::debug("Applying front-end boards settings...");
     for (auto& [key, febCfg] : settings_.front_end_boards) {
         int febIdx = indexFromKey(key);
+
+        if (!febCfg.enabled) {
+            spdlog::info("Skipping FEB '{}' (index={}) because it is disabled.", key, febIdx);
+            continue;
+        }
+
         spdlog::debug("Apply FEB '{}'(index={})", key, febIdx);
         SampicBoardConfigurator feb(febIdx, info_, params_, febCfg);
         feb.apply();

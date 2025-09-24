@@ -130,6 +130,13 @@ void SampicChipConfigurator::applyChannels() {
                   boardIdx_, chipIdx_, config_.channels.size());
     for (auto& [chKey, chCfg] : config_.channels) {
         int chIdx = indexFromKey(chKey);
+
+        if (!chCfg.enabled) {
+            spdlog::info("Skipping channel '{}' (FEB={}, chip={}, idx={}) because it is disabled.",
+                         chKey, boardIdx_, chipIdx_, chIdx);
+            continue;
+        }
+
         spdlog::debug("  → Apply channel '{}'(index={})", chKey, chIdx);
         SampicChannelConfigurator ch(boardIdx_, chipIdx_, chIdx, info_, params_, chCfg);
         ch.apply();
