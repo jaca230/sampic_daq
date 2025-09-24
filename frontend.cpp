@@ -1,6 +1,7 @@
 // ======================================================================
 // SAMPIC Frontend (buffer-based, ODB-driven; controller owns collector)
 // ======================================================================
+
 // System
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +34,32 @@
 
 // Event + timing structs
 #include "integration/sampic/collector/sampic_event_buffer.h"
+
+// ======================================================================
+// Compact bank payloads
+// ======================================================================
+#pragma pack(push, 1)
+struct SampicEventLite {
+  uint32_t nb_hits;
+  uint32_t nb_triggers;
+};
+
+// No fixed samples[] here — we write samples right after this meta.
+struct SampicHitMeta {
+  int32_t fe_board;
+  int32_t sampic_idx;
+  int32_t channel;
+  int32_t hit_number;
+
+  // number of samples that follow (uint16_t each)
+  int32_t data_size;
+
+  float   amplitude;
+  float   baseline;
+  float   peak;
+  double  time_ns;
+};
+#pragma pack(pop)
 
 // ======================================================================
 // Globals (MIDAS)
@@ -275,7 +302,7 @@ INT resume_run(INT, char*) { return SUCCESS; }
 INT frontend_loop()        { return SUCCESS; }
 
 // ======================================================================
-// Polling: ask buffer if there's anything newer
+// Polling
 // ======================================================================
 INT poll_event(INT, INT, BOOL test) {
   if (!g_system_initialized || !g_controller) return test ? FALSE : 0;
@@ -291,79 +318,130 @@ INT poll_event(INT, INT, BOOL test) {
 INT interrupt_configure(INT, INT, POINTER_T) { return SUCCESS; }
 
 // ======================================================================
-// Readout: dump all new EventStructs + timing into banks
+// Readout (full-waveform, variable-length hits; one ADxx + one ATxx)
 // ======================================================================
 INT read_sampic_event(char *pevent, INT) {
-  if (!g_system_initialized || !g_controller) return 0;
-
-  auto new_events = g_controller->buffer().getSince(g_last_evt_ts);
-
-  if (new_events.empty()) {
-    // We were polled because hasNewSince() returned true, but got no events.
-    // Emit a hard error with useful context.
-    const auto latest_opt = g_controller->buffer().latest();
-    const auto ns_since_epoch = [](std::chrono::steady_clock::time_point tp) -> long long {
-      return std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
-    };
-
-    const long long last_pub_ns = ns_since_epoch(g_last_evt_ts);
-    const long long latest_ns   = latest_opt
-      ? ns_since_epoch(latest_opt->timestamp)
-      : -1LL;
-
-    cm_msg(MERROR, "SAMPIC",
-           "Poll indicated new data but getSince() returned none. "
-           "last_published_ts_ns=%lld, buffer_size=%zu, latest_ts_ns=%lld",
-           last_pub_ns,
-           g_controller->buffer().size(),
-           latest_ns);
-
-    // Optional: advance to the current latest to avoid repeated errors if this was a race.
-    if (latest_opt) g_last_evt_ts = latest_opt->timestamp;
-
+  if (!g_system_initialized || !g_controller) {
+    spdlog::warn("read_sampic_event: system not initialized, skipping");
     return 0;
   }
 
-  bk_init32(pevent);
-
-  // --- Data bank ---
-  auto data_bank = make_bank_name(g_fe_cfg.data_bank_prefix, g_frontend_index);
-  uint8_t* pdata = nullptr;
-  bk_create(pevent, data_bank.c_str(), TID_UINT8, (void**)&pdata);
-
-  // --- Timing bank ---
-  auto timing_bank = make_bank_name(g_fe_cfg.timing_bank_prefix, g_frontend_index);
-  uint8_t* ptiming = nullptr;
-  bk_create(pevent, timing_bank.c_str(), TID_UINT8, (void**)&ptiming);
-
-  struct TimingPayload {
-    uint64_t timestamp_ns;
-    uint32_t prepare_us, read_us, decode_us, total_us;
-  };
-
-  for (const auto& tse : new_events) {
-    std::memcpy(pdata, &tse.event, sizeof(EventStruct));
-    pdata += sizeof(EventStruct);
-
-    TimingPayload tp;
-    tp.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        tse.timestamp.time_since_epoch()).count();
-    tp.prepare_us = tse.timing.prepare_duration.count();
-    tp.read_us    = tse.timing.read_duration.count();
-    tp.decode_us  = tse.timing.decode_duration.count();
-    tp.total_us   = tse.timing.total_duration.count();
-
-    std::memcpy(ptiming, &tp, sizeof(tp));
-    ptiming += sizeof(tp);
+  const auto new_events = g_controller->buffer().getSince(g_last_evt_ts);
+  if (new_events.empty()) {
+    spdlog::debug("read_sampic_event: no new events since last timestamp");
+    return 0;
   }
 
-  // Update last timestamp to the newest event we just packed
+  // Init MIDAS event container
+  bk_init32(pevent);
+
+  // ------------------------- DATA BANK (ADxx) -------------------------
+  {
+    const auto data_bank = make_bank_name(g_fe_cfg.data_bank_prefix, g_frontend_index);
+    uint8_t* pdata = nullptr;
+    bk_create(pevent, data_bank.c_str(), TID_UINT8, (void**)&pdata);
+    uint8_t* const pdata_start = pdata;
+
+    // Pack each collected SAMPIC event in sequence
+    for (size_t iev = 0; iev < new_events.size(); ++iev) {
+      const auto& tse = new_events[iev];
+      if (!tse.event) {
+        spdlog::warn("read_sampic_event: event {} has null pointer, skipping", iev);
+        continue;
+      }
+      const auto ev = tse.event;
+
+      // --- Event header ---
+      const SampicEventLite evhdr{
+        static_cast<uint32_t>(ev->NbOfHitsInEvent),
+        static_cast<uint32_t>(ev->TriggerData.NbOfTriggers)
+      };
+      std::memcpy(pdata, &evhdr, sizeof(evhdr));
+      pdata += sizeof(evhdr);
+
+      spdlog::debug("Packing event {} → hits={}, triggers={}",
+                    iev, evhdr.nb_hits, evhdr.nb_triggers);
+
+      // --- Hits (variable-length) ---
+      for (int i = 0; i < ev->NbOfHitsInEvent; ++i) {
+        const auto& h = ev->Hit[i];
+
+        // Choose a sane clamp to avoid corrupt banks if upstream is wrong
+        // (tweak if you know chip max samples; 4096 is conservative)
+        constexpr int kMaxSafeSamples = 4096;
+        int data_size = std::max(0, std::min(h.DataSize, kMaxSafeSamples));
+
+        SampicHitMeta meta{};
+        meta.fe_board   = h.FeBoardIndex;
+        meta.sampic_idx = h.SampicIndex;
+        meta.channel    = h.Channel;
+        meta.hit_number = h.HitNumber;
+        meta.data_size  = data_size;
+        meta.amplitude  = h.Amplitude;
+        meta.baseline   = h.Baseline;
+        meta.peak       = h.Peak;
+        meta.time_ns    = h.TimeInstant;
+
+        // Write meta
+        std::memcpy(pdata, &meta, sizeof(meta));
+        pdata += sizeof(meta);
+
+        // Write all samples (uint16_t)
+        const size_t bytes_samples = static_cast<size_t>(data_size) * sizeof(uint16_t);
+        if (data_size > 0) {
+          std::memcpy(pdata, h.OrderedRawDataSamples, bytes_samples);
+          pdata += bytes_samples;
+        }
+
+        spdlog::trace("  hit {}: board={}, sampic={}, ch={}, hit#={}, nsamp={}, "
+                      "amp={:.2f}, base={:.2f}, peak={:.2f}, t={:.3f} ns "
+                      "(wrote {} + {} bytes)",
+                      i, meta.fe_board, meta.sampic_idx, meta.channel, meta.hit_number,
+                      meta.data_size, meta.amplitude, meta.baseline, meta.peak, meta.time_ns,
+                      (int)sizeof(meta), (int)bytes_samples);
+      }
+    }
+
+    bk_close(pevent, pdata);
+    spdlog::debug("Closed data bank {} ({} bytes)", data_bank, (int)(pdata - pdata_start));
+  }
+
+  // ------------------------ TIMING BANK (ATxx) ------------------------
+  {
+    const auto timing_bank = make_bank_name(g_fe_cfg.timing_bank_prefix, g_frontend_index);
+    uint8_t* ptiming = nullptr;
+    bk_create(pevent, timing_bank.c_str(), TID_UINT8, (void**)&ptiming);
+    uint8_t* const ptiming_start = ptiming;
+
+    struct TimingPayload {
+      uint64_t timestamp_ns;
+      uint32_t prepare_us, read_us, decode_us, total_us;
+    };
+
+    for (const auto& tse : new_events) {
+      TimingPayload tp;
+      tp.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          tse.timestamp.time_since_epoch()).count();
+      tp.prepare_us   = tse.timing.prepare_duration.count();
+      tp.read_us      = tse.timing.read_duration.count();
+      tp.decode_us    = tse.timing.decode_duration.count();
+      tp.total_us     = tse.timing.total_duration.count();
+
+      std::memcpy(ptiming, &tp, sizeof(tp));
+      ptiming += sizeof(tp);
+
+      spdlog::trace("  timing: ts={} ns, prep={}us, read={}us, dec={}us, total={}us",
+                    tp.timestamp_ns, tp.prepare_us, tp.read_us, tp.decode_us, tp.total_us);
+    }
+
+    bk_close(pevent, ptiming);
+    spdlog::debug("Closed timing bank {} ({} bytes)", timing_bank, (int)(ptiming - ptiming_start));
+  }
+
+  // Advance watermark
   g_last_evt_ts = new_events.back().timestamp;
 
-  bk_close(pevent, pdata);
-  bk_close(pevent, ptiming);
-
-  return bk_size(pevent);
+  const int total_size = bk_size(pevent);
+  spdlog::debug("read_sampic_event: MIDAS event size {}", total_size);
+  return total_size;
 }
-
-

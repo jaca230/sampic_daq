@@ -7,6 +7,7 @@
 #include <optional>
 #include <chrono>
 #include <vector>
+#include <memory>
 #include <spdlog/spdlog.h>
 
 extern "C" {
@@ -21,12 +22,12 @@ struct SampicEventTiming {
     std::chrono::microseconds total_duration{0};
 };
 
-/// Wrapper for EventStruct with timestamp and timing diagnostics
+/// Wrapper: shared_ptr to EventStruct + timestamp + timing
 struct TimestampedSampicEvent {
-    EventStruct event;
+    std::shared_ptr<EventStruct> event;
     std::chrono::steady_clock::time_point timestamp;
     SampicEventTiming timing;
-    bool consumed{false};   ///< tracks whether a consumer has read this event
+    bool consumed{false};
 };
 
 /// Thread-safe buffer for holding timestamped SAMPIC events
@@ -34,13 +35,14 @@ class SampicEventBuffer {
 public:
     explicit SampicEventBuffer(size_t capacity);
 
-    // Producer API
-    void push(const TimestampedSampicEvent& ev);
+    // Producer
+    void push(const std::shared_ptr<EventStruct>& ev, 
+              const SampicEventTiming& timing);
 
-    // Consumer API
-    std::optional<TimestampedSampicEvent> pop();   ///< pops one event
-    std::optional<TimestampedSampicEvent> latest(); ///< peek latest, marks consumed
-    std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t); ///< marks consumed
+    // Consumer
+    std::optional<TimestampedSampicEvent> pop();        ///< destructive
+    std::optional<TimestampedSampicEvent> latest();     ///< peek latest, marks consumed
+    std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t);
 
     // Polling helpers
     bool hasNewSince(std::chrono::steady_clock::time_point t) const;

@@ -14,7 +14,6 @@ extern "C" {
 #include <SAMPIC_256Ch_lib.h>
 }
 
-/// Collector thread for reading events from SAMPIC hardware and filling the buffer.
 class SampicCollector {
 public:
     SampicCollector(const SampicCollectorConfig& cfg,
@@ -22,14 +21,12 @@ public:
                     CrateParamStruct& params,
                     void* eventBuffer,
                     ML_Frame* mlFrames);
-
     ~SampicCollector();
 
     void start();
     void stop();
     bool running() const { return running_; }
 
-    // Buffer access
     SampicEventBuffer& buffer() { return *buffer_; }
     const SampicEventBuffer& buffer() const { return *buffer_; }
 
@@ -38,12 +35,10 @@ private:
 
     SampicCollectorConfig cfg_;
     std::unique_ptr<SampicEventBuffer> buffer_;
-    EventStruct event_{};  ///< reused event struct
-
-    std::unique_ptr<SampicCollectorMode> mode_; ///< polymorphic mode
+    std::unique_ptr<SampicCollectorMode> mode_;
 
     std::thread worker_;
     std::atomic<bool> running_{false};
 };
 
-#endif // SAMPIC_COLLECTOR_H
+#endif

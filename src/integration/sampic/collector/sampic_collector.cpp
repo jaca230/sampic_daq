@@ -8,8 +8,7 @@ SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
                                  void* eventBuffer,
                                  ML_Frame* mlFrames)
     : cfg_(cfg),
-      buffer_(std::make_unique<SampicEventBuffer>(cfg.buffer_size))
-{
+      buffer_(std::make_unique<SampicEventBuffer>(cfg.buffer_size)) {
     switch (cfg.mode) {
         case SampicCollectorModeType::DEFAULT:
             mode_ = std::make_unique<SampicCollectorModeDefault>(info, params, eventBuffer, mlFrames, cfg);
@@ -35,32 +34,27 @@ void SampicCollector::start() {
 void SampicCollector::stop() {
     if (running_) {
         running_ = false;
-        if (worker_.joinable()) {
-            worker_.join();
-        }
+        if (worker_.joinable()) worker_.join();
     }
 }
 
 void SampicCollector::run() {
     spdlog::info("SAMPIC Collector started in mode {}", static_cast<int>(cfg_.mode));
-
     while (running_) {
         auto start_total = std::chrono::steady_clock::now();
-
         SampicEventTiming timing{};
-        int hits = mode_->readEvent(event_, timing);
+        auto ev_ptr = std::make_shared<EventStruct>();
+
+        int hits = mode_->readEvent(*ev_ptr, timing);
 
         auto end_total = std::chrono::steady_clock::now();
-        timing.total_duration =
-            std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
+        timing.total_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
 
         if (hits > 0) {
-            TimestampedSampicEvent tse{event_, std::chrono::steady_clock::now(), timing};
-            buffer_->push(tse);
+            buffer_->push(ev_ptr, timing);
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));
     }
-
     spdlog::info("SAMPIC Collector stopped");
 }

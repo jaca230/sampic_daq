@@ -1,5 +1,6 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
 #include <spdlog/spdlog.h>
+#include <thread>   // for sleep_for
 
 int SampicCollectorModeExample::readEvent(EventStruct& event,
                                           SampicEventTiming& timing) {
@@ -43,6 +44,12 @@ int SampicCollectorModeExample::readEvent(EventStruct& event,
         if (nloop_for_soft_trig > cfg_.soft_trigger_max_loops) {
             spdlog::warn("Example mode: Timeout after {} loops", cfg_.soft_trigger_max_loops);
             return 0;
+        }
+
+        // NEW: avoid pegging CPU if repeated failures
+        if (errCode != SAMPIC256CH_Success && cfg_.soft_trigger_retry_sleep_us > 0) {
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(cfg_.soft_trigger_retry_sleep_us));
         }
     }
 
