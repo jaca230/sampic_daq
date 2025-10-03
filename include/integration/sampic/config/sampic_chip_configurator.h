@@ -19,21 +19,31 @@ public:
 
     void apply();
 
-    void setBaseline();               // SAMPIC256CH_SetBaselineReference
-    void setExtThreshold();           // SAMPIC256CH_SetSampicExternalThreshold
-    void setTOTRange();               // SAMPIC256CH_SetSampicTOTRange
-    void setPostTrigger();            // SAMPIC256CH_SetSampicPostTrigParams
-
-    void setCentralTriggerMode();     // SAMPIC256CH_SetSampicCentralTriggerMode
-    void setCentralTriggerEffect();   // SAMPIC256CH_SetSampicCentralTriggerEffect
-    void setCentralTriggerPrimitives(); // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
-
-    void setTriggerOption();          // SAMPIC256CH_SetSampicTriggerOption
-    void setTOTFilterParams();        // SAMPIC256CH_SetSampicTOTFilterParams
+    // Individual settings
+    void setBaseline();
+    void setExtThreshold();
+    void setExtThresholdMode();
+    void setTOTRange();
+    void setTOTFilterParams();
+    void setPostTrigger();
+    void setCentralTriggerMode();
+    void setCentralTriggerEffect();
+    void setCentralTriggerPrimitives();
+    void setTriggerOption();
+    void setEnableTriggerMode();
+    void setCommonDeadTime();
+    void setPulserWidth();
+    void setAdcRamp();
+    void setVdacDLL();
+    void setVdacDLLContinuity();
+    void setVdacRosc();
+    void setDllSpeedMode();
+    void setOverflowDac();
+    void setLvdsLowCurrent();
 
     void applyChannels();
 
-    //Helpers
+    // Helpers
     void check(SAMPIC256CH_ErrCode code, const std::string& what);
     int indexFromKey(const std::string& key);
 

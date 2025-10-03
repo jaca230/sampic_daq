@@ -15,8 +15,8 @@ enum class SampicApplySettingsModeType {
 
 struct SampicControllerConfig {
     // Independent mode switches
-    SampicInitSettingsModeType  init_mode  = SampicInitSettingsModeType::EXAMPLE;
-    SampicApplySettingsModeType apply_mode = SampicApplySettingsModeType::EXAMPLE;
+    SampicInitSettingsModeType  init_mode  = SampicInitSettingsModeType::DEFAULT;
+    SampicApplySettingsModeType apply_mode = SampicApplySettingsModeType::DEFAULT;
 
 };
 

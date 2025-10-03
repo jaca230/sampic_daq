@@ -19,12 +19,13 @@ public:
     void apply();
 
     void setGlobalTrigger();     // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
+    void setLevel2TriggerBuild(); // SAMPIC256CH_SetLevel2TriggerBuildOption
     void setLevel2ExtTrigGate(); // SAMPIC256CH_SetLevel2ExtTrigGate
     void setLevel2Coincidence(); // SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate
 
     void applyChips();
 
-    //Helpers
+    // Helpers
     void check(SAMPIC256CH_ErrCode code, const std::string& what);
     int indexFromKey(const std::string& key);
 

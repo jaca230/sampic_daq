@@ -23,7 +23,6 @@ public:
     void setTriggerMode();    // SAMPIC256CH_SetSampicChannelTriggerMode
     void setThreshold();      // SAMPIC256CH_SetSampicChannelInternalThreshold
     void setEdge();           // SAMPIC256CH_SetChannelSelflTriggerEdge
-    void setExtThreshMode();  // SAMPIC256CH_SetSampicExternalThresholdMode
     void setSourceForCT();    // SAMPIC256CH_SetSampicChannelSourceForCT
     void setPulseMode();      // SAMPIC256CH_SetSampicChannelPulseMode
 

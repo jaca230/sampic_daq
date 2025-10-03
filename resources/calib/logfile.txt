@@ -1,0 +1,3 @@
+INFO:=10.02.2025=16h:45min:1s:== SAMPIC-256Ch Waveform-TDC Software 3.3.2 ==
+INFO:=10.02.2025=16h:45min:1s:No 'crate_connect.txt' file found with valid Crate Connection parameters! Default Parameters will be used instead 
+INFO:=10.02.2025=16h:45min:1s:== SAMPIC-256Ch Library Version 3.1 ==

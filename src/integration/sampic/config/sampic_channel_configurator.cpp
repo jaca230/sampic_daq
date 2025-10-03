@@ -1,4 +1,3 @@
-// sampic_channel_configurator.cpp
 #include "integration/sampic/config/sampic_channel_configurator.h"
 
 #include <spdlog/spdlog.h>
@@ -14,7 +13,7 @@ SampicChannelConfigurator::SampicChannelConfigurator(int boardIdx,
     : boardIdx_(boardIdx), chipIdx_(chipIdx), channelIdx_(channelIdx),
       info_(info), params_(params), config_(config) {}
 
-// ------------------- Apply (channel-level) -------------------
+// ------------------- Apply -------------------
 void SampicChannelConfigurator::apply() {
     spdlog::debug("Applying channel (FEB={}, chip={}, ch={}) settings...",
                   boardIdx_, chipIdx_, channelIdx_);
@@ -23,7 +22,6 @@ void SampicChannelConfigurator::apply() {
     setTriggerMode();
     setThreshold();
     setEdge();
-    setExtThreshMode();
     setSourceForCT();
     setPulseMode();
 
@@ -33,74 +31,138 @@ void SampicChannelConfigurator::apply() {
 
 // ------------------- Settings -------------------
 void SampicChannelConfigurator::setMode() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetChannelMode={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.enabled);
+    Boolean current{};
+    check(SAMPIC256CH_GetChannelMode(&params_,
+                                     boardIdx_,
+                                     chipIdx_ * 16 + channelIdx_,
+                                     &current),
+          "GetChannelMode");
 
-    auto rc = SAMPIC256CH_SetChannelMode(&info_, &params_,
-                                         boardIdx_,
-                                         (chipIdx_ * 16) + channelIdx_,
-                                         config_.enabled);
-    check(rc, "SetChannelMode");
+    if ((bool)current == config_.enabled) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): Mode already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing Mode {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (bool)current, config_.enabled);
+
+    check(SAMPIC256CH_SetChannelMode(&info_, &params_,
+                                     boardIdx_,
+                                     chipIdx_ * 16 + channelIdx_,
+                                     config_.enabled),
+          "SetChannelMode");
 }
 
 void SampicChannelConfigurator::setTriggerMode() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelTriggerMode={}",
-                  boardIdx_, chipIdx_, channelIdx_, (int)config_.trigger_mode);
+    SAMPIC_ChannelTriggerMode_t current{};
+    check(SAMPIC256CH_GetSampicChannelTriggerMode(&params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  &current),
+          "GetSampicChannelTriggerMode");
 
-    auto rc = SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_,
-                                                      boardIdx_, chipIdx_, channelIdx_,
-                                                      config_.trigger_mode);
-    check(rc, "SetSampicChannelTriggerMode");
+    if (current == config_.trigger_mode) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): TriggerMode already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (int)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing TriggerMode {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (int)current, (int)config_.trigger_mode);
+
+    check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  config_.trigger_mode),
+          "SetSampicChannelTriggerMode");
 }
 
 void SampicChannelConfigurator::setThreshold() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelInternalThreshold={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.internal_threshold);
+    float current{};
+    check(SAMPIC256CH_GetSampicChannelInternalThreshold(&params_,
+                                                        boardIdx_, chipIdx_, channelIdx_,
+                                                        &current),
+          "GetSampicChannelInternalThreshold");
 
-    auto rc = SAMPIC256CH_SetSampicChannelInternalThreshold(&info_, &params_,
-                                                            boardIdx_, chipIdx_, channelIdx_,
-                                                            config_.internal_threshold);
-    check(rc, "SetSampicChannelInternalThreshold");
+    if (current == config_.internal_threshold) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): InternalThreshold already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing InternalThreshold {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, current, config_.internal_threshold);
+
+    check(SAMPIC256CH_SetSampicChannelInternalThreshold(&info_, &params_,
+                                                        boardIdx_, chipIdx_, channelIdx_,
+                                                        config_.internal_threshold),
+          "SetSampicChannelInternalThreshold");
 }
 
 void SampicChannelConfigurator::setEdge() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetChannelSelfTriggerEdge={}",
-                  boardIdx_, chipIdx_, channelIdx_, (int)config_.trigger_edge);
+    EdgeType_t current{};
+    check(SAMPIC256CH_GetChannelSelfTriggerEdge(&params_,
+                                                boardIdx_, chipIdx_, channelIdx_,
+                                                &current),
+          "GetChannelSelfTriggerEdge");
 
-    auto rc = SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_,
-                                                     boardIdx_, chipIdx_, channelIdx_,
-                                                     config_.trigger_edge);
-    check(rc, "SetChannelSelflTriggerEdge");
-}
+    if (current == config_.trigger_edge) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): TriggerEdge already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (int)current);
+        return;
+    }
 
-void SampicChannelConfigurator::setExtThreshMode() {
-    spdlog::trace("Channel (FEB={}, chip={}): SetSampicExternalThresholdMode={}",
-                  boardIdx_, chipIdx_, config_.external_threshold_mode);
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing TriggerEdge {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (int)current, (int)config_.trigger_edge);
 
-    auto rc = SAMPIC256CH_SetSampicExternalThresholdMode(&info_, &params_,
-                                                         boardIdx_, chipIdx_,
-                                                         config_.external_threshold_mode);
-    check(rc, "SetSampicExternalThresholdMode");
+    check(SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_,
+                                                 boardIdx_, chipIdx_, channelIdx_,
+                                                 config_.trigger_edge),
+          "SetChannelSelfTriggerEdge");
 }
 
 void SampicChannelConfigurator::setSourceForCT() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelSourceForCT={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.enable_for_central_trigger);
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicChannelSourceForCT(&params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  &current),
+          "GetSampicChannelSourceForCT");
 
-    auto rc = SAMPIC256CH_SetSampicChannelSourceForCT(&info_, &params_,
-                                                      boardIdx_, chipIdx_, channelIdx_,
-                                                      config_.enable_for_central_trigger);
-    check(rc, "SetSampicChannelSourceForCT");
+    if ((bool)current == config_.enable_for_central_trigger) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): SourceForCT already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing SourceForCT {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (bool)current,
+                  config_.enable_for_central_trigger);
+
+    check(SAMPIC256CH_SetSampicChannelSourceForCT(&info_, &params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  config_.enable_for_central_trigger),
+          "SetSampicChannelSourceForCT");
 }
 
 void SampicChannelConfigurator::setPulseMode() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelPulseMode={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.pulse_mode);
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicChannelPulseMode(&params_,
+                                                boardIdx_, chipIdx_, channelIdx_,
+                                                &current),
+          "GetSampicChannelPulseMode");
 
-    auto rc = SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_,
-                                                    boardIdx_, chipIdx_, channelIdx_,
-                                                    config_.pulse_mode);
-    check(rc, "SetSampicChannelPulseMode");
+    if ((bool)current == config_.pulse_mode) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): PulseMode already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing PulseMode {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (bool)current, config_.pulse_mode);
+
+    check(SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_,
+                                                boardIdx_, chipIdx_, channelIdx_,
+                                                config_.pulse_mode),
+          "SetSampicChannelPulseMode");
 }
 
 // ------------------- Utility -------------------

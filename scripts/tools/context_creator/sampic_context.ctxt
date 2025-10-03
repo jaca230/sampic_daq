@@ -1,76 +1,104 @@
 ===== FILE START =====
 Relative Path: frontend.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/frontend.cpp
-Size: 13767 bytes
+Size: 15015 bytes
 -----
 // ======================================================================
-// System Level
+// SAMPIC Frontend (buffer-based, ODB-driven; controller owns collector)
 // ======================================================================
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
+// System
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
-#include <vector>
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <memory>
+#include <optional>
+#include <string>
 #include <unistd.h>
 
-// Midas
+// MIDAS
 #include "midas.h"
 #include "mfe.h"
 
-// Sampic
-extern "C" {
-#include <SAMPIC_256Ch_lib.h>
-#include <SAMPIC_256Ch_Type.h>
-}
-
-// Project
-#include "integration/sampic/config/sampic_crate_config.h"
+// Project: ODB + logging + FE config
 #include "integration/midas/frontend_config.h"
 #include "integration/midas/odb/odb_manager.h"
 #include "integration/midas/odb/odb_utils.h"
 #include "integration/spdlog/logger_config.h"
 #include "integration/spdlog/logger_configurator.h"
 
+// Project: SAMPIC configs + controller
+#include "integration/sampic/config/sampic_crate_config.h"
+#include "integration/sampic/config/sampic_controller_config.h"
+#include "integration/sampic/config/sampic_collector_config.h"
+#include "integration/sampic/controller/sampic_controller.h"
+
+// Event + timing structs
+#include "integration/sampic/collector/sampic_event_buffer.h"
+
 // ======================================================================
-// Globals
+// Compact bank payloads
 // ======================================================================
-const char *frontend_name = "SAMPIC_Frontend";
-const char *frontend_file_name = __FILE__;
-BOOL frontend_call_loop = FALSE;
-INT display_period = 0;
-INT max_event_size = 128 * 1024 * 1024;
-INT max_event_size_frag = 5 * max_event_size;
-INT event_buffer_size = 5 * max_event_size;
-INT frontend_index;
-char settings_path[256];
+#pragma pack(push, 1)
+struct SampicEventLite {
+  uint32_t nb_hits;
+  uint32_t nb_triggers;
+};
 
-std::mutex settings_mutex;
+// No fixed samples[] here — we write samples right after this meta.
+struct SampicHitMeta {
+  int32_t fe_board;
+  int32_t sampic_idx;
+  int32_t channel;
+  int32_t hit_number;
 
-// SAMPIC globals
-CrateConnectionParamStruct CrateConnectionParams;
-CrateInfoStruct CrateInfoParams;
-CrateParamStruct CrateParams;
-void *EventBuffer = nullptr;
-ML_Frame *My_ML_Frames = nullptr;
-EventStruct Event;
-char Message[1024];
+  // number of samples that follow (uint16_t each)
+  int32_t data_size;
 
-bool system_initialized = false;
+  float   amplitude;
+  float   baseline;
+  float   peak;
+  double  time_ns;
+};
+#pragma pack(pop)
+
+// ======================================================================
+// Globals (MIDAS)
+// ======================================================================
+const char *frontend_name       = "SAMPIC_Frontend";
+const char *frontend_file_name  = __FILE__;
+BOOL        frontend_call_loop  = FALSE;
+INT         display_period      = 0;
+INT         max_event_size      = 128 * 1024 * 1024;
+INT         max_event_size_frag = 5 * max_event_size;
+INT         event_buffer_size   = 5 * max_event_size;
+
+static INT  g_frontend_index     = 0;
+static char g_settings_path[256] = {0};
+
+static bool g_system_initialized = false;
 
 // Polling
-std::chrono::steady_clock::time_point last_poll_time;
-std::chrono::microseconds polling_interval(1000000);
+static std::chrono::steady_clock::time_point g_last_poll_time;
+static std::chrono::microseconds             g_polling_interval(1'000'000); // default 1s
+static std::chrono::steady_clock::time_point g_last_evt_ts = std::chrono::steady_clock::time_point::min();
 
-// Configs
-SampicSystemSettings sampic_cfg;
-FrontendConfig fe_config;
-LoggerConfig logger_config;
+// Configs read from ODB
+static FrontendConfig         g_fe_cfg;
+static LoggerConfig           g_logger_cfg;
+static SampicSystemSettings   g_sys_cfg;
+static SampicControllerConfig g_ctrl_cfg;
+static SampicCollectorConfig  g_coll_cfg;
+
+// Controller (owns collector + buffer)
+static std::unique_ptr<SampicController> g_controller;
 
 // ======================================================================
-// Function declarations
+// Prototypes
 // ======================================================================
 INT frontend_init(void);
 INT frontend_exit(void);
@@ -84,338 +112,343 @@ INT read_sampic_event(char *pevent, INT off);
 INT poll_event(INT source, INT count, BOOL test);
 INT interrupt_configure(INT cmd, INT source, POINTER_T adr);
 
-// SAMPIC functions
-int InitializeSAMPIC(void);
-void SetTriggerOptions(void);
-int ReadSAMPICEvent(void);
-void CleanupSAMPIC(void);
-
 // ======================================================================
-// Equipment list
+// Equipment
 // ======================================================================
 BOOL equipment_common_overwrite = TRUE;
 
 EQUIPMENT equipment[] = {
     {"SAMPIC %02d",
-        {1, 0,
-            "SYSTEM",
-            EQ_POLLED | EQ_EB,
-            0,
-            "MIDAS",
-            TRUE,
-            RO_RUNNING,
-            100, // poll time in ms
-            0,
-            0,
-            TRUE,
-            "", "", "",},
+        { 1, 0,
+          "SYSTEM",
+          EQ_POLLED | EQ_EB,
+          0,
+          "MIDAS",
+          TRUE,
+          RO_RUNNING,
+          100,
+          0,
+          0,
+          TRUE,
+          "", "", "", },
         read_sampic_event
     },
     {""}
 };
 
 // ======================================================================
-// SAMPIC helper functions
+// Utilities
 // ======================================================================
-int InitializeSAMPIC(void) {
-    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
-
-    spdlog::info("Initializing SAMPIC system...");
-
-    // Set connection parameters
-    CrateConnectionParams.ConnectionType = UDP_CONNECTION;
-    CrateConnectionParams.ControlBoardControlType = CTRL_AND_DAQ;
-    strncpy(CrateConnectionParams.CtrlIpAddress,
-            sampic_cfg.ip_address.c_str(),
-            sizeof(CrateConnectionParams.CtrlIpAddress) - 1);
-    CrateConnectionParams.CtrlIpAddress[sizeof(CrateConnectionParams.CtrlIpAddress) - 1] = '\0';
-    CrateConnectionParams.CtrlPort = sampic_cfg.port;
-
-    // Open connection
-    errCode = SAMPIC256CH_OpenCrateConnection(CrateConnectionParams, &CrateInfoParams);
-
-    if (errCode == SAMPIC256CH_Success) {
-        spdlog::info("Opened connection with SAMPIC-256Ch Crate ({} FE boards).",
-                     CrateInfoParams.NbOfFeBoards);
-    } else {
-        cm_msg(MERROR, "SAMPIC",
-               "No SAMPIC-256Ch Crate found! Error code: %d", errCode);
-        return errCode;
-    }
-
-    // Load default parameters
-    errCode = SAMPIC256CH_SetDefaultParameters(&CrateInfoParams, &CrateParams);
-    if (errCode != SAMPIC256CH_Success) {
-        cm_msg(MERROR, "SAMPIC", "Failed to load default parameters (err=%d)", errCode);
-        return errCode;
-    }
-
-    // Load calibration files
-    errCode = SAMPIC256CH_LoadAllCalibValuesFromFiles(&CrateInfoParams, &CrateParams,
-                                                  const_cast<char*>("."));
-    if (errCode != SAMPIC256CH_Success) {
-        spdlog::warn("At least one calibration file not found, continuing anyway...");
-        errCode = SAMPIC256CH_Success;
-    }
-
-    // Allocate event memory
-    errCode = SAMPIC256CH_AllocateEventMemory(&EventBuffer, &My_ML_Frames);
-    if (errCode != SAMPIC256CH_Success) {
-        cm_msg(MERROR, "SAMPIC", "Failed to allocate event memory (err=%d)", errCode);
-        return errCode;
-    }
-    spdlog::info("Event memory allocated successfully.");
-
-    return errCode;
-}
-
-void SetTriggerOptions(void) {
-    spdlog::info("Setting trigger options...");
-    SAMPIC256CH_ErrCode errCode;
-
-    errCode = SAMPIC256CH_SetChannelMode(&CrateInfoParams, &CrateParams,
-                                         ALL_FE_BOARDs, ALL_CHANNELs, TRUE);
-    if (errCode != SAMPIC256CH_Success) {
-        cm_msg(MERROR, "SAMPIC", "Failed to set channel mode (err=%d)", errCode);
-        return;
-    }
-
-    errCode = SAMPIC256CH_SetSampicChannelTriggerMode(&CrateInfoParams, &CrateParams,
-                                                      ALL_FE_BOARDs, ALL_SAMPICs, ALL_CHANNELs,
-                                                      SAMPIC_CHANNEL_EXT_TRIGGER_MODE);
-    if (errCode != SAMPIC256CH_Success) {
-        cm_msg(MERROR, "SAMPIC", "Failed to set channel trigger mode (err=%d)", errCode);
-        return;
-    }
-
-    errCode = SAMPIC256CH_SetSampicTriggerOption(&CrateInfoParams, &CrateParams,
-                                                 ALL_FE_BOARDs, ALL_SAMPICs,
-                                                 SAMPIC_TRIGGER_IS_L1);
-    if (errCode != SAMPIC256CH_Success) {
-        cm_msg(MERROR, "SAMPIC", "Failed to set trigger option (err=%d)", errCode);
-        return;
-    }
-
-    errCode = SAMPIC256CH_SetExternalTriggerType(&CrateInfoParams, &CrateParams, SOFTWARE);
-    if (errCode != SAMPIC256CH_Success) {
-        cm_msg(MERROR, "SAMPIC", "Failed to set external trigger type (err=%d)", errCode);
-        return;
-    }
-
-    spdlog::info("Trigger options set successfully.");
-}
-
-int ReadSAMPICEvent(void) {
-    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_Success;
-    int numberOfHits = 0;
-    int nframes = 0;
-    int nloop_for_soft_trig = 0;
-    int dummy = 0;
-
-    SAMPIC256CH_PrepareEvent(&CrateInfoParams, &CrateParams);
-
-    errCode = SAMPIC256CH_NoFrameRead;
-
-    while (errCode != SAMPIC256CH_Success) {
-        errCode = SAMPIC256CH_ReadEventBuffer(&CrateInfoParams, dummy,
-                                              EventBuffer, My_ML_Frames, &nframes);
-
-        if (errCode == SAMPIC256CH_Success) {
-            errCode = SAMPIC256CH_DecodeEvent(&CrateInfoParams, &CrateParams,
-                                              My_ML_Frames, &Event, nframes, &numberOfHits);
-        }
-
-        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent) {
-            cm_msg(MERROR, "SAMPIC", "Acquisition error (err=%d)", errCode);
-            return -1;
-        }
-
-        if ((nloop_for_soft_trig % 100) == 0) {
-            SAMPIC256CH_PrepareEvent(&CrateInfoParams, &CrateParams);
-        }
-        nloop_for_soft_trig++;
-
-        if (nloop_for_soft_trig > 10000) {
-            spdlog::warn("Timeout waiting for event data");
-            return 0;
-        }
-    }
-
-    if (errCode == SAMPIC256CH_Success) {
-        spdlog::debug("Received {} hits in event", numberOfHits);
-    }
-
-    return numberOfHits;
-}
-
-void CleanupSAMPIC(void) {
-    spdlog::info("Cleaning up SAMPIC resources...");
-    if (EventBuffer) {
-        // SAMPIC256CH_FreeEventMemory(&EventBuffer, &My_ML_Frames);
-        EventBuffer = nullptr;
-        My_ML_Frames = nullptr;
-    }
-    // SAMPIC256CH_CloseCrateConnection(&CrateInfoParams);
+static std::string make_bank_name(const std::string& prefix, int idx2d) {
+  std::string p = prefix.empty() ? "XX" : prefix.substr(0,2);
+  char name[8];
+  std::snprintf(name, sizeof(name), "%s%02d", p.c_str(), idx2d);
+  return std::string(name);
 }
 
 // ======================================================================
-// MIDAS Frontend Functions
+// ODB helpers
+// ======================================================================
+static bool initialize_all_configs_from_odb(std::string& err_out) {
+  try {
+    OdbManager odb;
+    const std::string base = g_settings_path;
+
+    odb.initialize(base + "/Logger", LoggerConfig{});
+    g_logger_cfg = odb.read<LoggerConfig>(base + "/Logger");
+    LoggerConfigurator::configure(g_logger_cfg);
+
+    odb.initialize(base + "/Frontend", FrontendConfig{});
+    g_fe_cfg = odb.read<FrontendConfig>(base + "/Frontend");
+
+    odb.initialize(base + "/Crate", SampicSystemSettings{});
+    g_sys_cfg = odb.read<SampicSystemSettings>(base + "/Crate");
+
+    odb.initialize(base + "/Sampic Controller", SampicControllerConfig{});
+    g_ctrl_cfg = odb.read<SampicControllerConfig>(base + "/Sampic Controller");
+
+    odb.initialize(base + "/Sampic Event Collector", SampicCollectorConfig{});
+    g_coll_cfg = odb.read<SampicCollectorConfig>(base + "/Sampic Event Collector");
+
+    g_polling_interval = std::chrono::microseconds(g_fe_cfg.polling_interval_us);
+    return true;
+  } catch (const std::exception& e) {
+    err_out = e.what();
+    return false;
+  }
+}
+
+static bool read_all_configs_from_odb(std::string& err_out) {
+  try {
+    OdbManager odb;
+    const std::string base = g_settings_path;
+
+    g_logger_cfg = odb.read<LoggerConfig>(base + "/Logger");
+    g_fe_cfg     = odb.read<FrontendConfig>(base + "/Frontend");
+    g_sys_cfg    = odb.read<SampicSystemSettings>(base + "/Crate");
+    g_ctrl_cfg   = odb.read<SampicControllerConfig>(base + "/Sampic Controller");
+    g_coll_cfg   = odb.read<SampicCollectorConfig>(base + "/Sampic Event Collector");
+
+    LoggerConfigurator::configure(g_logger_cfg);
+    g_polling_interval = std::chrono::microseconds(g_fe_cfg.polling_interval_us);
+    return true;
+  } catch (const std::exception& e) {
+    err_out = e.what();
+    return false;
+  }
+}
+
+// ======================================================================
+// SAMPIC controller setup
+// ======================================================================
+static bool initialize_sampic_controller(std::string& err_out) {
+  try {
+    g_controller = std::make_unique<SampicController>(g_sys_cfg, g_ctrl_cfg, g_coll_cfg);
+
+    int rc = g_controller->initialize();
+    if (rc != 0) {
+      err_out = "SAMPIC controller initialize() failed with code " + std::to_string(rc);
+      return false;
+    }
+    return true;
+  } catch (const std::exception& e) {
+    err_out = e.what();
+    return false;
+  }
+}
+
+// ======================================================================
+// MIDAS Frontend impl
 // ======================================================================
 INT frontend_init() {
-    frontend_index = get_frontend_index();
-    snprintf(settings_path, sizeof(settings_path),
-             "/Equipment/SAMPIC %02d/Settings", frontend_index);
-    // Set frontend status color → init
-    OdbUtils::odbSetStatusColor(frontend_index, fe_config.init_color);
+  g_frontend_index = get_frontend_index();
+  std::snprintf(g_settings_path, sizeof(g_settings_path),
+                "/Equipment/SAMPIC %02d/Settings", g_frontend_index);
 
-    try {
-        OdbManager odb;
+  OdbUtils::odbSetStatusColor(g_frontend_index, g_fe_cfg.init_color);
 
-        // Paths under this frontend’s settings
-        std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
-        std::string logger_cfg_path = std::string(settings_path) + "/Logger";
-        std::string sampic_cfg_path = std::string(settings_path) + "/Crate";
+  std::string err;
+  if (!initialize_all_configs_from_odb(err)) {
+    cm_msg(MERROR, __FUNCTION__, "Failed to initialize configs: %s", err.c_str());
+    return FE_ERR_ODB;
+  }
+  if (!initialize_sampic_controller(err)) {
+    cm_msg(MERROR, __FUNCTION__, "Failed to init controller: %s", err.c_str());
+    return FE_ERR_HW;
+  }
 
-        // Logger
-        odb.initialize(logger_cfg_path, LoggerConfig{});
-        logger_config = odb.read<LoggerConfig>(logger_cfg_path);
-        LoggerConfigurator::configure(logger_config);
-
-        // Midas Frontend Settings
-        odb.initialize(fe_cfg_path, FrontendConfig{});
-        fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
-
-        // SAMPIC Crate Settings
-        odb.initialize(sampic_cfg_path, SampicSystemSettings{});
-        sampic_cfg   = odb.read<SampicSystemSettings>(sampic_cfg_path);
-
-        // Initialize hardware
-        int result = InitializeSAMPIC();
-        if (result == SAMPIC256CH_Success) {
-            system_initialized = true;
-            spdlog::info("SAMPIC system initialized successfully");
-        } else {
-            cm_msg(MERROR, "SAMPIC", "Failed to initialize SAMPIC system (err=%d)", result);
-            return FE_ERR_HW;
-        }
-
-        // Set frontend status color → init
-        OdbUtils::odbSetStatusColor(frontend_index, fe_config.ready_color);
-        return SUCCESS;
-    } catch (const std::exception& e) {
-        cm_msg(MERROR, __FUNCTION__, "Error during frontend_init: %s", e.what());
-        return FE_ERR_HW;
-    }
+  g_system_initialized = true;
+  OdbUtils::odbSetStatusColor(g_frontend_index, g_fe_cfg.ready_color);
+  return SUCCESS;
 }
 
 INT frontend_exit() {
-    if (system_initialized) {
-        CleanupSAMPIC();
-        system_initialized = false;
+  try {
+    if (g_controller) {
+      g_controller->stopCollector();
+      g_controller->stopRun();
+      g_controller->cleanup();
     }
-    return SUCCESS;
+  } catch (...) {}
+  g_controller.reset();
+  g_system_initialized = false;
+  return SUCCESS;
 }
 
 INT begin_of_run(INT run_number, char *error) {
-    if (!system_initialized) {
-        strcpy(error, "SAMPIC system not initialized");
-        return FE_ERR_HW;
-    }
+  if (!g_system_initialized || !g_controller) {
+    std::strcpy(error, "System not initialized");
+    return FE_ERR_HW;
+  }
 
-    try {
-        OdbManager odb;
-        // Paths under this frontend’s settings
-        std::string fe_cfg_path     = std::string(settings_path) + "/Frontend";
-        std::string logger_cfg_path = std::string(settings_path) + "/Logger";
-        std::string sampic_cfg_path = std::string(settings_path) + "/Crate";
+  std::string err;
+  if (!read_all_configs_from_odb(err)) {
+    std::snprintf(error, 256, "Failed to refresh configs: %s", err.c_str());
+    return FE_ERR_ODB;
+  }
 
-        // Refresh configs
-        sampic_cfg   = odb.read<SampicSystemSettings>(sampic_cfg_path);
-        fe_config    = odb.read<FrontendConfig>(fe_cfg_path);
-        logger_config = odb.read<LoggerConfig>(logger_cfg_path);
+  g_controller->setSystemSettings(g_sys_cfg);
+  g_controller->setControllerConfig(g_ctrl_cfg);
+  g_controller->setCollectorConfig(g_coll_cfg);
 
-        // Reconfigure logger if changed
-        LoggerConfigurator::configure(logger_config);
+  if (g_controller->applySettings() != 0) {
+    std::strcpy(error, "Failed to apply settings");
+    return FE_ERR_HW;
+  }
 
-        // Reconfigure polling interval if changed
-        polling_interval  = std::chrono::microseconds(fe_config.polling_interval_us);
+  g_controller->startCollector();
+  if (g_controller->startRun() != 0) {
+    std::strcpy(error, "Failed to start run");
+    return FE_ERR_HW;
+  }
 
-    } catch (const std::exception &e) {
-        sprintf(error, "Failed to refresh configs at run start: %s", e.what());
-        cm_msg(MERROR, __FUNCTION__, "%s", error);
-        return FE_ERR_ODB;
-    }
-
-    // Apply trigger options and start run
-    SetTriggerOptions();
-    SAMPIC256CH_ErrCode err = SAMPIC256CH_StartRun(&CrateInfoParams, &CrateParams, TRUE);
-    if (err != SAMPIC256CH_Success) {
-        sprintf(error, "Error starting SAMPIC run: %d", err);
-        cm_msg(MERROR, __FUNCTION__, "%s", error);
-        return FE_ERR_HW;
-    }
-
-    spdlog::info("Run {} started", run_number);
-    return SUCCESS;
+  g_last_evt_ts = std::chrono::steady_clock::time_point::min();
+  return SUCCESS;
 }
 
-INT end_of_run(INT run_number, char *error) {
-    if (system_initialized) {
-        SAMPIC256CH_ErrCode errCode = SAMPIC256CH_StopRun(&CrateInfoParams, &CrateParams);
-        if (errCode == SAMPIC256CH_Success) {
-            spdlog::info("Run {} stopped", run_number);
-        } else {
-            sprintf(error, "Error stopping SAMPIC run: %d", errCode);
-            cm_msg(MERROR, "SAMPIC", "%s", error);
-            return FE_ERR_HW;
-        }
+INT end_of_run(INT, char *error) {
+  try {
+    if (g_controller) {
+      g_controller->stopCollector();
+      if (g_controller->stopRun() != 0) {
+        std::strcpy(error, "Failed to stop run");
+        return FE_ERR_HW;
+      }
     }
-    return SUCCESS;
+  } catch (...) {
+    std::strcpy(error, "Error during EOR");
+    return FE_ERR_HW;
+  }
+  return SUCCESS;
 }
 
-INT pause_run(INT, char*) { return SUCCESS; }
+INT pause_run(INT, char*)  { return SUCCESS; }
 INT resume_run(INT, char*) { return SUCCESS; }
-INT frontend_loop() { return SUCCESS; }
+INT frontend_loop()        { return SUCCESS; }
 
+// ======================================================================
+// Polling
+// ======================================================================
 INT poll_event(INT, INT, BOOL test) {
-    auto now = std::chrono::steady_clock::now();
-    if (now - last_poll_time >= polling_interval) {
-        last_poll_time = now;
-        return TRUE;
-    }
-    return test ? FALSE : 0;
+  if (!g_system_initialized || !g_controller) return test ? FALSE : 0;
+
+  auto now = std::chrono::steady_clock::now();
+  if (now - g_last_poll_time < g_polling_interval) return test ? FALSE : 0;
+  g_last_poll_time = now;
+
+  if (g_controller->buffer().hasNewSince(g_last_evt_ts)) return TRUE;
+  return test ? FALSE : 0;
 }
 
-INT interrupt_configure(INT, INT, POINTER_T) {
-    return SUCCESS;
-}
+INT interrupt_configure(INT, INT, POINTER_T) { return SUCCESS; }
 
+// ======================================================================
+// Readout (full-waveform, variable-length hits; one ADxx + one ATxx)
+// ======================================================================
 INT read_sampic_event(char *pevent, INT) {
-    if (!system_initialized) {
-        cm_msg(MERROR, "SAMPIC", "Attempting to read event but system not initialized");
-        return 0;
+  if (!g_system_initialized || !g_controller) {
+    spdlog::warn("read_sampic_event: system not initialized, skipping");
+    return 0;
+  }
+
+  const auto new_events = g_controller->buffer().getSince(g_last_evt_ts);
+  if (new_events.empty()) {
+    spdlog::debug("read_sampic_event: no new events since last timestamp");
+    return 0;
+  }
+
+  // Init MIDAS event container
+  bk_init32(pevent);
+
+  // ------------------------- DATA BANK (ADxx) -------------------------
+  {
+    const auto data_bank = make_bank_name(g_fe_cfg.data_bank_prefix, g_frontend_index);
+    uint8_t* pdata = nullptr;
+    bk_create(pevent, data_bank.c_str(), TID_UINT8, (void**)&pdata);
+    uint8_t* const pdata_start = pdata;
+
+    // Pack each collected SAMPIC event in sequence
+    for (size_t iev = 0; iev < new_events.size(); ++iev) {
+      const auto& tse = new_events[iev];
+      if (!tse.event) {
+        spdlog::warn("read_sampic_event: event {} has null pointer, skipping", iev);
+        continue;
+      }
+      const auto ev = tse.event;
+
+      // --- Event header ---
+      const SampicEventLite evhdr{
+        static_cast<uint32_t>(ev->NbOfHitsInEvent),
+        static_cast<uint32_t>(ev->TriggerData.NbOfTriggers)
+      };
+      std::memcpy(pdata, &evhdr, sizeof(evhdr));
+      pdata += sizeof(evhdr);
+
+      spdlog::debug("Packing event {} → hits={}, triggers={}",
+                    iev, evhdr.nb_hits, evhdr.nb_triggers);
+
+      // --- Hits (variable-length) ---
+      for (int i = 0; i < ev->NbOfHitsInEvent; ++i) {
+        const auto& h = ev->Hit[i];
+
+        // Choose a sane clamp to avoid corrupt banks if upstream is wrong
+        // (tweak if you know chip max samples; 4096 is conservative)
+        constexpr int kMaxSafeSamples = 4096;
+        int data_size = std::max(0, std::min(h.DataSize, kMaxSafeSamples));
+
+        SampicHitMeta meta{};
+        meta.fe_board   = h.FeBoardIndex;
+        meta.sampic_idx = h.SampicIndex;
+        meta.channel    = h.Channel;
+        meta.hit_number = h.HitNumber;
+        meta.data_size  = data_size;
+        meta.amplitude  = h.Amplitude;
+        meta.baseline   = h.Baseline;
+        meta.peak       = h.Peak;
+        meta.time_ns    = h.TimeInstant;
+
+        // Write meta
+        std::memcpy(pdata, &meta, sizeof(meta));
+        pdata += sizeof(meta);
+
+        // Write all samples (uint16_t)
+        const size_t bytes_samples = static_cast<size_t>(data_size) * sizeof(uint16_t);
+        if (data_size > 0) {
+          std::memcpy(pdata, h.OrderedRawDataSamples, bytes_samples);
+          pdata += bytes_samples;
+        }
+
+        spdlog::trace("  hit {}: board={}, sampic={}, ch={}, hit#={}, nsamp={}, "
+                      "amp={:.2f}, base={:.2f}, peak={:.2f}, t={:.3f} ns "
+                      "(wrote {} + {} bytes)",
+                      i, meta.fe_board, meta.sampic_idx, meta.channel, meta.hit_number,
+                      meta.data_size, meta.amplitude, meta.baseline, meta.peak, meta.time_ns,
+                      (int)sizeof(meta), (int)bytes_samples);
+      }
     }
-
-    bk_init32(pevent);
-
-    int numberOfHits = ReadSAMPICEvent();
-    if (numberOfHits < 0) {
-        cm_msg(MERROR, "SAMPIC", "Error reading SAMPIC event");
-        return 0;
-    }
-    if (numberOfHits == 0) return 0;
-
-    // Bank for SAMPIC data
-    char bank_name[8];
-    snprintf(bank_name, sizeof(bank_name), "SMP%02d", frontend_index);
-
-    DWORD *pdata;
-    bk_create(pevent, bank_name, TID_DWORD, (void **)&pdata);
-
-    *pdata++ = numberOfHits; // store number of hits
 
     bk_close(pevent, pdata);
-    return bk_size(pevent);
+    spdlog::debug("Closed data bank {} ({} bytes)", data_bank, (int)(pdata - pdata_start));
+  }
+
+  // ------------------------ TIMING BANK (ATxx) ------------------------
+  {
+    const auto timing_bank = make_bank_name(g_fe_cfg.timing_bank_prefix, g_frontend_index);
+    uint8_t* ptiming = nullptr;
+    bk_create(pevent, timing_bank.c_str(), TID_UINT8, (void**)&ptiming);
+    uint8_t* const ptiming_start = ptiming;
+
+    struct TimingPayload {
+      uint64_t timestamp_ns;
+      uint32_t prepare_us, read_us, decode_us, total_us;
+    };
+
+    for (const auto& tse : new_events) {
+      TimingPayload tp;
+      tp.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          tse.timestamp.time_since_epoch()).count();
+      tp.prepare_us   = tse.timing.prepare_duration.count();
+      tp.read_us      = tse.timing.read_duration.count();
+      tp.decode_us    = tse.timing.decode_duration.count();
+      tp.total_us     = tse.timing.total_duration.count();
+
+      std::memcpy(ptiming, &tp, sizeof(tp));
+      ptiming += sizeof(tp);
+
+      spdlog::trace("  timing: ts={} ns, prep={}us, read={}us, dec={}us, total={}us",
+                    tp.timestamp_ns, tp.prepare_us, tp.read_us, tp.decode_us, tp.total_us);
+    }
+
+    bk_close(pevent, ptiming);
+    spdlog::debug("Closed timing bank {} ({} bytes)", timing_bank, (int)(ptiming - ptiming_start));
+  }
+
+  // Advance watermark
+  g_last_evt_ts = new_events.back().timestamp;
+
+  const int total_size = bk_size(pevent);
+  spdlog::debug("read_sampic_event: MIDAS event size {}", total_size);
+  return total_size;
 }
 
 ===== FILE END =====
@@ -735,7 +768,7 @@ public:
 ===== FILE START =====
 Relative Path: include/integration/sampic/collector/sampic_collector.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/sampic_collector.h
-Size: 1185 bytes
+Size: 1090 bytes
 -----
 #ifndef SAMPIC_COLLECTOR_H
 #define SAMPIC_COLLECTOR_H
@@ -753,43 +786,41 @@ extern "C" {
 #include <SAMPIC_256Ch_lib.h>
 }
 
-/// Collector thread for reading events from SAMPIC hardware and filling the buffer.
 class SampicCollector {
 public:
     SampicCollector(const SampicCollectorConfig& cfg,
-                    SampicEventBuffer& buffer,
                     CrateInfoStruct& info,
                     CrateParamStruct& params,
                     void* eventBuffer,
                     ML_Frame* mlFrames);
-
     ~SampicCollector();
 
     void start();
     void stop();
     bool running() const { return running_; }
 
+    SampicEventBuffer& buffer() { return *buffer_; }
+    const SampicEventBuffer& buffer() const { return *buffer_; }
+
 private:
     void run();
 
     SampicCollectorConfig cfg_;
-    SampicEventBuffer& buffer_;
-    EventStruct event_{};  ///< reused event struct
-
-    std::unique_ptr<SampicCollectorMode> mode_; ///< polymorphic mode
+    std::unique_ptr<SampicEventBuffer> buffer_;
+    std::unique_ptr<SampicCollectorMode> mode_;
 
     std::thread worker_;
     std::atomic<bool> running_{false};
 };
 
-#endif // SAMPIC_COLLECTOR_H
+#endif
 
 ===== FILE END =====
 
 ===== FILE START =====
 Relative Path: include/integration/sampic/collector/sampic_event_buffer.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/collector/sampic_event_buffer.h
-Size: 1344 bytes
+Size: 1828 bytes
 -----
 #ifndef SAMPIC_EVENT_BUFFER_H
 #define SAMPIC_EVENT_BUFFER_H
@@ -800,6 +831,7 @@ Size: 1344 bytes
 #include <optional>
 #include <chrono>
 #include <vector>
+#include <memory>
 #include <spdlog/spdlog.h>
 
 extern "C" {
@@ -814,11 +846,12 @@ struct SampicEventTiming {
     std::chrono::microseconds total_duration{0};
 };
 
-/// Wrapper for EventStruct with timestamp and timing diagnostics
+/// Wrapper: shared_ptr to EventStruct + timestamp + timing
 struct TimestampedSampicEvent {
-    EventStruct event;
+    std::shared_ptr<EventStruct> event;
     std::chrono::steady_clock::time_point timestamp;
     SampicEventTiming timing;
+    bool consumed{false};
 };
 
 /// Thread-safe buffer for holding timestamped SAMPIC events
@@ -826,11 +859,21 @@ class SampicEventBuffer {
 public:
     explicit SampicEventBuffer(size_t capacity);
 
-    void push(const TimestampedSampicEvent& ev);
-    std::optional<TimestampedSampicEvent> pop();
-    std::optional<TimestampedSampicEvent> latest();
+    // Producer
+    void push(const std::shared_ptr<EventStruct>& ev, 
+              const SampicEventTiming& timing);
+
+    // Consumer
+    std::optional<TimestampedSampicEvent> pop();        ///< destructive
+    std::optional<TimestampedSampicEvent> latest();     ///< peek latest, marks consumed
     std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t);
 
+    // Polling helpers
+    bool hasNewSince(std::chrono::steady_clock::time_point t) const;
+    bool waitForNew(std::chrono::steady_clock::time_point t,
+                    std::chrono::milliseconds timeout);
+
+    // Info
     size_t size() const;
     bool empty() const;
 
@@ -839,6 +882,7 @@ private:
     mutable std::mutex mtx_;
     std::condition_variable cv_;
     std::deque<TimestampedSampicEvent> buffer_;
+    std::chrono::steady_clock::time_point last_timestamp_;
 };
 
 #endif // SAMPIC_EVENT_BUFFER_H
@@ -1000,7 +1044,7 @@ private:
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_collector_config.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_collector_config.h
-Size: 757 bytes
+Size: 864 bytes
 -----
 #ifndef SAMPIC_COLLECTOR_CONFIG_H
 #define SAMPIC_COLLECTOR_CONFIG_H
@@ -1019,14 +1063,15 @@ struct SampicCollectorConfig {
     SampicCollectorModeType mode = SampicCollectorModeType::EXAMPLE;
 
     // Buffering
-    size_t buffer_size = 1024;      // number of events the buffer can hold
+    size_t buffer_size = 128;      // number of events the buffer can hold
 
     // Timing
-    int sleep_time_us = 1000;       // microseconds to sleep between polls
+    int sleep_time_us = 1000000;    // microseconds to sleep between collector loop polls
 
     // Acquisition loop
-    int soft_trigger_prepare_interval = 100;    // how often to re-call PrepareEvent
-    int soft_trigger_max_loops        = 10000;  // max loops before timing out
+    int soft_trigger_prepare_interval = 100;     // how often to re-call PrepareEvent
+    int soft_trigger_max_loops        = 10000;   // max loops before timing out
+    int soft_trigger_retry_sleep_us   = 100;     // NEW: sleep between failed read retries
 };
 
 #endif // SAMPIC_COLLECTOR_CONFIG_H
@@ -1067,7 +1112,7 @@ struct SampicControllerConfig {
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_crate_config.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_crate_config.h
-Size: 7350 bytes
+Size: 7442 bytes
 -----
 #ifndef SAMPIC_CONFIG_H
 #define SAMPIC_CONFIG_H
@@ -1084,7 +1129,7 @@ extern "C" {
 // Channel (lowest level)
 // ==============================
 struct SampicChannelConfig {
-  bool                         enabled  = true;                          // SAMPIC256CH_SetChannelMode
+  bool                         enabled  = true;                          // Global enable for channel
   SAMPIC_ChannelTriggerMode_t  trigger_mode = SAMPIC_CHANNEL_EXT_TRIGGER_MODE; // SAMPIC256CH_SetSampicChannelTriggerMode
   float                        internal_threshold = 0.0;                 // SAMPIC256CH_SetSampicChannelInternalThreshold
   EdgeType_t                   trigger_edge = RISING_EDGE;               // SAMPIC256CH_SetChannelSelflTriggerEdge
@@ -1099,6 +1144,8 @@ using SampicChannelSettings = std::map<std::string, SampicChannelConfig>;
 // Chip (contains channels)
 // ==============================
 struct SampicChipConfig {
+  bool                          enabled = true;                          // Global enable for chip
+
   float                         baseline_reference = DEFAULT_SAMPIC_BASELINE; // SAMPIC256CH_SetBaselineReference
   float                         external_threshold = 0.5;                    // SAMPIC256CH_SetSampicExternalThreshold
 
@@ -1129,6 +1176,8 @@ using SampicChipSettings = std::map<std::string, SampicChipConfig>;
 // Board (contains chips)
 // ==============================
 struct SampicFrontEndConfig {
+  bool enabled = true;   // Global enable for this FE board
+
   FebGlobalTrigger_t global_trigger_option = FEB_GLOBAL_TRIGGER_IS_L2;       // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
 
   unsigned char     level2_ext_trig_gate  = DEFAULT_EXT_TRIG_GATE;           // SAMPIC256CH_SetLevel2ExtTrigGate
@@ -1145,7 +1194,7 @@ using SampicFrontEndSettings = std::map<std::string, SampicFrontEndConfig>;
 // Crate (top-level system)
 // ==============================
 struct SampicSystemSettings {
-  std::string    ip_address     = DEFAULT_CTRL_IP_ADDRESS; // Default: "192.168.0.0" (SAMPIC_256Ch_Type.h)
+  std::string    ip_address     = "192.168.0.4"; //DEFAULT_CTRL_IP_ADDRESS
   int            port           = DEFAULT_UDP_CTRL_PORT;   // UDP control port
   ConnectionType_t connection_type = UDP_CONNECTION;       // SAMPIC256CH_OpenCrateConnection
   ControlType_t    control_type    = CTRL_AND_DAQ;         // SAMPIC256CH_OpenCrateConnection
@@ -1190,13 +1239,11 @@ struct SampicSystemSettings {
   bool        adc_linearity_correction   = false; // SAMPIC256CH_SetCrateCorrectionLevels
   bool        time_inl_correction        = false;
   bool        residual_pedestal_correction = false;
-  std::string calibration_directory      = ".";   // SAMPIC256CH_LoadAllCalibValuesFromFiles
+  std::string calibration_directory      = "resources/calib";   // SAMPIC256CH_LoadAllCalibValuesFromFiles
 
   SampicFrontEndSettings    front_end_boards {
     {"feb0", {}}, {"feb1", {}}, {"feb2", {}}, {"feb3", {}}
   };
-
-  bool verbose = false; // for logging verbosity
 };
 
 #endif // SAMPIC_CONFIG_H
@@ -1458,15 +1505,12 @@ public:
 ===== FILE START =====
 Relative Path: include/integration/sampic/controller/sampic_controller.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/controller/sampic_controller.h
-Size: 3070 bytes
+Size: 2792 bytes
 -----
 #ifndef SAMPIC_CONTROLLER_H
 #define SAMPIC_CONTROLLER_H
 
 #include <memory>
-#include <optional>
-#include <vector>
-#include <chrono>
 #include <spdlog/spdlog.h>
 
 // External SAMPIC lib
@@ -1479,7 +1523,6 @@ extern "C" {
 #include "integration/sampic/config/sampic_crate_config.h"
 #include "integration/sampic/config/sampic_controller_config.h"
 #include "integration/sampic/config/sampic_collector_config.h"
-#include "integration/sampic/collector/sampic_event_buffer.h"
 #include "integration/sampic/collector/sampic_collector.h"
 #include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h"
 #include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h"
@@ -1518,11 +1561,8 @@ public:
     void stopCollector();
 
     // ---------------- Buffer access ----------------
-    std::optional<TimestampedSampicEvent> latestEvent();
-    std::optional<TimestampedSampicEvent> popEvent();
-    std::vector<TimestampedSampicEvent> getEventsSince(std::chrono::steady_clock::time_point t);
-    size_t bufferSize() const;
-    bool bufferEmpty() const;
+    SampicEventBuffer& buffer();
+    const SampicEventBuffer& buffer() const;
 
 private:
     // Configs
@@ -1535,17 +1575,18 @@ private:
     CrateParamStruct params_{};
     void* eventBuffer_{nullptr};
     ML_Frame* mlFrames_{nullptr};
-    EventStruct event_{};
 
-    // Buffer + collector
-    SampicEventBuffer buffer_;
+    // Collector (owns its buffer)
     std::unique_ptr<SampicCollector> collector_;
 
     // Init/apply strategies
     std::unique_ptr<SampicInitSettingsMode> init_mode_;
     std::unique_ptr<SampicApplySettingsMode> apply_mode_;
 
+    // State
     bool initialized_{false};
+    bool run_started_{false};
+    bool collector_running_{false};
 };
 
 #endif // SAMPIC_CONTROLLER_H
@@ -1630,7 +1671,7 @@ Size: 0 bytes
 ===== FILE START =====
 Relative Path: src/integration/midas/odb/odb_manager.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/midas/odb/odb_manager.cpp
-Size: 8236 bytes
+Size: 8658 bytes
 -----
 #include "integration/midas/odb/odb_manager.h"
 #include <cstring>
@@ -1749,53 +1790,64 @@ void OdbManager::initialize(const std::string& path, const json& j) {
 
 // --- Populate ODB recursively ---
 void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, OdbMode mode) {
+    HNDLE key;
+    bool exists = (db_find_key(hDB_handle, 0, basePath.c_str(), &key) == DB_SUCCESS);
+
     if (j.is_object()) {
+        // Ensure directory key exists
+        if (!exists && mode == OdbMode::INITIALIZE) {
+            db_create_key(hDB_handle, 0, basePath.c_str(), TID_KEY);
+        }
         // Recurse on object fields
-        for (auto& [key, value] : j.items()) {
-            std::string fullPath = basePath + "/" + key;
-            if (mode == OdbMode::INITIALIZE) {
-                HNDLE subkey;
-                if (db_find_key(hDB_handle, 0, fullPath.c_str(), &subkey) == DB_SUCCESS)
-                    continue; // already exists
-            }
+        for (auto& [subkey, value] : j.items()) {
+            std::string fullPath = basePath + "/" + subkey;
             populateOdbHelper(fullPath, value, mode);
         }
     }
     else if (j.is_array()) {
         if (j.empty()) return;
 
-        // Detect type of first element
+        // Ensure array key exists
+        if (!exists && mode == OdbMode::INITIALIZE) {
+            db_create_key(hDB_handle, 0, basePath.c_str(), TID_KEY);
+        }
+
+        // Detect primitive array vs object array
         if (j.front().is_primitive()) {
-            // Treat as real ODB array of primitives
+            if (mode == OdbMode::INITIALIZE && exists) {
+                return; // skip existing arrays
+            }
+
             if (j.front().is_string()) {
                 std::vector<std::string> vals;
                 for (auto& v : j) vals.push_back(v.get<std::string>());
                 for (size_t i = 0; i < vals.size(); i++) {
                     std::string itemPath = basePath + "/" + std::to_string(i);
                     db_set_value(hDB_handle, 0, itemPath.c_str(),
-                                 vals[i].c_str(), vals[i].size()+1, 1, TID_STRING);
+                                 vals[i].c_str(), vals[i].size() + 1, 1, TID_STRING);
                 }
             }
             else if (j.front().is_boolean()) {
                 std::vector<int> vals;
                 for (auto& v : j) vals.push_back(v.get<bool>() ? 1 : 0);
                 db_set_value(hDB_handle, 0, basePath.c_str(),
-                             vals.data(), sizeof(int)*vals.size(), vals.size(), TID_BOOL);
+                             vals.data(), sizeof(int) * vals.size(), vals.size(), TID_BOOL);
             }
             else if (j.front().is_number_float()) {
                 std::vector<double> vals;
                 for (auto& v : j) vals.push_back(v.get<double>());
                 db_set_value(hDB_handle, 0, basePath.c_str(),
-                             vals.data(), sizeof(double)*vals.size(), vals.size(), TID_FLOAT64);
+                             vals.data(), sizeof(double) * vals.size(), vals.size(), TID_FLOAT64);
             }
             else if (j.front().is_number_integer()) {
                 std::vector<int64_t> vals;
                 for (auto& v : j) vals.push_back(v.get<int64_t>());
                 db_set_value(hDB_handle, 0, basePath.c_str(),
-                             vals.data(), sizeof(int64_t)*vals.size(), vals.size(), TID_INT64);
+                             vals.data(), sizeof(int64_t) * vals.size(), vals.size(), TID_INT64);
             }
-        } else {
-            // Array of objects or nested arrays → recurse with indices
+        }
+        else {
+            // Array of objects → recurse
             for (size_t i = 0; i < j.size(); ++i) {
                 std::string itemPath = basePath + "/" + std::to_string(i);
                 populateOdbHelper(itemPath, j[i], mode);
@@ -1803,11 +1855,16 @@ void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, O
         }
     }
     else if (j.is_primitive()) {
+        // Skip existing values in INITIALIZE mode
+        if (mode == OdbMode::INITIALIZE && exists) {
+            return;
+        }
+
         // Scalars
         if (j.is_string()) {
             std::string s = j;
             db_set_value(hDB_handle, 0, basePath.c_str(),
-                         s.c_str(), s.size()+1, 1, TID_STRING);
+                         s.c_str(), s.size() + 1, 1, TID_STRING);
         }
         else if (j.is_boolean()) {
             int b = j.get<bool>() ? 1 : 0;
@@ -1826,6 +1883,7 @@ void OdbManager::populateOdbHelper(const std::string& basePath, const json& j, O
         }
     }
 }
+
 
 
 // --- Utility ---
@@ -1919,10 +1977,11 @@ int SampicCollectorModeDefault::readEvent(EventStruct& event,
 ===== FILE START =====
 Relative Path: src/integration/sampic/collector/modes/sampic_collector_mode_example.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/modes/sampic_collector_mode_example.cpp
-Size: 2508 bytes
+Size: 2816 bytes
 -----
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
 #include <spdlog/spdlog.h>
+#include <thread>   // for sleep_for
 
 int SampicCollectorModeExample::readEvent(EventStruct& event,
                                           SampicEventTiming& timing) {
@@ -1967,6 +2026,12 @@ int SampicCollectorModeExample::readEvent(EventStruct& event,
             spdlog::warn("Example mode: Timeout after {} loops", cfg_.soft_trigger_max_loops);
             return 0;
         }
+
+        // NEW: avoid pegging CPU if repeated failures
+        if (errCode != SAMPIC256CH_Success && cfg_.soft_trigger_retry_sleep_us > 0) {
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(cfg_.soft_trigger_retry_sleep_us));
+        }
     }
 
     timing.prepare_duration =
@@ -1988,20 +2053,19 @@ int SampicCollectorModeExample::readEvent(EventStruct& event,
 ===== FILE START =====
 Relative Path: src/integration/sampic/collector/sampic_collector.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/sampic_collector.cpp
-Size: 2193 bytes
+Size: 2125 bytes
 -----
 #include "integration/sampic/collector/sampic_collector.h"
 #include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
 
 SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
-                                 SampicEventBuffer& buffer,
                                  CrateInfoStruct& info,
                                  CrateParamStruct& params,
                                  void* eventBuffer,
                                  ML_Frame* mlFrames)
-    : cfg_(cfg), buffer_(buffer)
-{
+    : cfg_(cfg),
+      buffer_(std::make_unique<SampicEventBuffer>(cfg.buffer_size)) {
     switch (cfg.mode) {
         case SampicCollectorModeType::DEFAULT:
             mode_ = std::make_unique<SampicCollectorModeDefault>(info, params, eventBuffer, mlFrames, cfg);
@@ -2027,33 +2091,28 @@ void SampicCollector::start() {
 void SampicCollector::stop() {
     if (running_) {
         running_ = false;
-        if (worker_.joinable()) {
-            worker_.join();
-        }
+        if (worker_.joinable()) worker_.join();
     }
 }
 
 void SampicCollector::run() {
     spdlog::info("SAMPIC Collector started in mode {}", static_cast<int>(cfg_.mode));
-
     while (running_) {
         auto start_total = std::chrono::steady_clock::now();
-
         SampicEventTiming timing{};
-        int hits = mode_->readEvent(event_, timing);
+        auto ev_ptr = std::make_shared<EventStruct>();
+
+        int hits = mode_->readEvent(*ev_ptr, timing);
 
         auto end_total = std::chrono::steady_clock::now();
-        timing.total_duration =
-            std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
+        timing.total_duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total);
 
         if (hits > 0) {
-            TimestampedSampicEvent tse{event_, std::chrono::steady_clock::now(), timing};
-            buffer_.push(tse);
+            buffer_->push(ev_ptr, timing);
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));
     }
-
     spdlog::info("SAMPIC Collector stopped");
 }
 
@@ -2062,27 +2121,37 @@ void SampicCollector::run() {
 ===== FILE START =====
 Relative Path: src/integration/sampic/collector/sampic_event_buffer.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/sampic_event_buffer.cpp
-Size: 1512 bytes
+Size: 2777 bytes
 -----
 #include "integration/sampic/collector/sampic_event_buffer.h"
 
-SampicEventBuffer::SampicEventBuffer(size_t capacity) : capacity_(capacity) {}
+SampicEventBuffer::SampicEventBuffer(size_t capacity)
+    : capacity_(capacity),
+      last_timestamp_(std::chrono::steady_clock::time_point::min()) {}
 
-void SampicEventBuffer::push(const TimestampedSampicEvent& ev) {
+void SampicEventBuffer::push(const std::shared_ptr<EventStruct>& ev,
+                             const SampicEventTiming& timing) {
     std::unique_lock<std::mutex> lock(mtx_);
     if (buffer_.size() >= capacity_) {
-        spdlog::warn("SampicEventBuffer full ({} events). Dropping oldest event.", capacity_);
-        buffer_.pop_front(); // drop oldest
+        const auto& oldest = buffer_.front();
+        if (!oldest.consumed) {
+            auto ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             oldest.timestamp.time_since_epoch())
+                             .count();
+            spdlog::warn("SampicEventBuffer full ({}). Dropping UNCONSUMED event ts={} ns",
+                         capacity_, ts_ns);
+        }
+        buffer_.pop_front();
     }
-    buffer_.push_back(ev);
-    cv_.notify_one();
+    buffer_.push_back(TimestampedSampicEvent{
+        ev, std::chrono::steady_clock::now(), timing, false});
+    last_timestamp_ = buffer_.back().timestamp;
+    cv_.notify_all();
 }
 
 std::optional<TimestampedSampicEvent> SampicEventBuffer::pop() {
     std::unique_lock<std::mutex> lock(mtx_);
-    if (buffer_.empty()) {
-        return std::nullopt;
-    }
+    if (buffer_.empty()) return std::nullopt;
     auto ev = buffer_.front();
     buffer_.pop_front();
     return ev;
@@ -2090,21 +2159,42 @@ std::optional<TimestampedSampicEvent> SampicEventBuffer::pop() {
 
 std::optional<TimestampedSampicEvent> SampicEventBuffer::latest() {
     std::unique_lock<std::mutex> lock(mtx_);
-    if (buffer_.empty()) {
-        return std::nullopt;
+    if (buffer_.empty()) return std::nullopt;
+    auto& ev = buffer_.back();
+    if (ev.consumed) {
+        spdlog::warn("latest() returning already-consumed event");
     }
-    return buffer_.back();
+    ev.consumed = true;
+    return ev;
 }
 
-std::vector<TimestampedSampicEvent> SampicEventBuffer::getSince(std::chrono::steady_clock::time_point t) {
+std::vector<TimestampedSampicEvent>
+SampicEventBuffer::getSince(std::chrono::steady_clock::time_point t) {
     std::unique_lock<std::mutex> lock(mtx_);
     std::vector<TimestampedSampicEvent> result;
-    for (const auto& ev : buffer_) {
+    for (auto& ev : buffer_) {
         if (ev.timestamp > t) {
+            if (ev.consumed) {
+                spdlog::warn("getSince(): event already consumed");
+            }
+            ev.consumed = true;
             result.push_back(ev);
         }
     }
     return result;
+}
+
+bool SampicEventBuffer::hasNewSince(std::chrono::steady_clock::time_point t) const {
+    std::unique_lock<std::mutex> lock(mtx_);
+    return last_timestamp_ > t;
+}
+
+bool SampicEventBuffer::waitForNew(std::chrono::steady_clock::time_point t,
+                                   std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(mtx_);
+    return cv_.wait_for(lock, timeout, [&] {
+        return last_timestamp_ > t;
+    });
 }
 
 size_t SampicEventBuffer::size() const {
@@ -2122,7 +2212,7 @@ bool SampicEventBuffer::empty() const {
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_board_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_board_configurator.cpp
-Size: 3660 bytes
+Size: 3869 bytes
 -----
 // sampic_board_configurator.cpp
 #include "integration/sampic/config/sampic_board_configurator.h"
@@ -2187,6 +2277,13 @@ void SampicBoardConfigurator::applyChips() {
     spdlog::debug("FEB {}: applying {} chips...", boardIdx_, config_.sampics.size());
     for (auto& [chipKey, chipCfg] : config_.sampics) {
         int chipIdx = indexFromKey(chipKey);
+
+        if (!chipCfg.enabled) {
+            spdlog::info("Skipping chip '{}' (FEB={}, idx={}) because it is disabled.",
+                         chipKey, boardIdx_, chipIdx);
+            continue;
+        }
+
         spdlog::debug("  → Apply chip '{}'(index={})", chipKey, chipIdx);
         SampicChipConfigurator chip(boardIdx_, chipIdx, info_, params_, chipCfg);
         chip.apply();
@@ -2339,7 +2436,7 @@ void SampicChannelConfigurator::check(SAMPIC256CH_ErrCode code, const std::strin
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_chip_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_chip_configurator.cpp
-Size: 7359 bytes
+Size: 7584 bytes
 -----
 // sampic_chip_configurator.cpp
 #include "integration/sampic/config/sampic_chip_configurator.h"
@@ -2473,6 +2570,13 @@ void SampicChipConfigurator::applyChannels() {
                   boardIdx_, chipIdx_, config_.channels.size());
     for (auto& [chKey, chCfg] : config_.channels) {
         int chIdx = indexFromKey(chKey);
+
+        if (!chCfg.enabled) {
+            spdlog::info("Skipping channel '{}' (FEB={}, chip={}, idx={}) because it is disabled.",
+                         chKey, boardIdx_, chipIdx_, chIdx);
+            continue;
+        }
+
         spdlog::debug("  → Apply channel '{}'(index={})", chKey, chIdx);
         SampicChannelConfigurator ch(boardIdx_, chipIdx_, chIdx, info_, params_, chCfg);
         ch.apply();
@@ -2502,7 +2606,7 @@ int SampicChipConfigurator::indexFromKey(const std::string& key) {
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_crate_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_crate_configurator.cpp
-Size: 12180 bytes
+Size: 12340 bytes
 -----
 // sampic_crate_configurator.cpp
 #include "integration/sampic/config/sampic_crate_configurator.h"
@@ -2747,6 +2851,12 @@ void SampicCrateConfigurator::applyBoards() {
     spdlog::debug("Applying front-end boards settings...");
     for (auto& [key, febCfg] : settings_.front_end_boards) {
         int febIdx = indexFromKey(key);
+
+        if (!febCfg.enabled) {
+            spdlog::info("Skipping FEB '{}' (index={}) because it is disabled.", key, febIdx);
+            continue;
+        }
+
         spdlog::debug("Apply FEB '{}'(index={})", key, febIdx);
         SampicBoardConfigurator feb(febIdx, info_, params_, febCfg);
         feb.apply();
@@ -2802,7 +2912,7 @@ void SampicApplySettingsModeDefault::apply() {
 ===== FILE START =====
 Relative Path: src/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.cpp
-Size: 2022 bytes
+Size: 2592 bytes
 -----
 #include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h"
 #include "integration/sampic/config/sampic_crate_configurator.h"
@@ -2821,10 +2931,20 @@ void SampicApplySettingsModeExample::apply() {
 
         // --- Loop over boards / chips / channels ---
         for (auto& [boardKey, boardCfg] : settings_.front_end_boards) {
+            if (!boardCfg.enabled) {
+                spdlog::debug("Skipping disabled board '{}'", boardKey);
+                continue;
+            }
+
             int boardIdx = crateCfg.indexFromKey(boardKey);
             SampicBoardConfigurator boardConfigurator(boardIdx, info_, params_, boardCfg);
 
             for (auto& [chipKey, chipCfg] : boardCfg.sampics) {
+                if (!chipCfg.enabled) {
+                    spdlog::debug("Skipping disabled chip '{}:{}'", boardKey, chipKey);
+                    continue;
+                }
+
                 int chipIdx = boardConfigurator.indexFromKey(chipKey);
                 SampicChipConfigurator chipConfigurator(boardIdx, chipIdx, info_, params_, chipCfg);
 
@@ -2832,6 +2952,12 @@ void SampicApplySettingsModeExample::apply() {
                 chipConfigurator.setTriggerOption();
 
                 for (auto& [chKey, chCfg] : chipCfg.channels) {
+                    if (!chCfg.enabled) {
+                        spdlog::trace("Skipping disabled channel '{}:{}:{}'",
+                                      boardKey, chipKey, chKey);
+                        continue;
+                    }
+
                     int chIdx = chipConfigurator.indexFromKey(chKey);
                     SampicChannelConfigurator chConfigurator(boardIdx, chipIdx, chIdx,
                                                              info_, params_, chCfg);
@@ -2956,7 +3082,7 @@ int SampicInitSettingsModeExample::initialize() {
 ===== FILE START =====
 Relative Path: src/integration/sampic/controller/sampic_controller.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/controller/sampic_controller.cpp
-Size: 5084 bytes
+Size: 5825 bytes
 -----
 #include "integration/sampic/controller/sampic_controller.h"
 #include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h"
@@ -2969,37 +3095,45 @@ SampicController::SampicController(const SampicSystemSettings& sys_cfg,
                                    const SampicCollectorConfig& coll_cfg)
     : settings_(sys_cfg),
       ctrl_cfg_(ctrl_cfg),
-      coll_cfg_(coll_cfg),
-      buffer_(coll_cfg.buffer_size)
+      coll_cfg_(coll_cfg)
 {
     // Select init mode
     switch (ctrl_cfg_.init_mode) {
-        case SampicInitSettingsMode::DEFAULT:
-            init_mode_ = std::make_unique<SampicInitSettingsModeDefault>(info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
+        case SampicInitSettingsModeType::DEFAULT:
+            init_mode_ = std::make_unique<SampicInitSettingsModeDefault>(
+                info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
             break;
-        case SampicInitSettingsMode::EXAMPLE:
-            init_mode_ = std::make_unique<SampicInitSettingsModeExample>(info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
+        case SampicInitSettingsModeType::EXAMPLE:
+            init_mode_ = std::make_unique<SampicInitSettingsModeExample>(
+                info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
             break;
     }
 
     // Select apply mode
     switch (ctrl_cfg_.apply_mode) {
-        case SampicApplySettingsMode::DEFAULT:
-            apply_mode_ = std::make_unique<SampicApplySettingsModeDefault>(info_, params_, settings_, ctrl_cfg_);
+        case SampicApplySettingsModeType::DEFAULT:
+            apply_mode_ = std::make_unique<SampicApplySettingsModeDefault>(
+                info_, params_, settings_, ctrl_cfg_);
             break;
-        case SampicApplySettingsMode::EXAMPLE:
-            apply_mode_ = std::make_unique<SampicApplySettingsModeExample>(info_, params_, settings_, ctrl_cfg_);
+        case SampicApplySettingsModeType::EXAMPLE:
+            apply_mode_ = std::make_unique<SampicApplySettingsModeExample>(
+                info_, params_, settings_, ctrl_cfg_);
             break;
     }
 
-    // Create collector
-    collector_ = std::make_unique<SampicCollector>(coll_cfg_, buffer_, info_, params_, eventBuffer_, mlFrames_);
+    // Create collector (owns its buffer)
+    collector_ = std::make_unique<SampicCollector>(
+        coll_cfg_, info_, params_, eventBuffer_, mlFrames_);
 }
 
 SampicController::~SampicController() {
-    stopCollector();
-    stopRun();
-    cleanup();
+    try {
+        stopCollector();
+        stopRun();
+        cleanup();
+    } catch (...) {
+        // swallow errors in destructor
+    }
 }
 
 // ---------------- Config management ----------------
@@ -3032,7 +3166,16 @@ int SampicController::applySettings() {
         return -1;
     }
     try {
+        // Apply hardware settings
         apply_mode_->apply();
+
+        // Rebuild collector with updated config
+        stopCollector();
+        collector_.reset();
+        collector_ = std::make_unique<SampicCollector>(
+            coll_cfg_, info_, params_, eventBuffer_, mlFrames_);
+
+        spdlog::info("Collector rebuilt with new configuration");
         return 0;
     } catch (const std::exception& e) {
         spdlog::error("Apply settings failed: {}", e.what());
@@ -3041,26 +3184,43 @@ int SampicController::applySettings() {
 }
 
 int SampicController::startRun() {
+    if (run_started_) {
+        spdlog::warn("startRun() called but run already started");
+        return 0;
+    }
+
     spdlog::info("Starting SAMPIC run...");
     auto err = SAMPIC256CH_StartRun(&info_, &params_, TRUE);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to start run (err={})", static_cast<int>(err));
         return err;
     }
+    run_started_ = true;
     return 0;
 }
 
 int SampicController::stopRun() {
+    if (!run_started_) {
+        spdlog::debug("stopRun() called but run was not started — skipping");
+        return 0;
+    }
+
     spdlog::info("Stopping SAMPIC run...");
     auto err = SAMPIC256CH_StopRun(&info_, &params_);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to stop run (err={})", static_cast<int>(err));
         return err;
     }
+    run_started_ = false;
     return 0;
 }
 
 void SampicController::cleanup() {
+    if (!initialized_) {
+        spdlog::debug("cleanup() called but controller not initialized — skipping");
+        return;
+    }
+
     spdlog::info("Cleaning up SAMPIC resources...");
     if (eventBuffer_ || mlFrames_) {
         SAMPIC256CH_FreeEventMemory(&eventBuffer_, &mlFrames_);
@@ -3073,27 +3233,24 @@ void SampicController::cleanup() {
 
 // ---------------- Collector ----------------
 void SampicController::startCollector() {
-    if (collector_) collector_->start();
+    if (collector_ && !collector_running_) {
+        collector_->start();
+        collector_running_ = true;
+    }
 }
 void SampicController::stopCollector() {
-    if (collector_) collector_->stop();
+    if (collector_ && collector_running_) {
+        collector_->stop();
+        collector_running_ = false;
+    }
 }
 
 // ---------------- Buffer access ----------------
-std::optional<TimestampedSampicEvent> SampicController::latestEvent() {
-    return buffer_.latest();
+SampicEventBuffer& SampicController::buffer() {
+    return collector_->buffer();
 }
-std::optional<TimestampedSampicEvent> SampicController::popEvent() {
-    return buffer_.pop();
-}
-std::vector<TimestampedSampicEvent> SampicController::getEventsSince(std::chrono::steady_clock::time_point t) {
-    return buffer_.getSince(t);
-}
-size_t SampicController::bufferSize() const {
-    return buffer_.size();
-}
-bool SampicController::bufferEmpty() const {
-    return buffer_.empty();
+const SampicEventBuffer& SampicController::buffer() const {
+    return collector_->buffer();
 }
 
 ===== FILE END =====

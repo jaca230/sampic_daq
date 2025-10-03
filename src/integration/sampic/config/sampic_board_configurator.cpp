@@ -1,4 +1,3 @@
-// sampic_board_configurator.cpp
 #include "integration/sampic/config/sampic_board_configurator.h"
 #include "integration/sampic/config/sampic_chip_configurator.h"
 
@@ -12,11 +11,17 @@ SampicBoardConfigurator::SampicBoardConfigurator(int boardIdx,
                                                  SampicFrontEndConfig& config)
     : boardIdx_(boardIdx), info_(info), params_(params), config_(config) {}
 
-// ------------------- Apply (board-level) -------------------
+// ------------------- Apply -------------------
 void SampicBoardConfigurator::apply() {
+    if (!config_.enabled) {
+        spdlog::info("FEB {} disabled in config → skipping.", boardIdx_);
+        return;
+    }
+
     spdlog::debug("Applying FEB {} settings...", boardIdx_);
 
     setGlobalTrigger();
+    setLevel2TriggerBuild();
     setLevel2ExtTrigGate();
     setLevel2Coincidence();
 
@@ -27,33 +32,55 @@ void SampicBoardConfigurator::apply() {
 
 // ------------------- Settings -------------------
 void SampicBoardConfigurator::setGlobalTrigger() {
-    spdlog::trace("FEB {}: SetFrontEndBoardGlobalTriggerOption={}", 
-                  boardIdx_, (int)config_.global_trigger_option);
+    FebGlobalTrigger_t current{};
+    check(SAMPIC256CH_GetFrontEndBoardGlobalTriggerOption(&params_, boardIdx_, &current),
+          "GetFrontEndBoardGlobalTriggerOption");
 
-    auto rc = SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption(&info_, &params_,
-                                                              boardIdx_,
-                                                              config_.global_trigger_option);
-    check(rc, "SetFrontEndBoardGlobalTriggerOption");
+    if (current == config_.global_trigger_option) return;
+
+    check(SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption(&info_, &params_,
+                                                          boardIdx_,
+                                                          config_.global_trigger_option),
+          "SetFrontEndBoardGlobalTriggerOption");
+}
+
+void SampicBoardConfigurator::setLevel2TriggerBuild() {
+    Boolean current{};
+    check(SAMPIC256CH_GetLevel2TriggerBuildOption(&params_, &current),
+          "GetLevel2TriggerBuildOption");
+
+    Boolean desired = config_.level2_trigger_build ? TRUE : FALSE;
+    if (current == desired) return;
+
+    check(SAMPIC256CH_SetLevel2TriggerBuildOption(&info_, &params_, desired),
+          "SetLevel2TriggerBuildOption");
 }
 
 void SampicBoardConfigurator::setLevel2ExtTrigGate() {
-    spdlog::trace("FEB {}: SetLevel2ExtTrigGate={}", 
-                  boardIdx_, (int)config_.level2_ext_trig_gate);
+    unsigned char current{};
+    check(SAMPIC256CH_GetLevel2ExtTrigGate(&params_, boardIdx_, &current),
+          "GetLevel2ExtTrigGate");
 
-    auto rc = SAMPIC256CH_SetLevel2ExtTrigGate(&info_, &params_,
-                                               boardIdx_,
-                                               config_.level2_ext_trig_gate);
-    check(rc, "SetLevel2ExtTrigGate");
+    if (current == config_.level2_ext_trig_gate) return;
+
+    check(SAMPIC256CH_SetLevel2ExtTrigGate(&info_, &params_,
+                                           boardIdx_,
+                                           config_.level2_ext_trig_gate),
+          "SetLevel2ExtTrigGate");
 }
 
 void SampicBoardConfigurator::setLevel2Coincidence() {
-    spdlog::trace("FEB {}: SetLevel2CoincidenceModeWithExtTrigGate={}", 
-                  boardIdx_, config_.level2_coincidence_ext_gate);
+    Boolean current{};
+    check(SAMPIC256CH_GetLevel2CoincidenceModeWithExtTrigGate(&params_, boardIdx_, &current),
+          "GetLevel2CoincidenceModeWithExtTrigGate");
 
-    auto rc = SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate(&info_, &params_,
-                                                                  boardIdx_,
-                                                                  config_.level2_coincidence_ext_gate);
-    check(rc, "SetLevel2CoincidenceModeWithExtTrigGate");
+    Boolean desired = config_.level2_coincidence_ext_gate ? TRUE : FALSE;
+    if (current == desired) return;
+
+    check(SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate(&info_, &params_,
+                                                              boardIdx_,
+                                                              desired),
+          "SetLevel2CoincidenceModeWithExtTrigGate");
 }
 
 // ------------------- Chips descend -------------------
@@ -63,12 +90,11 @@ void SampicBoardConfigurator::applyChips() {
         int chipIdx = indexFromKey(chipKey);
 
         if (!chipCfg.enabled) {
-            spdlog::info("Skipping chip '{}' (FEB={}, idx={}) because it is disabled.",
+            spdlog::info("Skipping chip '{}' (FEB={}, idx={}) — disabled.",
                          chipKey, boardIdx_, chipIdx);
             continue;
         }
 
-        spdlog::debug("  → Apply chip '{}'(index={})", chipKey, chipIdx);
         SampicChipConfigurator chip(boardIdx_, chipIdx, info_, params_, chipCfg);
         chip.apply();
     }

@@ -18,34 +18,33 @@ public:
     void apply();
 
     // Acquisition
-    void setSamplingFrequency();     // SAMPIC256CH_SetSamplingFrequency
-    void setFramesPerBlock();        // SAMPIC256CH_SetNbOfFramesPerBlock
-    void setTOTMode();               // SAMPIC256CH_SetTOTMeasurementMode
-    void setADCBits();               // Set_SystemADCNbOfBits
-    void setSmartReadMode();         // SAMPIC256CH_SetSmartReadMode
+    void setSamplingFrequency();     
+    void setFramesPerBlock();        
+    void setTOTMode();               
+    void setADCBits();               
+    void setSmartReadMode();         
 
     // External triggers
-    void setExternalTriggerType();   // SAMPIC256CH_SetExternalTriggerType
-    void setExternalTriggerLevel();  // SAMPIC256CH_SetExternalTriggerSigLevel
-    void setExternalTriggerEdge();   // SAMPIC256CH_SetExternalTriggerEdge
-    void setMinTriggersPerEvent();   // SAMPIC256CH_SetMinNbOfTriggersPerEvent
-    void setLevel2TriggerBuild();    // SAMPIC256CH_SetLevel2TriggerBuildOption
-    void setLevel3TriggerBuild();    // SAMPIC256CH_SetLevel3TriggerLogic
+    void setExternalTriggerType();   
+    void setExternalTriggerLevel();  
+    void setExternalTriggerEdge();   
+    void setMinTriggersPerEvent();   
+    void setLevel2TriggerBuild();    
+    void setLevel3TriggerBuild();    
 
     // Gates
-    void setPrimitivesGateLength();          // SAMPIC256CH_SetPrimitivesGateLength
-    void setLevel2LatencyGateLength();       // SAMPIC256CH_SetLevel2LatencyGateLength
-    void setLevel3ExtTrigGate();             // SAMPIC256CH_SetLevel3ExtTrigGate
-    void setLevel3CoincidenceWithExtGate();  // SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate
+    void setPrimitivesGateLength();          
+    void setLevel2LatencyGateLength();       
+    void setLevel3ExtTrigGate();             
+    void setLevel3CoincidenceWithExtGate();  
 
     // Pulser
-    void setPulser();                // Pulser settings
+    void setPulser();                
 
     // Sync + corrections
-    void setSyncMode();              // SAMPIC256CH_SetCrateSycnhronisationMode
-    void setSyncEdge();              // SAMPIC256CH_SetExternalSyncEdge
-    void setSyncLevel();             // SAMPIC256CH_SetExternalSyncSigLevel
-    void setCorrectionLevels();      // SAMPIC256CH_SetCrateCorrectionLevels
+    void setSyncEdge();              
+    void setSyncLevel();             
+    void setCorrectionLevels();      
 
     // Boards
     void applyBoards();

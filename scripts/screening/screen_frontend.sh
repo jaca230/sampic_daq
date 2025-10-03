@@ -119,13 +119,14 @@ if screen -list | grep -q "\.${SESSION_NAME}"; then
     exit 1
 fi
 
-# Command to run in screen
-CMD="$EXECUTABLE -i $INDEX ${EXE_ARGS[*]}"
 if [ "$DEBUG" = true ]; then
-    CMD="gdb --args $CMD"
+    CMD="cd \"$BASE_DIR\" && gdb --args $EXECUTABLE -i $INDEX ${EXE_ARGS[*]}"
 elif [ "$VALGRIND" = true ]; then
-    CMD="valgrind --leak-check=full --track-origins=yes $CMD"
+    CMD="cd \"$BASE_DIR\" && valgrind --leak-check=full --track-origins=yes $EXECUTABLE -i $INDEX ${EXE_ARGS[*]}"
+else
+    CMD="cd \"$BASE_DIR\" && $EXECUTABLE -i $INDEX ${EXE_ARGS[*]}"
 fi
+
 
 # Start screen detached
 screen -S "$SESSION_NAME" -dm bash -c "$CMD"
