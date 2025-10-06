@@ -892,7 +892,7 @@ private:
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_board_configurator.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_board_configurator.h
-Size: 1067 bytes
+Size: 1145 bytes
 -----
 #ifndef SAMPIC_BOARD_CONFIGURATOR_H
 #define SAMPIC_BOARD_CONFIGURATOR_H
@@ -915,12 +915,13 @@ public:
     void apply();
 
     void setGlobalTrigger();     // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
+    void setLevel2TriggerBuild(); // SAMPIC256CH_SetLevel2TriggerBuildOption
     void setLevel2ExtTrigGate(); // SAMPIC256CH_SetLevel2ExtTrigGate
     void setLevel2Coincidence(); // SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate
 
     void applyChips();
 
-    //Helpers
+    // Helpers
     void check(SAMPIC256CH_ErrCode code, const std::string& what);
     int indexFromKey(const std::string& key);
 
@@ -938,7 +939,7 @@ private:
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_channel_configurator.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_channel_configurator.h
-Size: 1336 bytes
+Size: 1260 bytes
 -----
 #ifndef SAMPIC_CHANNEL_CONFIGURATOR_H
 #define SAMPIC_CHANNEL_CONFIGURATOR_H
@@ -965,7 +966,6 @@ public:
     void setTriggerMode();    // SAMPIC256CH_SetSampicChannelTriggerMode
     void setThreshold();      // SAMPIC256CH_SetSampicChannelInternalThreshold
     void setEdge();           // SAMPIC256CH_SetChannelSelflTriggerEdge
-    void setExtThreshMode();  // SAMPIC256CH_SetSampicExternalThresholdMode
     void setSourceForCT();    // SAMPIC256CH_SetSampicChannelSourceForCT
     void setPulseMode();      // SAMPIC256CH_SetSampicChannelPulseMode
 
@@ -988,7 +988,7 @@ private:
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_chip_configurator.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_chip_configurator.h
-Size: 1593 bytes
+Size: 1486 bytes
 -----
 #ifndef SAMPIC_CHIP_CONFIGURATOR_H
 #define SAMPIC_CHIP_CONFIGURATOR_H
@@ -1011,21 +1011,31 @@ public:
 
     void apply();
 
-    void setBaseline();               // SAMPIC256CH_SetBaselineReference
-    void setExtThreshold();           // SAMPIC256CH_SetSampicExternalThreshold
-    void setTOTRange();               // SAMPIC256CH_SetSampicTOTRange
-    void setPostTrigger();            // SAMPIC256CH_SetSampicPostTrigParams
-
-    void setCentralTriggerMode();     // SAMPIC256CH_SetSampicCentralTriggerMode
-    void setCentralTriggerEffect();   // SAMPIC256CH_SetSampicCentralTriggerEffect
-    void setCentralTriggerPrimitives(); // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
-
-    void setTriggerOption();          // SAMPIC256CH_SetSampicTriggerOption
-    void setTOTFilterParams();        // SAMPIC256CH_SetSampicTOTFilterParams
+    // Individual settings
+    void setBaseline();
+    void setExtThreshold();
+    void setExtThresholdMode();
+    void setTOTRange();
+    void setTOTFilterParams();
+    void setPostTrigger();
+    void setCentralTriggerMode();
+    void setCentralTriggerEffect();
+    void setCentralTriggerPrimitives();
+    void setTriggerOption();
+    void setEnableTriggerMode();
+    void setCommonDeadTime();
+    void setPulserWidth();
+    void setAdcRamp();
+    void setVdacDLL();
+    void setVdacDLLContinuity();
+    void setVdacRosc();
+    void setDllSpeedMode();
+    void setOverflowDac();
+    void setLvdsLowCurrent();
 
     void applyChannels();
 
-    //Helpers
+    // Helpers
     void check(SAMPIC256CH_ErrCode code, const std::string& what);
     int indexFromKey(const std::string& key);
 
@@ -1100,8 +1110,8 @@ enum class SampicApplySettingsModeType {
 
 struct SampicControllerConfig {
     // Independent mode switches
-    SampicInitSettingsModeType  init_mode  = SampicInitSettingsModeType::EXAMPLE;
-    SampicApplySettingsModeType apply_mode = SampicApplySettingsModeType::EXAMPLE;
+    SampicInitSettingsModeType  init_mode  = SampicInitSettingsModeType::DEFAULT;
+    SampicApplySettingsModeType apply_mode = SampicApplySettingsModeType::DEFAULT;
 
 };
 
@@ -1112,7 +1122,7 @@ struct SampicControllerConfig {
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_crate_config.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_crate_config.h
-Size: 7442 bytes
+Size: 11336 bytes
 -----
 #ifndef SAMPIC_CONFIG_H
 #define SAMPIC_CONFIG_H
@@ -1129,13 +1139,12 @@ extern "C" {
 // Channel (lowest level)
 // ==============================
 struct SampicChannelConfig {
-  bool                         enabled  = true;                          // Global enable for channel
-  SAMPIC_ChannelTriggerMode_t  trigger_mode = SAMPIC_CHANNEL_EXT_TRIGGER_MODE; // SAMPIC256CH_SetSampicChannelTriggerMode
-  float                        internal_threshold = 0.0;                 // SAMPIC256CH_SetSampicChannelInternalThreshold
-  EdgeType_t                   trigger_edge = RISING_EDGE;               // SAMPIC256CH_SetChannelSelflTriggerEdge
-  bool                         external_threshold_mode = false;          // SAMPIC256CH_SetSampicExternalThresholdMode
-  bool                         enable_for_central_trigger = true;        // SAMPIC256CH_SetSampicChannelSourceForCT
-  bool                         pulse_mode = false;                       // SAMPIC256CH_SetSampicChannelPulseMode
+  bool enabled = true; // Setter: SAMPIC256CH_SetChannelMode | Getter: SAMPIC256CH_GetChannelMode
+  SAMPIC_ChannelTriggerMode_t trigger_mode = static_cast<SAMPIC_ChannelTriggerMode_t>(3); // Setter: SAMPIC256CH_SetSampicChannelTriggerMode | Getter: SAMPIC256CH_GetSampicChannelTriggerMode
+  float internal_threshold = 0.1; // Setter: SAMPIC256CH_SetSampicChannelInternalThreshold | Getter: SAMPIC256CH_GetSampicChannelInternalThreshold
+  EdgeType_t trigger_edge = static_cast<EdgeType_t>(0); // Setter: SAMPIC256CH_SetChannelSelflTriggerEdge | Getter: SAMPIC256CH_GetChannelSelfTriggerEdge
+  bool enable_for_central_trigger = true; // Setter: SAMPIC256CH_SetSampicChannelSourceForCT | Getter: SAMPIC256CH_GetSampicChannelSourceForCT
+  bool pulse_mode = false; // Setter: SAMPIC256CH_SetSampicChannelPulseMode | Getter: SAMPIC256CH_GetSampicChannelPulseMode
 };
 
 using SampicChannelSettings = std::map<std::string, SampicChannelConfig>;
@@ -1144,23 +1153,34 @@ using SampicChannelSettings = std::map<std::string, SampicChannelConfig>;
 // Chip (contains channels)
 // ==============================
 struct SampicChipConfig {
-  bool                          enabled = true;                          // Global enable for chip
+  bool enabled = true; // Local enable flag (no direct setter/getter)
 
-  float                         baseline_reference = DEFAULT_SAMPIC_BASELINE; // SAMPIC256CH_SetBaselineReference
-  float                         external_threshold = 0.5;                    // SAMPIC256CH_SetSampicExternalThreshold
-
-  SAMPIC_TOTRange_t             tot_range = SAMPIC_TOT_RANGE_MAX_25_NS;       // SAMPIC256CH_SetSampicTOTRange
-  bool                          enable_post_trigger = true;                  // SAMPIC256CH_SetSampicPostTrigParams
-  int                           post_trigger_value = 7;                       // SAMPIC256CH_SetSampicPostTrigParams
-
-  SampicCentralTriggerMode_t    central_trigger_mode   = CENTRAL_OR;          // SAMPIC256CH_SetSampicCentralTriggerMode
-  SampicCentralTriggerEffect_t  central_trigger_effect = TRIG_CHANNEL_ONLY_IF_PARTICIPATING_TO_CT; // SAMPIC256CH_SetSampicCentralTriggerEffect
-  SAMPIC_CT_PrimitivesMode_t    primitives_mode        = RAW_PRIMITIVES_FOR_CT; // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
-  int                           primitives_gate_length = DEFAULT_PRIMITIVES_GATE_LENGTH; // SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions
-
-  bool   tot_filter_enable = false;   // SAMPIC256CH_SetSampicTOTFilterParams
-  bool   tot_wide_cap      = false;   // SAMPIC256CH_SetSampicTOTFilterParams
-  float  tot_min_width_ns  = 0.0;     // SAMPIC256CH_SetSampicTOTFilterParams
+  float baseline_reference = 0.5; // Setter: SAMPIC256CH_SetBaselineReference | Getter: SAMPIC256CH_GetBaselineReference
+  float external_threshold = 0.1; // Setter: SAMPIC256CH_SetSampicExternalThreshold | Getter: SAMPIC256CH_GetSampicExternalThreshold
+  bool external_threshold_mode = false; // Setter: SAMPIC256CH_SetSampicExternalThresholdMode | Getter: SAMPIC256CH_GetSampicExternalThresholdMode
+  SAMPIC_TOTRange_t tot_range = static_cast<SAMPIC_TOTRange_t>(2); // Setter: SAMPIC256CH_SetSampicTOTRange | Getter: SAMPIC256CH_GetSampicTOTRange
+  bool tot_filter_enable = false; // Setter: SAMPIC256CH_SetSampicTOTFilterParams | Getter: SAMPIC256CH_GetSampicTOTFilterParams
+  bool tot_wide_cap = false; // Setter: SAMPIC256CH_SetSampicTOTFilterParams | Getter: SAMPIC256CH_GetSampicTOTFilterParams
+  float tot_min_width_ns = 10; // Setter: SAMPIC256CH_SetSampicTOTFilterParams | Getter: SAMPIC256CH_GetSampicTOTFilterParams
+  bool enable_post_trigger = false; // Setter: SAMPIC256CH_SetSampicPostTrigParams | Getter: SAMPIC256CH_GetSampicPostTrigParams
+  int post_trigger_value = 0; // Setter: SAMPIC256CH_SetSampicPostTrigParams | Getter: SAMPIC256CH_GetSampicPostTrigParams
+  SampicCentralTriggerMode_t central_trigger_mode = static_cast<SampicCentralTriggerMode_t>(0); // Setter: SAMPIC256CH_SetSampicCentralTriggerMode | Getter: SAMPIC256CH_GetSampicCentralTriggerMode
+  SampicCentralTriggerEffect_t central_trigger_effect = static_cast<SampicCentralTriggerEffect_t>(0); // Setter: SAMPIC256CH_SetSampicCentralTriggerEffect | Getter: SAMPIC256CH_GetSampicCentralTriggerEffect
+  SAMPIC_CT_PrimitivesMode_t primitives_mode = static_cast<SAMPIC_CT_PrimitivesMode_t>(1); // Setter: SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions | Getter: SAMPIC256CH_GetSampicCentralTriggerPrimitivesOptions
+  int primitives_gate_length = 5; // Setter: SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions | Getter: SAMPIC256CH_GetSampicCentralTriggerPrimitivesOptions
+  SampicTriggerOption_t trigger_option = static_cast<SampicTriggerOption_t>(0); // Setter: SAMPIC256CH_SetSampicTriggerOption | Getter: SAMPIC256CH_GetSampicTriggerOption
+  bool enable_trigger_use_external = false; // Setter: SAMPIC256CH_SetSampicEnableTriggerMode | Getter: SAMPIC256CH_GetSampicEnableTriggerMode
+  bool enable_trigger_open_gate_on_ext = false; // Setter: SAMPIC256CH_SetSampicEnableTriggerMode | Getter: SAMPIC256CH_GetSampicEnableTriggerMode
+  unsigned char enable_trigger_ext_gate = 8; // Setter: SAMPIC256CH_SetSampicEnableTriggerMode | Getter: SAMPIC256CH_GetSampicEnableTriggerMode
+  bool common_dead_time = false; // Setter: SAMPIC256CH_SetSampicCommonDeadTimeMode | Getter: SAMPIC256CH_GetSampicCommonDeadTimeMode
+  unsigned char pulser_width = 10; // Setter: SAMPIC256CH_SetSampicPulserWidth | Getter: SAMPIC256CH_GetSampicPulserWidth
+  float adc_ramp_value = 0.045; // Setter: SAMPIC256CH_SetSampicADCRampValue | Getter: SAMPIC256CH_GetSampicADCRampValue
+  float vdac_dll_value = 1.1; // Setter: SAMPIC256CH_SetSampicVdacDLLValue | Getter: SAMPIC256CH_GetSampicVdacDLLValue
+  float vdac_dll_continuity = 1.1; // Setter: SAMPIC256CH_SetSampicVdacDLLContinuity | Getter: SAMPIC256CH_GetSampicVdacDLLContinuity
+  float vdac_rosc = 1; // Setter: SAMPIC256CH_SetSampicVdacRosc | Getter: SAMPIC256CH_GetSampicVdacRosc
+  SampicDLLModeType_t dll_speed_mode = static_cast<SampicDLLModeType_t>(3); // Setter: SAMPIC256CH_SetSampicDLLSpeedMode | Getter: SAMPIC256CH_GetSampicDLLSpeedMode
+  float overflow_dac_value = 1; // Setter: SAMPIC256CH_SetSampicOverflowDacValue | Getter: SAMPIC256CH_GetSampicOverflowDacValue
+  bool lvds_low_current_mode = true; // Setter: SAMPIC256CH_SetSampicLvdsLowCurrentMode | Getter: SAMPIC256CH_GetSampicLvdsLowCurrentMode
 
   SampicChannelSettings channels {
     {"channel0", {}}, {"channel1", {}}, {"channel2", {}}, {"channel3", {}},
@@ -1173,16 +1193,15 @@ struct SampicChipConfig {
 using SampicChipSettings = std::map<std::string, SampicChipConfig>;
 
 // ==============================
-// Board (contains chips)
+// Front-End Board (contains chips)
 // ==============================
 struct SampicFrontEndConfig {
-  bool enabled = true;   // Global enable for this FE board
+  bool enabled = true; // Local enable flag (no direct setter/getter)
 
-  FebGlobalTrigger_t global_trigger_option = FEB_GLOBAL_TRIGGER_IS_L2;       // SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption
-
-  unsigned char     level2_ext_trig_gate  = DEFAULT_EXT_TRIG_GATE;           // SAMPIC256CH_SetLevel2ExtTrigGate
-  bool              level2_coincidence_ext_gate = false;                     // SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate
-
+  FebGlobalTrigger_t global_trigger_option = static_cast<FebGlobalTrigger_t>(0); // Setter: SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption | Getter: SAMPIC256CH_GetFrontEndBoardGlobalTriggerOption
+  bool level2_trigger_build = false; // Setter: SAMPIC256CH_SetLevel2TriggerBuildOption | Getter: SAMPIC256CH_GetLevel2TriggerBuildOption
+  unsigned char level2_ext_trig_gate = 8; // Setter: SAMPIC256CH_SetLevel2ExtTrigGate | Getter: SAMPIC256CH_GetLevel2ExtTrigGate
+  bool level2_coincidence_ext_gate = false; // Setter: SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate | Getter: SAMPIC256CH_GetLevel2CoincidenceModeWithExtTrigGate
   SampicChipSettings sampics {
     {"sampic0", {}}, {"sampic1", {}}, {"sampic2", {}}, {"sampic3", {}}
   };
@@ -1194,54 +1213,56 @@ using SampicFrontEndSettings = std::map<std::string, SampicFrontEndConfig>;
 // Crate (top-level system)
 // ==============================
 struct SampicSystemSettings {
-  std::string    ip_address     = "192.168.0.4"; //DEFAULT_CTRL_IP_ADDRESS
-  int            port           = DEFAULT_UDP_CTRL_PORT;   // UDP control port
-  ConnectionType_t connection_type = UDP_CONNECTION;       // SAMPIC256CH_OpenCrateConnection
-  ControlType_t    control_type    = CTRL_AND_DAQ;         // SAMPIC256CH_OpenCrateConnection
+  // Init parameters (not a set/get pair; carried here for ODB convenience)
+  std::string ip_address = "192.168.0.4"; // via SAMPIC256CH_OpenCrateConnection
+  int port = 27015;
+  ConnectionType_t connection_type = static_cast<ConnectionType_t>(UDP_CONNECTION);
+  ControlType_t control_type = static_cast<ControlType_t>(CTRL_AND_DAQ);
+  std::string calibration_directory = "resources/calib";
+  // Acquisition 
+  int sampling_frequency_mhz = 6400; // Setter: SAMPIC256CH_SetSamplingFrequency | Getter: SAMPIC256CH_GetSamplingFrequency
+  bool use_external_clock = false; // Setter: SAMPIC256CH_SetSamplingFrequency | Getter: SAMPIC256CH_GetSamplingFrequency
+  int adc_bits = 11; // Setter: Set_SystemADCNbOfBits | Getter: Get_SystemADCNbOfBits
+  bool smart_read_mode = false; // Setter: SAMPIC256CH_SetSmartReadMode | Getter: SAMPIC256CH_GetSmartReadMode
+  int read_offset = 0; // Setter: SAMPIC256CH_SetSmartReadMode | Getter: SAMPIC256CH_GetSmartReadMode
+  int samples_to_read = 64; // Setter: SAMPIC256CH_SetSmartReadMode | Getter: SAMPIC256CH_GetSmartReadMode
+  bool enable_tot = false; // Setter: SAMPIC256CH_SetTOTMeasurementMode | Getter: SAMPIC256CH_GetTOTMeasurementMode
+  int frames_per_block = 1; // Setter: SAMPIC256CH_SetNbOfFramesPerBlock | Getter: SAMPIC256CH_GetNbOfFramesPerBlock
+  bool auto_conversion = true; // Setter: SAMPIC256CH_SetAutoConversionMode | Getter: SAMPIC256CH_GetAutoConversionMode
+  unsigned char conversion_length = 250; // Setter: SAMPIC256CH_SetConversionLength | Getter: SAMPIC256CH_GetConversionLength
 
-  // Acquisition
-  int  sampling_frequency_mhz = DEFAULT_FREQ_ECH;   // SAMPIC256CH_SetSamplingFrequency
-  bool use_external_clock     = false;
-  int  frames_per_block       = MAX_NB_OF_FRAMES_PER_BLOCK;  // SAMPIC256CH_SetNbOfFramesPerBlock
-  bool enable_tot             = false;              // SAMPIC256CH_SetTOTMeasurementMode
-  int  adc_bits               = DEFAULT_ADC_NB_OF_BITS; // Set_SystemADCNbOfBits
-  bool smart_read_mode        = false;              // SAMPIC256CH_SetSmartReadMode
-  int  read_offset            = 0;
-  int  samples_to_read        = MAX_NB_OF_SAMPLES;
+  // Triggers 
+  ExternalTriggerType_t external_trigger_type = static_cast<ExternalTriggerType_t>(0); // Setter: SAMPIC256CH_SetExternalTriggerType | Getter: SAMPIC256CH_GetExternalTriggerType
+  SignalLevel_t signal_level = static_cast<SignalLevel_t>(0); // Setter: SAMPIC256CH_SetExternalTriggerSigLevel | Getter: SAMPIC256CH_GetExternalTriggerSigLevel
+  EdgeType_t trigger_edge = static_cast<EdgeType_t>(0); // Setter: SAMPIC256CH_SetExternalTriggerEdge | Getter: SAMPIC256CH_GetExternalTriggerEdge
+  unsigned char triggers_per_event = 127; // Setter: SAMPIC256CH_SetMinNbOfTriggersPerEvent | Getter: SAMPIC256CH_GetMinNbOfTriggersPerEvent
+  bool level3_trigger_build = false; // Setter: SAMPIC256CH_SetLevel3TriggerLogic | Getter: SAMPIC256CH_GetLevel3TriggerLogic
+  unsigned char level3_ext_trig_gate = 8; // Setter: SAMPIC256CH_SetLevel3ExtTrigGate | Getter: SAMPIC256CH_GetLevel3ExtTrigGate
+  bool level3_coincidence_ext_gate = false; // Setter: SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate | Getter: SAMPIC256CH_GetLevel3CoincidenceModeWithExtTrigGate
+  unsigned char primitives_gate_length = 5; // Setter: SAMPIC256CH_SetPrimitivesGateLength | Getter: SAMPIC256CH_GetPrimitivesGateLength
+  unsigned char latency_gate_length = 3; // Setter: SAMPIC256CH_SetLevel2LatencyGateLength | Getter: SAMPIC256CH_GetLevel2LatencyGateLength
 
-  // Trigger
-  ExternalTriggerType_t external_trigger_type = SOFTWARE;      // SAMPIC256CH_SetExternalTriggerType
-  SignalLevel_t         signal_level          = TTL_SIG;       // SAMPIC256CH_SetExternalTriggerSigLevel
-  EdgeType_t            trigger_edge          = RISING_EDGE;   // SAMPIC256CH_SetExternalTriggerEdge
-  std::uint8_t          triggers_per_event    = DEFAULT_NB_OF_TRIGGERS_PER_TRIGGER_EVENT; // SAMPIC256CH_SetMinNbOfTriggersPerEvent
-  bool                  level2_trigger_build  = false;         // SAMPIC256CH_SetLevel2TriggerBuildOption
-  bool                  level3_trigger_build  = false;         // SAMPIC256CH_SetLevel3TriggerLogic
-  SampicTriggerOption_t trigger_option        = SAMPIC_TRIGGER_IS_L1; // SAMPIC256CH_SetSampicTriggerOption
-  unsigned char         level3_ext_trig_gate  = DEFAULT_EXT_TRIG_GATE; // SAMPIC256CH_SetLevel3ExtTrigGate
-  bool                  level3_coincidence_ext_gate = false;   // SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate
-  unsigned char         primitives_gate_length = DEFAULT_PRIMITIVES_GATE_LENGTH; // SAMPIC256CH_SetPrimitivesGateLength
-  unsigned char         latency_gate_length    = DEFAULT_LEVEL_2_LATENCY_GATE;   // SAMPIC256CH_SetLevel2LatencyGateLength
+  // External trigger counter & timestamping
+  bool enable_external_trigger_counter = false; // Setter: SAMPIC256CH_SetExternalTriggerCounterMode | Getter: SAMPIC256CH_GetExternalTriggerCounterMode
+  bool enable_detect_ext_trigger_id = false; // Setter: SAMPIC256CH_SetExternalTriggerCounterMode | Getter: SAMPIC256CH_GetExternalTriggerCounterMode
 
-  // Pulser
-  bool               pulser_enable      = false;           // SAMPIC256CH_SetPulserMode
-  PulserSourceType_t pulser_source      = PULSER_SRC_IS_SOFT_CMD;
-  bool               pulser_synchronous = true;
-  int                pulser_period      = DEFAULT_AUTO_PULSE_PERIOD;   // SAMPIC256CH_SetAutoPulserPeriod
-  unsigned char      pulser_width       = DEFAULT_PULSER_WIDTH;        // SAMPIC256CH_SetSampicPulserWidth
+  // Pulser 
+  bool pulser_enable = false; // Setter: SAMPIC256CH_SetPulserMode | Getter: SAMPIC256CH_GetPulserMode
+  PulserSourceType_t pulser_source = static_cast<PulserSourceType_t>(0); // Setter: SAMPIC256CH_SetPulserMode | Getter: SAMPIC256CH_GetPulserMode
+  bool pulser_synchronous = true; // Setter: SAMPIC256CH_SetPulserMode | Getter: SAMPIC256CH_GetPulserMode
+  int pulser_period = 10; // Setter: SAMPIC256CH_SetAutoPulserPeriod | Getter: SAMPIC256CH_GetAutoPulserPeriod
 
-  // Sync + corrections
-  bool        sync_mode        = false;           // SAMPIC256CH_SetCrateSycnhronisationMode
-  bool        master_mode      = false;
-  bool        coincidence_mode = false;
-  EdgeType_t  sync_edge        = RISING_EDGE;     // SAMPIC256CH_SetExternalSyncEdge
-  SignalLevel_t sync_level     = TTL_SIG;         // SAMPIC256CH_SetExternalSyncSigLevel
+  // Sync
+  EdgeType_t sync_edge = static_cast<EdgeType_t>(0); // Setter: SAMPIC256CH_SetExternalSyncEdge | Getter: SAMPIC256CH_GetExternalSyncEdge
+  SignalLevel_t sync_level = static_cast<SignalLevel_t>(0); // Setter: SAMPIC256CH_SetExternalSyncSigLevel | Getter: SAMPIC256CH_GetExternalSyncSigLevel
 
-  bool        adc_linearity_correction   = false; // SAMPIC256CH_SetCrateCorrectionLevels
-  bool        time_inl_correction        = false;
-  bool        residual_pedestal_correction = false;
-  std::string calibration_directory      = "resources/calib";   // SAMPIC256CH_LoadAllCalibValuesFromFiles
+  // Corrections 
+  bool adc_linearity_correction = false; // Setter: SAMPIC256CH_SetCrateCorrectionLevels | Getter: SAMPIC256CH_GetCrateCorrectionLevels
+  bool time_inl_correction = false; // Setter: SAMPIC256CH_SetCrateCorrectionLevels | Getter: SAMPIC256CH_GetCrateCorrectionLevels
+  bool residual_pedestal_correction = false; // Setter: SAMPIC256CH_SetCrateCorrectionLevels | Getter: SAMPIC256CH_GetCrateCorrectionLevels
 
-  SampicFrontEndSettings    front_end_boards {
+  // Hierarchy (maps for ODB compatibility)
+  SampicFrontEndSettings front_end_boards {
     {"feb0", {}}, {"feb1", {}}, {"feb2", {}}, {"feb3", {}}
   };
 };
@@ -1253,7 +1274,7 @@ struct SampicSystemSettings {
 ===== FILE START =====
 Relative Path: include/integration/sampic/config/sampic_crate_configurator.h
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/include/integration/sampic/config/sampic_crate_configurator.h
-Size: 2413 bytes
+Size: 1640 bytes
 -----
 #ifndef SAMPIC_CRATE_CONFIGURATOR_H
 #define SAMPIC_CRATE_CONFIGURATOR_H
@@ -1275,34 +1296,33 @@ public:
     void apply();
 
     // Acquisition
-    void setSamplingFrequency();     // SAMPIC256CH_SetSamplingFrequency
-    void setFramesPerBlock();        // SAMPIC256CH_SetNbOfFramesPerBlock
-    void setTOTMode();               // SAMPIC256CH_SetTOTMeasurementMode
-    void setADCBits();               // Set_SystemADCNbOfBits
-    void setSmartReadMode();         // SAMPIC256CH_SetSmartReadMode
+    void setSamplingFrequency();     
+    void setFramesPerBlock();        
+    void setTOTMode();               
+    void setADCBits();               
+    void setSmartReadMode();         
 
     // External triggers
-    void setExternalTriggerType();   // SAMPIC256CH_SetExternalTriggerType
-    void setExternalTriggerLevel();  // SAMPIC256CH_SetExternalTriggerSigLevel
-    void setExternalTriggerEdge();   // SAMPIC256CH_SetExternalTriggerEdge
-    void setMinTriggersPerEvent();   // SAMPIC256CH_SetMinNbOfTriggersPerEvent
-    void setLevel2TriggerBuild();    // SAMPIC256CH_SetLevel2TriggerBuildOption
-    void setLevel3TriggerBuild();    // SAMPIC256CH_SetLevel3TriggerLogic
+    void setExternalTriggerType();   
+    void setExternalTriggerLevel();  
+    void setExternalTriggerEdge();   
+    void setMinTriggersPerEvent();   
+    void setLevel2TriggerBuild();    
+    void setLevel3TriggerBuild();    
 
     // Gates
-    void setPrimitivesGateLength();          // SAMPIC256CH_SetPrimitivesGateLength
-    void setLevel2LatencyGateLength();       // SAMPIC256CH_SetLevel2LatencyGateLength
-    void setLevel3ExtTrigGate();             // SAMPIC256CH_SetLevel3ExtTrigGate
-    void setLevel3CoincidenceWithExtGate();  // SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate
+    void setPrimitivesGateLength();          
+    void setLevel2LatencyGateLength();       
+    void setLevel3ExtTrigGate();             
+    void setLevel3CoincidenceWithExtGate();  
 
     // Pulser
-    void setPulser();                // Pulser settings
+    void setPulser();                
 
     // Sync + corrections
-    void setSyncMode();              // SAMPIC256CH_SetCrateSycnhronisationMode
-    void setSyncEdge();              // SAMPIC256CH_SetExternalSyncEdge
-    void setSyncLevel();             // SAMPIC256CH_SetExternalSyncSigLevel
-    void setCorrectionLevels();      // SAMPIC256CH_SetCrateCorrectionLevels
+    void setSyncEdge();              
+    void setSyncLevel();             
+    void setCorrectionLevels();      
 
     // Boards
     void applyBoards();
@@ -1908,10 +1928,11 @@ json OdbManager::removeKeysContainingKey(const json& j) {
 ===== FILE START =====
 Relative Path: src/integration/sampic/collector/modes/sampic_collector_mode_default.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/collector/modes/sampic_collector_mode_default.cpp
-Size: 2508 bytes
+Size: 2816 bytes
 -----
 #include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
 #include <spdlog/spdlog.h>
+#include <thread>   // for sleep_for
 
 int SampicCollectorModeDefault::readEvent(EventStruct& event,
                                           SampicEventTiming& timing) {
@@ -1955,6 +1976,12 @@ int SampicCollectorModeDefault::readEvent(EventStruct& event,
         if (nloop_for_soft_trig > cfg_.soft_trigger_max_loops) {
             spdlog::warn("Default mode: Timeout after {} loops", cfg_.soft_trigger_max_loops);
             return 0;
+        }
+
+        // NEW: avoid pegging CPU if repeated failures
+        if (errCode != SAMPIC256CH_Success && cfg_.soft_trigger_retry_sleep_us > 0) {
+            std::this_thread::sleep_for(
+                std::chrono::microseconds(cfg_.soft_trigger_retry_sleep_us));
         }
     }
 
@@ -2212,9 +2239,8 @@ bool SampicEventBuffer::empty() const {
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_board_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_board_configurator.cpp
-Size: 3869 bytes
+Size: 4554 bytes
 -----
-// sampic_board_configurator.cpp
 #include "integration/sampic/config/sampic_board_configurator.h"
 #include "integration/sampic/config/sampic_chip_configurator.h"
 
@@ -2228,11 +2254,17 @@ SampicBoardConfigurator::SampicBoardConfigurator(int boardIdx,
                                                  SampicFrontEndConfig& config)
     : boardIdx_(boardIdx), info_(info), params_(params), config_(config) {}
 
-// ------------------- Apply (board-level) -------------------
+// ------------------- Apply -------------------
 void SampicBoardConfigurator::apply() {
+    if (!config_.enabled) {
+        spdlog::info("FEB {} disabled in config → skipping.", boardIdx_);
+        return;
+    }
+
     spdlog::debug("Applying FEB {} settings...", boardIdx_);
 
     setGlobalTrigger();
+    setLevel2TriggerBuild();
     setLevel2ExtTrigGate();
     setLevel2Coincidence();
 
@@ -2243,33 +2275,55 @@ void SampicBoardConfigurator::apply() {
 
 // ------------------- Settings -------------------
 void SampicBoardConfigurator::setGlobalTrigger() {
-    spdlog::trace("FEB {}: SetFrontEndBoardGlobalTriggerOption={}", 
-                  boardIdx_, (int)config_.global_trigger_option);
+    FebGlobalTrigger_t current{};
+    check(SAMPIC256CH_GetFrontEndBoardGlobalTriggerOption(&params_, boardIdx_, &current),
+          "GetFrontEndBoardGlobalTriggerOption");
 
-    auto rc = SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption(&info_, &params_,
-                                                              boardIdx_,
-                                                              config_.global_trigger_option);
-    check(rc, "SetFrontEndBoardGlobalTriggerOption");
+    if (current == config_.global_trigger_option) return;
+
+    check(SAMPIC256CH_SetFrontEndBoardGlobalTriggerOption(&info_, &params_,
+                                                          boardIdx_,
+                                                          config_.global_trigger_option),
+          "SetFrontEndBoardGlobalTriggerOption");
+}
+
+void SampicBoardConfigurator::setLevel2TriggerBuild() {
+    Boolean current{};
+    check(SAMPIC256CH_GetLevel2TriggerBuildOption(&params_, &current),
+          "GetLevel2TriggerBuildOption");
+
+    Boolean desired = config_.level2_trigger_build ? TRUE : FALSE;
+    if (current == desired) return;
+
+    check(SAMPIC256CH_SetLevel2TriggerBuildOption(&info_, &params_, desired),
+          "SetLevel2TriggerBuildOption");
 }
 
 void SampicBoardConfigurator::setLevel2ExtTrigGate() {
-    spdlog::trace("FEB {}: SetLevel2ExtTrigGate={}", 
-                  boardIdx_, (int)config_.level2_ext_trig_gate);
+    unsigned char current{};
+    check(SAMPIC256CH_GetLevel2ExtTrigGate(&params_, boardIdx_, &current),
+          "GetLevel2ExtTrigGate");
 
-    auto rc = SAMPIC256CH_SetLevel2ExtTrigGate(&info_, &params_,
-                                               boardIdx_,
-                                               config_.level2_ext_trig_gate);
-    check(rc, "SetLevel2ExtTrigGate");
+    if (current == config_.level2_ext_trig_gate) return;
+
+    check(SAMPIC256CH_SetLevel2ExtTrigGate(&info_, &params_,
+                                           boardIdx_,
+                                           config_.level2_ext_trig_gate),
+          "SetLevel2ExtTrigGate");
 }
 
 void SampicBoardConfigurator::setLevel2Coincidence() {
-    spdlog::trace("FEB {}: SetLevel2CoincidenceModeWithExtTrigGate={}", 
-                  boardIdx_, config_.level2_coincidence_ext_gate);
+    Boolean current{};
+    check(SAMPIC256CH_GetLevel2CoincidenceModeWithExtTrigGate(&params_, boardIdx_, &current),
+          "GetLevel2CoincidenceModeWithExtTrigGate");
 
-    auto rc = SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate(&info_, &params_,
-                                                                  boardIdx_,
-                                                                  config_.level2_coincidence_ext_gate);
-    check(rc, "SetLevel2CoincidenceModeWithExtTrigGate");
+    Boolean desired = config_.level2_coincidence_ext_gate ? TRUE : FALSE;
+    if (current == desired) return;
+
+    check(SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate(&info_, &params_,
+                                                              boardIdx_,
+                                                              desired),
+          "SetLevel2CoincidenceModeWithExtTrigGate");
 }
 
 // ------------------- Chips descend -------------------
@@ -2279,12 +2333,11 @@ void SampicBoardConfigurator::applyChips() {
         int chipIdx = indexFromKey(chipKey);
 
         if (!chipCfg.enabled) {
-            spdlog::info("Skipping chip '{}' (FEB={}, idx={}) because it is disabled.",
+            spdlog::info("Skipping chip '{}' (FEB={}, idx={}) — disabled.",
                          chipKey, boardIdx_, chipIdx);
             continue;
         }
 
-        spdlog::debug("  → Apply chip '{}'(index={})", chipKey, chipIdx);
         SampicChipConfigurator chip(boardIdx_, chipIdx, info_, params_, chipCfg);
         chip.apply();
     }
@@ -2313,9 +2366,8 @@ int SampicBoardConfigurator::indexFromKey(const std::string& key) {
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_channel_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_channel_configurator.cpp
-Size: 5349 bytes
+Size: 7802 bytes
 -----
-// sampic_channel_configurator.cpp
 #include "integration/sampic/config/sampic_channel_configurator.h"
 
 #include <spdlog/spdlog.h>
@@ -2331,7 +2383,7 @@ SampicChannelConfigurator::SampicChannelConfigurator(int boardIdx,
     : boardIdx_(boardIdx), chipIdx_(chipIdx), channelIdx_(channelIdx),
       info_(info), params_(params), config_(config) {}
 
-// ------------------- Apply (channel-level) -------------------
+// ------------------- Apply -------------------
 void SampicChannelConfigurator::apply() {
     spdlog::debug("Applying channel (FEB={}, chip={}, ch={}) settings...",
                   boardIdx_, chipIdx_, channelIdx_);
@@ -2340,7 +2392,6 @@ void SampicChannelConfigurator::apply() {
     setTriggerMode();
     setThreshold();
     setEdge();
-    setExtThreshMode();
     setSourceForCT();
     setPulseMode();
 
@@ -2350,74 +2401,138 @@ void SampicChannelConfigurator::apply() {
 
 // ------------------- Settings -------------------
 void SampicChannelConfigurator::setMode() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetChannelMode={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.enabled);
+    Boolean current{};
+    check(SAMPIC256CH_GetChannelMode(&params_,
+                                     boardIdx_,
+                                     chipIdx_ * 16 + channelIdx_,
+                                     &current),
+          "GetChannelMode");
 
-    auto rc = SAMPIC256CH_SetChannelMode(&info_, &params_,
-                                         boardIdx_,
-                                         (chipIdx_ * 16) + channelIdx_,
-                                         config_.enabled);
-    check(rc, "SetChannelMode");
+    if ((bool)current == config_.enabled) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): Mode already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing Mode {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (bool)current, config_.enabled);
+
+    check(SAMPIC256CH_SetChannelMode(&info_, &params_,
+                                     boardIdx_,
+                                     chipIdx_ * 16 + channelIdx_,
+                                     config_.enabled),
+          "SetChannelMode");
 }
 
 void SampicChannelConfigurator::setTriggerMode() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelTriggerMode={}",
-                  boardIdx_, chipIdx_, channelIdx_, (int)config_.trigger_mode);
+    SAMPIC_ChannelTriggerMode_t current{};
+    check(SAMPIC256CH_GetSampicChannelTriggerMode(&params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  &current),
+          "GetSampicChannelTriggerMode");
 
-    auto rc = SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_,
-                                                      boardIdx_, chipIdx_, channelIdx_,
-                                                      config_.trigger_mode);
-    check(rc, "SetSampicChannelTriggerMode");
+    if (current == config_.trigger_mode) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): TriggerMode already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (int)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing TriggerMode {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (int)current, (int)config_.trigger_mode);
+
+    check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  config_.trigger_mode),
+          "SetSampicChannelTriggerMode");
 }
 
 void SampicChannelConfigurator::setThreshold() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelInternalThreshold={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.internal_threshold);
+    float current{};
+    check(SAMPIC256CH_GetSampicChannelInternalThreshold(&params_,
+                                                        boardIdx_, chipIdx_, channelIdx_,
+                                                        &current),
+          "GetSampicChannelInternalThreshold");
 
-    auto rc = SAMPIC256CH_SetSampicChannelInternalThreshold(&info_, &params_,
-                                                            boardIdx_, chipIdx_, channelIdx_,
-                                                            config_.internal_threshold);
-    check(rc, "SetSampicChannelInternalThreshold");
+    if (current == config_.internal_threshold) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): InternalThreshold already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing InternalThreshold {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, current, config_.internal_threshold);
+
+    check(SAMPIC256CH_SetSampicChannelInternalThreshold(&info_, &params_,
+                                                        boardIdx_, chipIdx_, channelIdx_,
+                                                        config_.internal_threshold),
+          "SetSampicChannelInternalThreshold");
 }
 
 void SampicChannelConfigurator::setEdge() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetChannelSelfTriggerEdge={}",
-                  boardIdx_, chipIdx_, channelIdx_, (int)config_.trigger_edge);
+    EdgeType_t current{};
+    check(SAMPIC256CH_GetChannelSelfTriggerEdge(&params_,
+                                                boardIdx_, chipIdx_, channelIdx_,
+                                                &current),
+          "GetChannelSelfTriggerEdge");
 
-    auto rc = SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_,
-                                                     boardIdx_, chipIdx_, channelIdx_,
-                                                     config_.trigger_edge);
-    check(rc, "SetChannelSelflTriggerEdge");
-}
+    if (current == config_.trigger_edge) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): TriggerEdge already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (int)current);
+        return;
+    }
 
-void SampicChannelConfigurator::setExtThreshMode() {
-    spdlog::trace("Channel (FEB={}, chip={}): SetSampicExternalThresholdMode={}",
-                  boardIdx_, chipIdx_, config_.external_threshold_mode);
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing TriggerEdge {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (int)current, (int)config_.trigger_edge);
 
-    auto rc = SAMPIC256CH_SetSampicExternalThresholdMode(&info_, &params_,
-                                                         boardIdx_, chipIdx_,
-                                                         config_.external_threshold_mode);
-    check(rc, "SetSampicExternalThresholdMode");
+    check(SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_,
+                                                 boardIdx_, chipIdx_, channelIdx_,
+                                                 config_.trigger_edge),
+          "SetChannelSelfTriggerEdge");
 }
 
 void SampicChannelConfigurator::setSourceForCT() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelSourceForCT={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.enable_for_central_trigger);
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicChannelSourceForCT(&params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  &current),
+          "GetSampicChannelSourceForCT");
 
-    auto rc = SAMPIC256CH_SetSampicChannelSourceForCT(&info_, &params_,
-                                                      boardIdx_, chipIdx_, channelIdx_,
-                                                      config_.enable_for_central_trigger);
-    check(rc, "SetSampicChannelSourceForCT");
+    if ((bool)current == config_.enable_for_central_trigger) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): SourceForCT already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing SourceForCT {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (bool)current,
+                  config_.enable_for_central_trigger);
+
+    check(SAMPIC256CH_SetSampicChannelSourceForCT(&info_, &params_,
+                                                  boardIdx_, chipIdx_, channelIdx_,
+                                                  config_.enable_for_central_trigger),
+          "SetSampicChannelSourceForCT");
 }
 
 void SampicChannelConfigurator::setPulseMode() {
-    spdlog::trace("Channel (FEB={}, chip={}, ch={}): SetSampicChannelPulseMode={}",
-                  boardIdx_, chipIdx_, channelIdx_, config_.pulse_mode);
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicChannelPulseMode(&params_,
+                                                boardIdx_, chipIdx_, channelIdx_,
+                                                &current),
+          "GetSampicChannelPulseMode");
 
-    auto rc = SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_,
-                                                    boardIdx_, chipIdx_, channelIdx_,
-                                                    config_.pulse_mode);
-    check(rc, "SetSampicChannelPulseMode");
+    if ((bool)current == config_.pulse_mode) {
+        spdlog::trace("Channel (FEB={}, chip={}, ch={}): PulseMode already {} -> skip",
+                      boardIdx_, chipIdx_, channelIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Channel (FEB={}, chip={}, ch={}): Changing PulseMode {} -> {}",
+                  boardIdx_, chipIdx_, channelIdx_, (bool)current, config_.pulse_mode);
+
+    check(SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_,
+                                                boardIdx_, chipIdx_, channelIdx_,
+                                                config_.pulse_mode),
+          "SetSampicChannelPulseMode");
 }
 
 // ------------------- Utility -------------------
@@ -2436,14 +2551,14 @@ void SampicChannelConfigurator::check(SAMPIC256CH_ErrCode code, const std::strin
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_chip_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_chip_configurator.cpp
-Size: 7584 bytes
+Size: 20933 bytes
 -----
-// sampic_chip_configurator.cpp
 #include "integration/sampic/config/sampic_chip_configurator.h"
 #include "integration/sampic/config/sampic_channel_configurator.h"
 
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <cmath>
 
 // ------------------- Ctor -------------------
 SampicChipConfigurator::SampicChipConfigurator(int boardIdx,
@@ -2454,21 +2569,30 @@ SampicChipConfigurator::SampicChipConfigurator(int boardIdx,
     : boardIdx_(boardIdx), chipIdx_(chipIdx),
       info_(info), params_(params), config_(config) {}
 
-// ------------------- Apply (chip-level) -------------------
+// ------------------- Apply -------------------
 void SampicChipConfigurator::apply() {
     spdlog::debug("Applying chip (FEB={}, chip={}) settings...", boardIdx_, chipIdx_);
 
     setBaseline();
     setExtThreshold();
+    setExtThresholdMode();
     setTOTRange();
+    setTOTFilterParams();
     setPostTrigger();
-
     setCentralTriggerMode();
     setCentralTriggerEffect();
     setCentralTriggerPrimitives();
-
     setTriggerOption();
-    setTOTFilterParams();
+    setEnableTriggerMode();
+    setCommonDeadTime();
+    setPulserWidth();
+    setAdcRamp();
+    setVdacDLL();
+    setVdacDLLContinuity();
+    setVdacRosc();
+    setDllSpeedMode();
+    setOverflowDac();
+    setLvdsLowCurrent();
 
     applyChannels();
 
@@ -2476,92 +2600,428 @@ void SampicChipConfigurator::apply() {
 }
 
 // ------------------- Settings -------------------
+
 void SampicChipConfigurator::setBaseline() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetBaselineReference={}",
-                  boardIdx_, chipIdx_, config_.baseline_reference);
-    auto rc = SAMPIC256CH_SetBaselineReference(&info_, &params_,
-                                               boardIdx_, chipIdx_,
-                                               config_.baseline_reference);
-    check(rc, "SetBaselineReference");
+    float current{};
+    check(SAMPIC256CH_GetBaselineReference(&params_, boardIdx_, chipIdx_, &current),
+          "GetBaselineReference");
+
+    if (std::fabs(current - config_.baseline_reference) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): BaselineReference already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): BaselineReference {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.baseline_reference);
+
+    check(SAMPIC256CH_SetBaselineReference(&info_, &params_,
+                                           boardIdx_, chipIdx_,
+                                           config_.baseline_reference),
+          "SetBaselineReference");
 }
 
 void SampicChipConfigurator::setExtThreshold() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicExternalThreshold={}",
-                  boardIdx_, chipIdx_, config_.external_threshold);
-    auto rc = SAMPIC256CH_SetSampicExternalThreshold(&info_, &params_,
+    float current{};
+    check(SAMPIC256CH_GetSampicExternalThreshold(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicExternalThreshold");
+
+    if (std::fabs(current - config_.external_threshold) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): ExternalThreshold already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): ExternalThreshold {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.external_threshold);
+
+    check(SAMPIC256CH_SetSampicExternalThreshold(&info_, &params_,
+                                                 boardIdx_, chipIdx_,
+                                                 config_.external_threshold),
+          "SetSampicExternalThreshold");
+}
+
+void SampicChipConfigurator::setExtThresholdMode() {
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicExternalThresholdMode(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicExternalThresholdMode");
+
+    if ((bool)current == config_.external_threshold_mode) {
+        spdlog::trace("Chip (FEB={}, chip={}): ExternalThresholdMode already {} → skip",
+                      boardIdx_, chipIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): ExternalThresholdMode {} -> {}",
+                  boardIdx_, chipIdx_, (bool)current, config_.external_threshold_mode);
+
+    check(SAMPIC256CH_SetSampicExternalThresholdMode(&info_, &params_,
                                                      boardIdx_, chipIdx_,
-                                                     config_.external_threshold);
-    check(rc, "SetSampicExternalThreshold");
+                                                     config_.external_threshold_mode),
+          "SetSampicExternalThresholdMode");
 }
 
 void SampicChipConfigurator::setTOTRange() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicTOTRange={}",
-                  boardIdx_, chipIdx_, (int)config_.tot_range);
-    auto rc = SAMPIC256CH_SetSampicTOTRange(&info_, &params_,
-                                            boardIdx_, chipIdx_,
-                                            config_.tot_range);
-    check(rc, "SetSampicTOTRange");
-}
+    SAMPIC_TOTRange_t current{};
+    check(SAMPIC256CH_GetSampicTOTRange(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicTOTRange");
 
-void SampicChipConfigurator::setPostTrigger() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicPostTrigParams enable={}, value={}",
-                  boardIdx_, chipIdx_, config_.enable_post_trigger, config_.post_trigger_value);
-    auto rc = SAMPIC256CH_SetSampicPostTrigParams(&info_, &params_,
-                                                  boardIdx_, chipIdx_,
-                                                  config_.enable_post_trigger,
-                                                  config_.post_trigger_value);
-    check(rc, "SetSampicPostTrigParams");
-}
+    if (current == config_.tot_range) {
+        spdlog::trace("Chip (FEB={}, chip={}): TOTRange already {} → skip",
+                      boardIdx_, chipIdx_, int(current));
+        return;
+    }
 
-void SampicChipConfigurator::setCentralTriggerMode() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicCentralTriggerMode={}",
-                  boardIdx_, chipIdx_, (int)config_.central_trigger_mode);
-    auto rc = SAMPIC256CH_SetSampicCentralTriggerMode(&info_, &params_,
-                                                      boardIdx_, chipIdx_,
-                                                      config_.central_trigger_mode);
-    check(rc, "SetSampicCentralTriggerMode");
-}
+    spdlog::trace("Chip (FEB={}, chip={}): TOTRange {} -> {}",
+                  boardIdx_, chipIdx_, int(current), int(config_.tot_range));
 
-void SampicChipConfigurator::setCentralTriggerEffect() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicCentralTriggerEffect={}",
-                  boardIdx_, chipIdx_, (int)config_.central_trigger_effect);
-    auto rc = SAMPIC256CH_SetSampicCentralTriggerEffect(&info_, &params_,
-                                                        boardIdx_, chipIdx_,
-                                                        config_.central_trigger_effect);
-    check(rc, "SetSampicCentralTriggerEffect");
-}
-
-void SampicChipConfigurator::setCentralTriggerPrimitives() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicCentralTriggerPrimitivesOptions mode={}, gate_len={}",
-                  boardIdx_, chipIdx_, (int)config_.primitives_mode, config_.primitives_gate_length);
-    auto rc = SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions(&info_, &params_,
-                                                                   boardIdx_, chipIdx_,
-                                                                   config_.primitives_mode,
-                                                                   config_.primitives_gate_length);
-    check(rc, "SetSampicCentralTriggerPrimitivesOptions");
-}
-
-void SampicChipConfigurator::setTriggerOption() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicTriggerOption={}",
-                  boardIdx_, chipIdx_, (int)config_.central_trigger_mode);
-    auto rc = SAMPIC256CH_SetSampicTriggerOption(&info_, &params_,
-                                                 boardIdx_, chipIdx_,
-                                                 SAMPIC_TRIGGER_IS_L1); // TODO: map properly if needed
-    check(rc, "SetSampicTriggerOption");
+    check(SAMPIC256CH_SetSampicTOTRange(&info_, &params_,
+                                        boardIdx_, chipIdx_,
+                                        config_.tot_range),
+          "SetSampicTOTRange");
 }
 
 void SampicChipConfigurator::setTOTFilterParams() {
-    spdlog::trace("Chip (FEB={}, chip={}): SetSampicTOTFilterParams en={}, wide={}, minWidthNs={}",
+    Boolean en{}, wide{};
+    float width{};
+    check(SAMPIC256CH_GetSampicTOTFilterParams(&params_, boardIdx_, chipIdx_,
+                                               &en, &wide, &width),
+          "GetSampicTOTFilterParams");
+
+    if ((bool)en == config_.tot_filter_enable &&
+        (bool)wide == config_.tot_wide_cap &&
+        std::fabs(width - config_.tot_min_width_ns) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): TOTFilter already en={}, wide={}, width={} → skip",
+                      boardIdx_, chipIdx_, (bool)en, (bool)wide, width);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): TOTFilter change to en={}, wide={}, width={}",
                   boardIdx_, chipIdx_,
                   config_.tot_filter_enable,
                   config_.tot_wide_cap,
                   config_.tot_min_width_ns);
-    auto rc = SAMPIC256CH_SetSampicTOTFilterParams(&info_, &params_,
-                                                   boardIdx_, chipIdx_,
-                                                   config_.tot_filter_enable,
-                                                   config_.tot_wide_cap,
-                                                   config_.tot_min_width_ns);
-    check(rc, "SetSampicTOTFilterParams");
+
+    check(SAMPIC256CH_SetSampicTOTFilterParams(&info_, &params_,
+                                               boardIdx_, chipIdx_,
+                                               config_.tot_filter_enable,
+                                               config_.tot_wide_cap,
+                                               config_.tot_min_width_ns),
+          "SetSampicTOTFilterParams");
+}
+
+void SampicChipConfigurator::setPostTrigger() {
+    Boolean en{}; int val{};
+    check(SAMPIC256CH_GetSampicPostTrigParams(&params_, boardIdx_, chipIdx_, &en, &val),
+          "GetSampicPostTrigParams");
+
+    if ((bool)en == config_.enable_post_trigger && val == config_.post_trigger_value) {
+        spdlog::trace("Chip (FEB={}, chip={}): PostTrigger already en={}, val={} → skip",
+                      boardIdx_, chipIdx_, (bool)en, val);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): PostTrigger change to en={}, val={}",
+                  boardIdx_, chipIdx_,
+                  config_.enable_post_trigger,
+                  config_.post_trigger_value);
+
+    check(SAMPIC256CH_SetSampicPostTrigParams(&info_, &params_,
+                                              boardIdx_, chipIdx_,
+                                              config_.enable_post_trigger,
+                                              config_.post_trigger_value),
+          "SetSampicPostTrigParams");
+}
+
+void SampicChipConfigurator::setCentralTriggerMode() {
+    SampicCentralTriggerMode_t current{};
+    check(SAMPIC256CH_GetSampicCentralTriggerMode(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicCentralTriggerMode");
+
+    if (current == config_.central_trigger_mode) {
+        spdlog::trace("Chip (FEB={}, chip={}): CentralTriggerMode already {} → skip",
+                      boardIdx_, chipIdx_, int(current));
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): CentralTriggerMode {} -> {}",
+                  boardIdx_, chipIdx_, int(current), int(config_.central_trigger_mode));
+
+    check(SAMPIC256CH_SetSampicCentralTriggerMode(&info_, &params_,
+                                                  boardIdx_, chipIdx_,
+                                                  config_.central_trigger_mode),
+          "SetSampicCentralTriggerMode");
+}
+
+void SampicChipConfigurator::setCentralTriggerEffect() {
+    SampicCentralTriggerEffect_t current{};
+    check(SAMPIC256CH_GetSampicCentralTriggerEffect(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicCentralTriggerEffect");
+
+    if (current == config_.central_trigger_effect) {
+        spdlog::trace("Chip (FEB={}, chip={}): CentralTriggerEffect already {} → skip",
+                      boardIdx_, chipIdx_, int(current));
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): CentralTriggerEffect {} -> {}",
+                  boardIdx_, chipIdx_, int(current), int(config_.central_trigger_effect));
+
+    check(SAMPIC256CH_SetSampicCentralTriggerEffect(&info_, &params_,
+                                                    boardIdx_, chipIdx_,
+                                                    config_.central_trigger_effect),
+          "SetSampicCentralTriggerEffect");
+}
+
+void SampicChipConfigurator::setCentralTriggerPrimitives() {
+    SAMPIC_CT_PrimitivesMode_t mode{}; int len{};
+    check(SAMPIC256CH_GetSampicCentralTriggerPrimitivesOptions(&params_, boardIdx_, chipIdx_,
+                                                               &mode, &len),
+          "GetSampicCentralTriggerPrimitivesOptions");
+
+    if (mode == config_.primitives_mode && len == config_.primitives_gate_length) {
+        spdlog::trace("Chip (FEB={}, chip={}): CentralTriggerPrimitives already mode={}, len={} → skip",
+                      boardIdx_, chipIdx_, int(mode), len);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): CentralTriggerPrimitives change to mode={}, len={}",
+                  boardIdx_, chipIdx_, int(config_.primitives_mode),
+                  config_.primitives_gate_length);
+
+    check(SAMPIC256CH_SetSampicCentralTriggerPrimitivesOptions(&info_, &params_,
+                                                               boardIdx_, chipIdx_,
+                                                               config_.primitives_mode,
+                                                               config_.primitives_gate_length),
+          "SetSampicCentralTriggerPrimitivesOptions");
+}
+
+void SampicChipConfigurator::setTriggerOption() {
+    SampicTriggerOption_t current{};
+    check(SAMPIC256CH_GetSampicTriggerOption(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicTriggerOption");
+
+    if (current == config_.trigger_option) {
+        spdlog::trace("Chip (FEB={}, chip={}): TriggerOption already {} → skip",
+                      boardIdx_, chipIdx_, int(current));
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): TriggerOption {} -> {}",
+                  boardIdx_, chipIdx_, int(current), int(config_.trigger_option));
+
+    check(SAMPIC256CH_SetSampicTriggerOption(&info_, &params_,
+                                             boardIdx_, chipIdx_,
+                                             config_.trigger_option),
+          "SetSampicTriggerOption");
+}
+
+void SampicChipConfigurator::setEnableTriggerMode() {
+    Boolean useExt{}, openGate{}; unsigned char extGate{};
+    check(SAMPIC256CH_GetSampicEnableTriggerMode(&params_, boardIdx_, chipIdx_,
+                                                 &useExt, &openGate, &extGate),
+          "GetSampicEnableTriggerMode");
+
+    if ((bool)useExt == config_.enable_trigger_use_external &&
+        (bool)openGate == config_.enable_trigger_open_gate_on_ext &&
+        extGate == config_.enable_trigger_ext_gate) {
+        spdlog::trace("Chip (FEB={}, chip={}): EnableTriggerMode already useExt={}, openGate={}, extGate={} → skip",
+                      boardIdx_, chipIdx_, (bool)useExt, (bool)openGate, int(extGate));
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): EnableTriggerMode change to useExt={}, openGate={}, extGate={}",
+                  boardIdx_, chipIdx_,
+                  config_.enable_trigger_use_external,
+                  config_.enable_trigger_open_gate_on_ext,
+                  int(config_.enable_trigger_ext_gate));
+
+    check(SAMPIC256CH_SetSampicEnableTriggerMode(&info_, &params_,
+                                                 boardIdx_, chipIdx_,
+                                                 config_.enable_trigger_use_external,
+                                                 config_.enable_trigger_open_gate_on_ext,
+                                                 config_.enable_trigger_ext_gate),
+          "SetSampicEnableTriggerMode");
+}
+
+void SampicChipConfigurator::setCommonDeadTime() {
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicCommonDeadTimeMode(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicCommonDeadTimeMode");
+
+    if ((bool)current == config_.common_dead_time) {
+        spdlog::trace("Chip (FEB={}, chip={}): CommonDeadTime already {} → skip",
+                      boardIdx_, chipIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): CommonDeadTime {} -> {}",
+                  boardIdx_, chipIdx_, (bool)current, config_.common_dead_time);
+
+    check(SAMPIC256CH_SetSampicCommonDeadTimeMode(&info_, &params_,
+                                                  boardIdx_, chipIdx_,
+                                                  config_.common_dead_time),
+          "SetSampicCommonDeadTimeMode");
+}
+
+void SampicChipConfigurator::setPulserWidth() {
+    unsigned char current{};
+    check(SAMPIC256CH_GetSampicPulserWidth(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicPulserWidth");
+
+    if (current == config_.pulser_width) {
+        spdlog::trace("Chip (FEB={}, chip={}): PulserWidth already {} → skip",
+                      boardIdx_, chipIdx_, int(current));
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): PulserWidth {} -> {}",
+                  boardIdx_, chipIdx_, int(current), int(config_.pulser_width));
+
+    check(SAMPIC256CH_SetSampicPulserWidth(&info_, &params_,
+                                           boardIdx_, chipIdx_,
+                                           config_.pulser_width),
+          "SetSampicPulserWidth");
+}
+
+void SampicChipConfigurator::setAdcRamp() {
+    float current{};
+    check(SAMPIC256CH_GetSampicADCRampValue(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicADCRampValue");
+
+    if (std::fabs(current - config_.adc_ramp_value) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): ADCRamp already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): ADCRamp {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.adc_ramp_value);
+
+    check(SAMPIC256CH_SetSampicADCRampValue(&info_, &params_,
+                                            boardIdx_, chipIdx_,
+                                            config_.adc_ramp_value),
+          "SetSampicADCRampValue");
+}
+
+void SampicChipConfigurator::setVdacDLL() {
+    float current{};
+    check(SAMPIC256CH_GetSampicVdacDLLValue(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicVdacDLLValue");
+
+    if (std::fabs(current - config_.vdac_dll_value) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): VdacDLL already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): VdacDLL {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.vdac_dll_value);
+
+    check(SAMPIC256CH_SetSampicVdacDLLValue(&info_, &params_,
+                                            boardIdx_, chipIdx_,
+                                            config_.vdac_dll_value),
+          "SetSampicVdacDLLValue");
+}
+
+void SampicChipConfigurator::setVdacDLLContinuity() {
+    float current{};
+    check(SAMPIC256CH_GetSampicVdacDLLContinuity(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicVdacDLLContinuity");
+
+    if (std::fabs(current - config_.vdac_dll_continuity) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): VdacDLLContinuity already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): VdacDLLContinuity {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.vdac_dll_continuity);
+
+    check(SAMPIC256CH_SetSampicVdacDLLContinuity(&info_, &params_,
+                                                 boardIdx_, chipIdx_,
+                                                 config_.vdac_dll_continuity),
+          "SetSampicVdacDLLContinuity");
+}
+
+void SampicChipConfigurator::setVdacRosc() {
+    float current{};
+    check(SAMPIC256CH_GetSampicVdacRosc(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicVdacRosc");
+
+    if (std::fabs(current - config_.vdac_rosc) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): VdacRosc already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): VdacRosc {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.vdac_rosc);
+
+    check(SAMPIC256CH_SetSampicVdacRosc(&info_, &params_,
+                                        boardIdx_, chipIdx_,
+                                        config_.vdac_rosc),
+          "SetSampicVdacRosc");
+}
+
+void SampicChipConfigurator::setDllSpeedMode() {
+    SampicDLLModeType_t current{};
+    check(SAMPIC256CH_GetSampicDLLSpeedMode(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicDLLSpeedMode");
+
+    if (current == config_.dll_speed_mode) {
+        spdlog::trace("Chip (FEB={}, chip={}): DLLSpeedMode already {} → skip",
+                      boardIdx_, chipIdx_, int(current));
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): DLLSpeedMode {} -> {}",
+                  boardIdx_, chipIdx_, int(current), int(config_.dll_speed_mode));
+
+    check(SAMPIC256CH_SetSampicDLLSpeedMode(&info_, &params_,
+                                            boardIdx_, chipIdx_,
+                                            config_.dll_speed_mode),
+          "SetSampicDLLSpeedMode");
+}
+
+void SampicChipConfigurator::setOverflowDac() {
+    float current{};
+    check(SAMPIC256CH_GetSampicOverflowDacValue(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicOverflowDacValue");
+
+    if (std::fabs(current - config_.overflow_dac_value) < 1e-6) {
+        spdlog::trace("Chip (FEB={}, chip={}): OverflowDac already {} → skip",
+                      boardIdx_, chipIdx_, current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): OverflowDac {} -> {}",
+                  boardIdx_, chipIdx_, current, config_.overflow_dac_value);
+
+    check(SAMPIC256CH_SetSampicOverflowDacValue(&info_, &params_,
+                                                boardIdx_, chipIdx_,
+                                                config_.overflow_dac_value),
+          "SetSampicOverflowDacValue");
+}
+
+void SampicChipConfigurator::setLvdsLowCurrent() {
+    Boolean current{};
+    check(SAMPIC256CH_GetSampicLvdsLowCurrentMode(&params_, boardIdx_, chipIdx_, &current),
+          "GetSampicLvdsLowCurrentMode");
+
+    if ((bool)current == config_.lvds_low_current_mode) {
+        spdlog::trace("Chip (FEB={}, chip={}): LvdsLowCurrent already {} → skip",
+                      boardIdx_, chipIdx_, (bool)current);
+        return;
+    }
+
+    spdlog::trace("Chip (FEB={}, chip={}): LvdsLowCurrent {} -> {}",
+                  boardIdx_, chipIdx_, (bool)current, config_.lvds_low_current_mode);
+
+    check(SAMPIC256CH_SetSampicLvdsLowCurrentMode(&info_, &params_,
+                                                  boardIdx_, chipIdx_,
+                                                  config_.lvds_low_current_mode),
+          "SetSampicLvdsLowCurrentMode");
 }
 
 // ------------------- Channels descend -------------------
@@ -2570,14 +3030,7 @@ void SampicChipConfigurator::applyChannels() {
                   boardIdx_, chipIdx_, config_.channels.size());
     for (auto& [chKey, chCfg] : config_.channels) {
         int chIdx = indexFromKey(chKey);
-
-        if (!chCfg.enabled) {
-            spdlog::info("Skipping channel '{}' (FEB={}, chip={}, idx={}) because it is disabled.",
-                         chKey, boardIdx_, chipIdx_, chIdx);
-            continue;
-        }
-
-        spdlog::debug("  → Apply channel '{}'(index={})", chKey, chIdx);
+        spdlog::debug("  → Apply channel '{}' (idx={})", chKey, chIdx);
         SampicChannelConfigurator ch(boardIdx_, chipIdx_, chIdx, info_, params_, chCfg);
         ch.apply();
     }
@@ -2606,14 +3059,14 @@ int SampicChipConfigurator::indexFromKey(const std::string& key) {
 ===== FILE START =====
 Relative Path: src/integration/sampic/config/sampic_crate_configurator.cpp
 Absolute Path: /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/src/integration/sampic/config/sampic_crate_configurator.cpp
-Size: 12340 bytes
+Size: 15896 bytes
 -----
-// sampic_crate_configurator.cpp
 #include "integration/sampic/config/sampic_crate_configurator.h"
 #include "integration/sampic/config/sampic_board_configurator.h"
 
 #include <spdlog/spdlog.h>
 #include <stdexcept>
+#include <cmath>
 #include <string>
 
 // ------------------- Ctor -------------------
@@ -2622,41 +3075,33 @@ SampicCrateConfigurator::SampicCrateConfigurator(CrateInfoStruct& info,
                                                  SampicSystemSettings& settings)
     : info_(info), params_(params), settings_(settings) {}
 
-// ------------------- Apply (top-level) -------------------
+// ------------------- Apply -------------------
 void SampicCrateConfigurator::apply() {
     spdlog::info("Applying SAMPIC crate settings...");
 
-    // Acquisition
     setSamplingFrequency();
     setADCBits();
     setFramesPerBlock();
     setTOTMode();
     setSmartReadMode();
 
-    // External trigger & build logic
     setExternalTriggerType();
     setExternalTriggerLevel();
     setExternalTriggerEdge();
     setMinTriggersPerEvent();
-    setLevel2TriggerBuild();
     setLevel3TriggerBuild();
 
-    // Global gates
     setPrimitivesGateLength();
     setLevel2LatencyGateLength();
     setLevel3ExtTrigGate();
     setLevel3CoincidenceWithExtGate();
 
-    // Pulser
     setPulser();
 
-    // Sync & corrections
-    setSyncMode();
     setSyncEdge();
     setSyncLevel();
     setCorrectionLevels();
 
-    // Descend to boards/chips/channels
     applyBoards();
 
     spdlog::info("SAMPIC crate settings applied.");
@@ -2664,196 +3109,367 @@ void SampicCrateConfigurator::apply() {
 
 // ------------------- Acquisition -------------------
 void SampicCrateConfigurator::setSamplingFrequency() {
-    spdlog::debug("SetSamplingFrequency: {} MS/s (use_external_clock={})",
+    int current{}; Boolean useExt{};
+    check(SAMPIC256CH_GetSamplingFrequency(&params_, &current, &useExt),
+          "GetSamplingFrequency");
+
+    if (current == settings_.sampling_frequency_mhz &&
+        (bool)useExt == settings_.use_external_clock) {
+        spdlog::trace("SamplingFrequency already {} MHz, useExt={} → skip",
+                      current, (bool)useExt);
+        return;
+    }
+
+    spdlog::trace("SamplingFrequency change to {} MHz, useExt={}",
                   settings_.sampling_frequency_mhz, settings_.use_external_clock);
-    auto rc = SAMPIC256CH_SetSamplingFrequency(&info_, &params_,
-                                               settings_.sampling_frequency_mhz,
-                                               settings_.use_external_clock);
-    check(rc, "SetSamplingFrequency");
+
+    check(SAMPIC256CH_SetSamplingFrequency(&info_, &params_,
+                                           settings_.sampling_frequency_mhz,
+                                           settings_.use_external_clock),
+          "SetSamplingFrequency");
 }
 
 void SampicCrateConfigurator::setFramesPerBlock() {
-    spdlog::debug("SetNbOfFramesPerBlock: {}", settings_.frames_per_block);
-    auto rc = SAMPIC256CH_SetNbOfFramesPerBlock(&info_, &params_, settings_.frames_per_block);
-    check(rc, "SetNbOfFramesPerBlock");
+    int current{};
+    check(SAMPIC256CH_GetNbOfFramesPerBlock(&params_, &current),
+          "GetNbOfFramesPerBlock");
+
+    if (current == settings_.frames_per_block) {
+        spdlog::trace("FramesPerBlock already {} → skip", current);
+        return;
+    }
+
+    spdlog::trace("FramesPerBlock {} -> {}", current, settings_.frames_per_block);
+
+    check(SAMPIC256CH_SetNbOfFramesPerBlock(&info_, &params_, settings_.frames_per_block),
+          "SetNbOfFramesPerBlock");
 }
 
 void SampicCrateConfigurator::setTOTMode() {
-    spdlog::debug("SetTOTMeasurementMode: {}", settings_.enable_tot);
-    auto rc = SAMPIC256CH_SetTOTMeasurementMode(&info_, &params_, settings_.enable_tot);
-    check(rc, "SetTOTMeasurementMode");
+    Boolean current{};
+    check(SAMPIC256CH_GetTOTMeasurementMode(&params_, &current),
+          "GetTOTMeasurementMode");
+
+    if ((bool)current == settings_.enable_tot) {
+        spdlog::trace("TOTMode already {} → skip", (bool)current);
+        return;
+    }
+
+    spdlog::trace("TOTMode {} -> {}", (bool)current, settings_.enable_tot);
+
+    check(SAMPIC256CH_SetTOTMeasurementMode(&info_, &params_, settings_.enable_tot),
+          "SetTOTMeasurementMode");
 }
 
 void SampicCrateConfigurator::setADCBits() {
-    spdlog::debug("Set_SystemADCNbOfBits: {}", settings_.adc_bits);
-    auto rc = Set_SystemADCNbOfBits(&info_, &params_, settings_.adc_bits);
-    check(rc, "Set_SystemADCNbOfBits");
+    int current{};
+    check(Get_SystemADCNbOfBits(&params_, &current), "Get_SystemADCNbOfBits");
+
+    if (current == settings_.adc_bits) {
+        spdlog::trace("ADC bits already {} → skip", current);
+        return;
+    }
+
+    spdlog::trace("ADC bits {} -> {}", current, settings_.adc_bits);
+
+    check(Set_SystemADCNbOfBits(&info_, &params_, settings_.adc_bits),
+          "Set_SystemADCNbOfBits");
 }
 
 void SampicCrateConfigurator::setSmartReadMode() {
-    spdlog::debug("SetSmartReadMode: mode={}, samples={}, offset={}",
-                  settings_.smart_read_mode, settings_.samples_to_read, settings_.read_offset);
-    auto rc = SAMPIC256CH_SetSmartReadMode(&info_, &params_,
-                                           settings_.smart_read_mode,
-                                           settings_.samples_to_read,
-                                           settings_.read_offset);
-    check(rc, "SetSmartReadMode");
+    Boolean mode{}; int samples{}, offset{};
+    check(SAMPIC256CH_GetSmartReadMode(&params_, &mode, &samples, &offset),
+          "GetSmartReadMode");
+
+    if ((bool)mode == settings_.smart_read_mode &&
+        samples == settings_.samples_to_read &&
+        offset == settings_.read_offset) {
+        spdlog::trace("SmartReadMode already mode={}, samples={}, offset={} → skip",
+                      (bool)mode, samples, offset);
+        return;
+    }
+
+    spdlog::trace("SmartReadMode change to mode={}, samples={}, offset={}",
+                  settings_.smart_read_mode,
+                  settings_.samples_to_read,
+                  settings_.read_offset);
+
+    check(SAMPIC256CH_SetSmartReadMode(&info_, &params_,
+                                       settings_.smart_read_mode,
+                                       settings_.samples_to_read,
+                                       settings_.read_offset),
+          "SetSmartReadMode");
 }
 
-// ------------------- External trigger + build -------------------
+// ------------------- External triggers -------------------
 void SampicCrateConfigurator::setExternalTriggerType() {
-    spdlog::debug("SetExternalTriggerType: {}", (int)settings_.external_trigger_type);
-    auto rc = SAMPIC256CH_SetExternalTriggerType(&info_, &params_, settings_.external_trigger_type);
-    check(rc, "SetExternalTriggerType");
+    ExternalTriggerType_t current{};
+    check(SAMPIC256CH_GetExternalTriggerType(&params_, &current),
+          "GetExternalTriggerType");
+
+    if (current == settings_.external_trigger_type) {
+        spdlog::trace("ExternalTriggerType already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("ExternalTriggerType {} -> {}", int(current),
+                  int(settings_.external_trigger_type));
+
+    check(SAMPIC256CH_SetExternalTriggerType(&info_, &params_,
+                                             settings_.external_trigger_type),
+          "SetExternalTriggerType");
 }
 
 void SampicCrateConfigurator::setExternalTriggerLevel() {
-    spdlog::debug("SetExternalTriggerSigLevel: {}", (int)settings_.signal_level);
-    auto rc = SAMPIC256CH_SetExternalTriggerSigLevel(&info_, &params_, settings_.signal_level);
-    check(rc, "SetExternalTriggerSigLevel");
+    SignalLevel_t current{};
+    check(SAMPIC256CH_GetExternalTriggerSigLevel(&params_, &current),
+          "GetExternalTriggerSigLevel");
+
+    if (current == settings_.signal_level) {
+        spdlog::trace("ExternalTriggerLevel already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("ExternalTriggerLevel {} -> {}", int(current),
+                  int(settings_.signal_level));
+
+    check(SAMPIC256CH_SetExternalTriggerSigLevel(&info_, &params_,
+                                                 settings_.signal_level),
+          "SetExternalTriggerSigLevel");
 }
 
 void SampicCrateConfigurator::setExternalTriggerEdge() {
-    spdlog::debug("SetExternalTriggerEdge: {}", (int)settings_.trigger_edge);
-    auto rc = SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_, settings_.trigger_edge);
-    check(rc, "SetExternalTriggerEdge");
+    EdgeType_t current{};
+    check(SAMPIC256CH_GetExternalTriggerEdge(&params_, &current),
+          "GetExternalTriggerEdge");
+
+    if (current == settings_.trigger_edge) {
+        spdlog::trace("ExternalTriggerEdge already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("ExternalTriggerEdge {} -> {}", int(current),
+                  int(settings_.trigger_edge));
+
+    check(SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_,
+                                             settings_.trigger_edge),
+          "SetExternalTriggerEdge");
 }
 
 void SampicCrateConfigurator::setMinTriggersPerEvent() {
-    spdlog::debug("SetMinNbOfTriggersPerEvent: {}", (int)settings_.triggers_per_event);
-    auto rc = SAMPIC256CH_SetMinNbOfTriggersPerEvent(&info_, &params_,
-                                                     (unsigned char)settings_.triggers_per_event);
-    check(rc, "SetMinNbOfTriggersPerEvent");
-}
+    unsigned char current{};
+    check(SAMPIC256CH_GetMinNbOfTriggersPerEvent(&params_, &current),
+          "GetMinNbOfTriggersPerEvent");
 
-void SampicCrateConfigurator::setLevel2TriggerBuild() {
-    spdlog::debug("SetLevel2TriggerBuildOption: {}", settings_.level2_trigger_build);
-    auto rc = SAMPIC256CH_SetLevel2TriggerBuildOption(&info_, &params_, settings_.level2_trigger_build);
-    check(rc, "SetLevel2TriggerBuildOption");
+    if (current == settings_.triggers_per_event) {
+        spdlog::trace("MinTriggersPerEvent already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("MinTriggersPerEvent {} -> {}", int(current),
+                  int(settings_.triggers_per_event));
+
+    check(SAMPIC256CH_SetMinNbOfTriggersPerEvent(&info_, &params_,
+                                                 settings_.triggers_per_event),
+          "SetMinNbOfTriggersPerEvent");
 }
 
 void SampicCrateConfigurator::setLevel3TriggerBuild() {
-    spdlog::debug("SetLevel3TriggerLogic: enable={}", settings_.level3_trigger_build);
-    TriggerLogicParamStruct l3params{}; // default params if none provided in settings
-    auto rc = SAMPIC256CH_SetLevel3TriggerLogic(&info_, &params_,
-                                                settings_.level3_trigger_build, l3params);
-    check(rc, "SetLevel3TriggerLogic");
+    Boolean current{};
+    TriggerLogicParamStruct l3params{};  // default-initialize a real struct
+    check(SAMPIC256CH_GetLevel3TriggerLogic(&params_, &current, &l3params),
+          "GetLevel3TriggerLogic");
+
+    if ((bool)current == settings_.level3_trigger_build) {
+        spdlog::trace("Level3TriggerBuild already {} → skip", (bool)current);
+        return;
+    }
+
+    spdlog::trace("Level3TriggerBuild {} -> {}", (bool)current,
+                  settings_.level3_trigger_build);
+
+    // Pass the struct back in for Set
+    check(SAMPIC256CH_SetLevel3TriggerLogic(&info_, &params_,
+                                            settings_.level3_trigger_build,
+                                            l3params),
+          "SetLevel3TriggerLogic");
 }
 
-// ------------------- Global gates -------------------
+
+// ------------------- Gates -------------------
 void SampicCrateConfigurator::setPrimitivesGateLength() {
-    spdlog::debug("SetPrimitivesGateLength: {}", (int)settings_.primitives_gate_length);
-    auto rc = SAMPIC256CH_SetPrimitivesGateLength(&info_, &params_,
-                                                  (unsigned char)settings_.primitives_gate_length);
-    check(rc, "SetPrimitivesGateLength");
+    unsigned char current{};
+    check(SAMPIC256CH_GetPrimitivesGateLength(&params_, &current),
+          "GetPrimitivesGateLength");
+
+    if (current == settings_.primitives_gate_length) {
+        spdlog::trace("PrimitivesGateLength already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("PrimitivesGateLength {} -> {}",
+                  int(current), int(settings_.primitives_gate_length));
+
+    check(SAMPIC256CH_SetPrimitivesGateLength(&info_, &params_,
+                                              settings_.primitives_gate_length),
+          "SetPrimitivesGateLength");
 }
 
 void SampicCrateConfigurator::setLevel2LatencyGateLength() {
-    spdlog::debug("SetLevel2LatencyGateLength: {}", (int)settings_.latency_gate_length);
-    auto rc = SAMPIC256CH_SetLevel2LatencyGateLength(&info_, &params_,
-                                                     (unsigned char)settings_.latency_gate_length);
-    check(rc, "SetLevel2LatencyGateLength");
+    unsigned char current{};
+    check(SAMPIC256CH_GetLevel2LatencyGateLength(&params_, &current),
+          "GetLevel2LatencyGateLength");
+
+    if (current == settings_.latency_gate_length) {
+        spdlog::trace("Level2LatencyGateLength already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("Level2LatencyGateLength {} -> {}",
+                  int(current), int(settings_.latency_gate_length));
+
+    check(SAMPIC256CH_SetLevel2LatencyGateLength(&info_, &params_,
+                                                 settings_.latency_gate_length),
+          "SetLevel2LatencyGateLength");
 }
 
 void SampicCrateConfigurator::setLevel3ExtTrigGate() {
-    spdlog::debug("SetLevel3ExtTrigGate: {}", (int)settings_.level3_ext_trig_gate);
-    auto rc = SAMPIC256CH_SetLevel3ExtTrigGate(&info_, &params_,
-                                               (unsigned char)settings_.level3_ext_trig_gate);
-    check(rc, "SetLevel3ExtTrigGate");
+    unsigned char current{};
+    check(SAMPIC256CH_GetLevel3ExtTrigGate(&params_, &current),
+          "GetLevel3ExtTrigGate");
+
+    if (current == settings_.level3_ext_trig_gate) {
+        spdlog::trace("Level3ExtTrigGate already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("Level3ExtTrigGate {} -> {}",
+                  int(current), int(settings_.level3_ext_trig_gate));
+
+    check(SAMPIC256CH_SetLevel3ExtTrigGate(&info_, &params_,
+                                           settings_.level3_ext_trig_gate),
+          "SetLevel3ExtTrigGate");
 }
 
 void SampicCrateConfigurator::setLevel3CoincidenceWithExtGate() {
-    spdlog::debug("SetLevel3CoincidenceModeWithExtTrigGate: {}", settings_.level3_coincidence_ext_gate);
-    auto rc = SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate(&info_, &params_,
-                                                                  settings_.level3_coincidence_ext_gate);
-    check(rc, "SetLevel3CoincidenceModeWithExtTrigGate");
+    Boolean current{};
+    check(SAMPIC256CH_GetLevel3CoincidenceModeWithExtTrigGate(&params_, &current),
+          "GetLevel3CoincidenceModeWithExtTrigGate");
+
+    if ((bool)current == settings_.level3_coincidence_ext_gate) {
+        spdlog::trace("Level3CoincidenceWithExtGate already {} → skip", (bool)current);
+        return;
+    }
+
+    spdlog::trace("Level3CoincidenceWithExtGate {} -> {}", (bool)current,
+                  settings_.level3_coincidence_ext_gate);
+
+    check(SAMPIC256CH_SetLevel3CoincidenceModeWithExtTrigGate(&info_, &params_,
+                                                              settings_.level3_coincidence_ext_gate),
+          "SetLevel3CoincidenceModeWithExtTrigGate");
 }
 
 // ------------------- Pulser -------------------
 void SampicCrateConfigurator::setPulser() {
-    spdlog::debug("SetPulserMode: enable={}, src={}, sync={}",
-                  settings_.pulser_enable, (int)settings_.pulser_source, settings_.pulser_synchronous);
-    auto rc = SAMPIC256CH_SetPulserMode(&info_, &params_,
-                                        settings_.pulser_enable,
-                                        settings_.pulser_source,
-                                        settings_.pulser_synchronous);
-    check(rc, "SetPulserMode");
+    Boolean en{}; PulserSourceType_t src{}; Boolean sync{}; int period{};
+    check(SAMPIC256CH_GetPulserMode(&params_, &en, &src, &sync),
+          "GetPulserMode");
 
-    spdlog::debug("SetAutoPulserPeriod: {}", settings_.pulser_period);
-    rc = SAMPIC256CH_SetAutoPulserPeriod(&info_, &params_, settings_.pulser_period);
-    check(rc, "SetAutoPulserPeriod");
+    check(SAMPIC256CH_GetAutoPulserPeriod(&params_, &period),
+          "GetAutoPulserPeriod");
 
-    // NOTE: pulser width is a per-chip setting in the C API; apply across all (board, chip).
-    for (const auto& [febKey, febCfg] : settings_.front_end_boards) {
-        int febIdx = indexFromKey(febKey);
-        // We’ll apply the *crate-level* width to every chip unless a chip-level configurator later overrides it.
-        for (const auto& [chipKey, chipCfg] : febCfg.sampics) {
-            int chipIdx = indexFromKey(chipKey);
-            spdlog::trace("SetSampicPulserWidth: feb={}, chip={}, width={}",
-                          febIdx, chipIdx, (int)settings_.pulser_width);
-            auto rc2 = SAMPIC256CH_SetSampicPulserWidth(&info_, &params_, febIdx, chipIdx,
-                                                        (unsigned char)settings_.pulser_width);
-            check(rc2, "SetSampicPulserWidth");
-        }
+    if ((bool)en == settings_.pulser_enable &&
+        src == settings_.pulser_source &&
+        (bool)sync == settings_.pulser_synchronous &&
+        period == settings_.pulser_period) {
+        spdlog::trace("Pulser already en={}, src={}, sync={}, period={} → skip",
+                      (bool)en, int(src), (bool)sync, period);
+        return;
     }
+
+    spdlog::trace("Pulser change to en={}, src={}, sync={}, period={}",
+                  settings_.pulser_enable,
+                  int(settings_.pulser_source),
+                  settings_.pulser_synchronous,
+                  settings_.pulser_period);
+
+    check(SAMPIC256CH_SetPulserMode(&info_, &params_,
+                                    settings_.pulser_enable,
+                                    settings_.pulser_source,
+                                    settings_.pulser_synchronous),
+          "SetPulserMode");
+
+    check(SAMPIC256CH_SetAutoPulserPeriod(&info_, &params_,
+                                          settings_.pulser_period),
+          "SetAutoPulserPeriod");
 }
 
 // ------------------- Sync + corrections -------------------
-void SampicCrateConfigurator::setSyncMode() {
-    spdlog::debug("SetCrateSycnhronisationMode: sync={}, master={}, coinc={}",
-                  settings_.sync_mode, settings_.master_mode, settings_.coincidence_mode);
-    auto rc = SAMPIC256CH_SetCrateSycnhronisationMode(&info_, &params_,
-                                                      settings_.sync_mode,
-                                                      settings_.master_mode,
-                                                      settings_.coincidence_mode);
-    check(rc, "SetCrateSycnhronisationMode");
-}
-
 void SampicCrateConfigurator::setSyncEdge() {
-    spdlog::debug("SetExternalSyncEdge: {}", (int)settings_.sync_edge);
-    auto rc = SAMPIC256CH_SetExternalSyncEdge(&info_, &params_, settings_.sync_edge);
-    check(rc, "SetExternalSyncEdge");
+    EdgeType_t current{};
+    check(SAMPIC256CH_GetExternalSyncEdge(&params_, &current),
+          "GetExternalSyncEdge");
+
+    if (current == settings_.sync_edge) {
+        spdlog::trace("SyncEdge already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("SyncEdge {} -> {}", int(current), int(settings_.sync_edge));
+
+    check(SAMPIC256CH_SetExternalSyncEdge(&info_, &params_, settings_.sync_edge),
+          "SetExternalSyncEdge");
 }
 
 void SampicCrateConfigurator::setSyncLevel() {
-    spdlog::debug("SetExternalSyncSigLevel: {}", (int)settings_.sync_level);
-    auto rc = SAMPIC256CH_SetExternalSyncSigLevel(&info_, &params_, settings_.sync_level);
-    check(rc, "SetExternalSyncSigLevel");
+    SignalLevel_t current{};
+    check(SAMPIC256CH_GetExternalSyncSigLevel(&params_, &current),
+          "GetExternalSyncSigLevel");
+
+    if (current == settings_.sync_level) {
+        spdlog::trace("SyncLevel already {} → skip", int(current));
+        return;
+    }
+
+    spdlog::trace("SyncLevel {} -> {}", int(current), int(settings_.sync_level));
+
+    check(SAMPIC256CH_SetExternalSyncSigLevel(&info_, &params_, settings_.sync_level),
+          "SetExternalSyncSigLevel");
 }
 
 void SampicCrateConfigurator::setCorrectionLevels() {
-    spdlog::debug("SetCrateCorrectionLevels: adc={}, inl={}, ped={}",
+    Boolean adc{}, inl{}, ped{};
+    check(SAMPIC256CH_GetCrateCorrectionLevels(&info_, &params_, &adc, &inl, &ped),
+          "GetCrateCorrectionLevels");
+
+    if ((bool)adc == settings_.adc_linearity_correction &&
+        (bool)inl == settings_.time_inl_correction &&
+        (bool)ped == settings_.residual_pedestal_correction) {
+        spdlog::trace("CorrectionLevels already adc={}, inl={}, ped={} → skip",
+                      (bool)adc, (bool)inl, (bool)ped);
+        return;
+    }
+
+    spdlog::trace("CorrectionLevels change to adc={}, inl={}, ped={}",
                   settings_.adc_linearity_correction,
                   settings_.time_inl_correction,
                   settings_.residual_pedestal_correction);
-    auto rc = SAMPIC256CH_SetCrateCorrectionLevels(&info_, &params_,
-                                                   settings_.adc_linearity_correction,
-                                                   settings_.time_inl_correction,
-                                                   settings_.residual_pedestal_correction);
-    check(rc, "SetCrateCorrectionLevels");
 
-    // Optional: auto-load all calibration values if directory provided (non-empty)
-    if (!settings_.calibration_directory.empty()) {
-        spdlog::debug("LoadAllCalibValuesFromFiles: dir='{}'", settings_.calibration_directory);
-        char dirbuf[MAX_PATHNAME_LENGTH] = {0};
-        std::snprintf(dirbuf, sizeof(dirbuf), "%s", settings_.calibration_directory.c_str());
-        auto rc2 = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_, dirbuf);
-        if (rc2 != SAMPIC256CH_Success) {
-            // Not fatal for general operation; log and continue (some users don't ship full calib sets).
-            spdlog::warn("LoadAllCalibValuesFromFiles failed (code={}), continuing without file-based calib.",
-                         (int)rc2);
-        }
-    }
+    check(SAMPIC256CH_SetCrateCorrectionLevels(&info_, &params_,
+                                               settings_.adc_linearity_correction,
+                                               settings_.time_inl_correction,
+                                               settings_.residual_pedestal_correction),
+          "SetCrateCorrectionLevels");
 }
 
 // ------------------- Boards descend -------------------
 void SampicCrateConfigurator::applyBoards() {
-    spdlog::debug("Applying front-end boards settings...");
+    spdlog::debug("Applying front-end boards...");
     for (auto& [key, febCfg] : settings_.front_end_boards) {
         int febIdx = indexFromKey(key);
 
         if (!febCfg.enabled) {
-            spdlog::info("Skipping FEB '{}' (index={}) because it is disabled.", key, febIdx);
+            spdlog::info("Skipping FEB '{}' (index={}) — disabled.", key, febIdx);
             continue;
         }
 

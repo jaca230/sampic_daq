@@ -1,9 +1,13 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
 #include <spdlog/spdlog.h>
-#include <thread>   // for sleep_for
+#include <thread> // for sleep_for
 
 int SampicCollectorModeExample::readEvent(EventStruct& event,
-                                          SampicEventTiming& timing) {
+                                          SampicEventTiming& timing)
+{
+    // Retrieve mode-specific configuration
+    const auto& mode_cfg = cfg_.example_mode.at("example_mode");
+
     auto t_start = std::chrono::steady_clock::now();
     SAMPIC256CH_PrepareEvent(&info_, &params_);
     auto t_after_prepare = std::chrono::steady_clock::now();
@@ -36,20 +40,19 @@ int SampicCollectorModeExample::readEvent(EventStruct& event,
             return -1;
         }
 
-        if ((nloop_for_soft_trig % cfg_.soft_trigger_prepare_interval) == 0) {
+        if ((nloop_for_soft_trig % mode_cfg.soft_trigger_prepare_interval) == 0) {
             SAMPIC256CH_PrepareEvent(&info_, &params_);
         }
         nloop_for_soft_trig++;
 
-        if (nloop_for_soft_trig > cfg_.soft_trigger_max_loops) {
-            spdlog::warn("Example mode: Timeout after {} loops", cfg_.soft_trigger_max_loops);
+        if (nloop_for_soft_trig > mode_cfg.soft_trigger_max_loops) {
+            spdlog::warn("Example mode: Timeout after {} loops", mode_cfg.soft_trigger_max_loops);
             return 0;
         }
 
-        // NEW: avoid pegging CPU if repeated failures
-        if (errCode != SAMPIC256CH_Success && cfg_.soft_trigger_retry_sleep_us > 0) {
+        if (errCode != SAMPIC256CH_Success && mode_cfg.soft_trigger_retry_sleep_us > 0) {
             std::this_thread::sleep_for(
-                std::chrono::microseconds(cfg_.soft_trigger_retry_sleep_us));
+                std::chrono::microseconds(mode_cfg.soft_trigger_retry_sleep_us));
         }
     }
 
