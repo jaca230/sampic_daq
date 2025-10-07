@@ -1,134 +1,192 @@
 #include "processing/sampic_processing/collector/modes/frontend_collector_mode_default.h"
+#include "processing/sampic_processing/collector/frontend_event.h"
+#include "processing/sampic_processing/collector/banks/frontend_event_bank_data.h"
+#include "processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.h"
+#include "processing/sampic_processing/collector/banks/frontend_event_bank_collector_timing.h"
+
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <cmath>
 
 FrontendCollectorModeDefault::FrontendCollectorModeDefault(
-    FrontendEventBuffer& buffer,
+    SampicEventBuffer& sampic_buffer,
+    FrontendEventBuffer& frontend_buffer,
     const FrontendEventCollectorConfig& cfg)
-    : FrontendCollectorMode(buffer, cfg)
+    : FrontendCollectorMode(sampic_buffer, frontend_buffer, cfg),
+      mode_cfg_(cfg.default_mode)
 {
-    const auto& mode_cfg = cfg.default_mode.at("default_mode");
+    time_window_ns_ = mode_cfg_.time_window_ns;
+    finalize_after_ = std::chrono::milliseconds(static_cast<int>(mode_cfg_.finalize_after_ms));
+    wait_timeout_   = std::chrono::milliseconds(mode_cfg_.wait_timeout_ms);
 
-    time_window_ns_ = mode_cfg.time_window_ns;
-    finalize_after_ = std::chrono::milliseconds(
-        static_cast<int>(mode_cfg.finalize_after_ms));
+    ready_groups_.reserve(32);
+    emitted_events_.reserve(32);
 
-    spdlog::info("FrontendCollectorModeDefault initialized: "
-                 "time_window_ns = {}, finalize_after_ms = {}",
-                 time_window_ns_, mode_cfg.finalize_after_ms);
+    spdlog::info("FrontendCollectorModeDefault initialized "
+                 "(time_window_ns={}, finalize_after_ms={}, wait_timeout_ms={})",
+                 time_window_ns_,
+                 mode_cfg_.finalize_after_ms,
+                 mode_cfg_.wait_timeout_ms);
 }
 
-// ---------------------------------------------------------------------------
-// collect()
-// ---------------------------------------------------------------------------
-// Called periodically by FrontendEventCollector. It receives a vector of new
-// SAMPIC events, groups hits that are temporally close, and ships complete
-// groups as FrontendEvents to the buffer.
-// ---------------------------------------------------------------------------
-bool FrontendCollectorModeDefault::collect(
-    const std::vector<TimestampedSampicEvent>& new_events)
+/**
+ * @brief Perform one collector iteration. Zero-copy and allocation-minimized.
+ */
+bool FrontendCollectorModeDefault::collect()
 {
+    const auto t_start = std::chrono::steady_clock::now();
+
+    // ---------------------------------------------------------------------
+    // Step 0: Wait for new SampicEvents
+    // ---------------------------------------------------------------------
+    const auto t_wait_start = std::chrono::steady_clock::now();
+    if (!sampic_buffer_.waitForNew(last_timestamp_, wait_timeout_))
+        return true; // timeout is fine
+    const auto t_wait_end = std::chrono::steady_clock::now();
+    const auto wait_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_wait_end - t_wait_start);
+
+    // ---------------------------------------------------------------------
+    // Step 1: Retrieve new events
+    // ---------------------------------------------------------------------
+    auto new_events = sampic_buffer_.getSince(last_timestamp_);
     if (new_events.empty())
         return true;
 
+    last_timestamp_ = new_events.back()->timestamp();
     const auto now = std::chrono::steady_clock::now();
-    bool emitted_any = false;
 
-    // -----------------------------------------------------------------------
-    // Step 1: Process all new events and group hits by temporal proximity
-    // -----------------------------------------------------------------------
-    for (const auto& evt : new_events)
-    {
-        if (!evt.event) continue;
-        auto parent = evt.event; // shared_ptr<EventStruct>
+    // ---------------------------------------------------------------------
+    // Step 2: Group hits by temporal proximity
+    // ---------------------------------------------------------------------
+    const auto t_group_start = std::chrono::steady_clock::now();
 
-        // Loop over all hits in this EventStruct
-        for (int i = 0; i < parent->NbOfHitsInEvent; ++i)
-        {
+    for (const auto& ev : new_events) {
+        if (!ev || !ev->data())
+            continue;
+        const auto parent = ev->data();
+
+        for (int i = 0; i < parent->NbOfHitsInEvent; ++i) {
             const HitStruct* hit = &parent->Hit[i];
             bool placed = false;
 
-            // Try to fit this hit into an existing pending group
-            for (auto& group : pending_groups_)
-            {
-                if (group.hits.empty()) continue;
+            for (auto& group : pending_groups_) {
+                if (group.hits.empty())
+                    continue;
 
-                const HitStruct* ref = group.hits.front();
-                double dt_ns = std::abs(hit->FirstCellTimeStamp - ref->FirstCellTimeStamp);
+                const double dt_ns =
+                    std::abs(hit->FirstCellTimeStamp - group.hits.front()->FirstCellTimeStamp);
+                if (dt_ns <= time_window_ns_) {
+                    group.hits.emplace_back(hit);
 
-                if (dt_ns <= time_window_ns_)
-                {
-                    // Same temporal cluster → add to this group
-                    group.hits.push_back(hit);
-
-                    // Only store this parent once per group
-                    bool has_parent = std::any_of(
-                        group.parents.begin(), group.parents.end(),
-                        [&](const std::shared_ptr<const EventStruct>& p) {
-                            return p.get() == parent.get();
-                        });
-
-                    if (!has_parent)
-                        group.parents.push_back(parent);
+                    if (std::none_of(group.parents.begin(), group.parents.end(),
+                                     [&](const std::shared_ptr<SampicEvent>& p) {
+                                         return p.get() == ev.get();
+                                     })) {
+                        group.parents.emplace_back(ev);
+                    }
 
                     placed = true;
                     break;
                 }
             }
 
-            // No matching group found → create a new one
-            if (!placed)
-            {
+            if (!placed) {
                 PendingGroup g;
                 g.created = now;
-                g.parents.push_back(parent);
-                g.hits.push_back(hit);
-                pending_groups_.push_back(std::move(g));
+                g.parents.reserve(16);
+                g.hits.reserve(256);
+                g.parents.emplace_back(ev);
+                g.hits.emplace_back(hit);
+                pending_groups_.emplace_back(std::move(g));
             }
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Step 2: Check for groups that have aged beyond finalize_after_
-    // -----------------------------------------------------------------------
-    std::vector<PendingGroup> ready_groups;
-    const auto cutoff = now - finalize_after_;
+    const auto t_group_end = std::chrono::steady_clock::now();
+    const auto group_build_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_group_end - t_group_start);
 
-    while (!pending_groups_.empty() &&
-           pending_groups_.front().created < cutoff)
-    {
-        ready_groups.push_back(std::move(pending_groups_.front()));
+    // ---------------------------------------------------------------------
+    // Step 3: Finalize aged groups
+    // ---------------------------------------------------------------------
+    const auto cutoff = now - finalize_after_;
+    ready_groups_.clear();
+
+    while (!pending_groups_.empty() && pending_groups_.front().created < cutoff) {
+        ready_groups_.emplace_back(std::move(pending_groups_.front()));
         pending_groups_.pop_front();
     }
 
-    // -----------------------------------------------------------------------
-    // Step 3: Convert each ready group into a FrontendEvent
-    // -----------------------------------------------------------------------
-    for (auto& g : ready_groups)
-    {
-        if (g.hits.empty()) continue;
+    if (ready_groups_.empty())
+        return true;
 
-        auto fev = std::make_shared<FrontendEvent>();
-        fev->setTimestamp(g.created);
+    // ---------------------------------------------------------------------
+    // Step 4: Emit finalized FrontendEvents
+    // ---------------------------------------------------------------------
+    emitted_events_.clear();
+    emitted_events_.reserve(ready_groups_.size());
 
-        // Bank takes ownership of parent shared_ptrs to maintain hit lifetimes
-        auto bank = std::make_shared<FrontendEventBankData>(
-            g.parents, g.hits);
+    uint32_t total_hits = 0;
+    const auto t_finalize_start = std::chrono::steady_clock::now();
 
-        fev->addBank(bank);
+    for (auto& g : ready_groups_) {
+        if (g.hits.empty())
+            continue;
+        total_hits += static_cast<uint32_t>(g.hits.size());
+
+        auto fev = std::make_shared<FrontendEvent>(g.created);
+
+        // Zero-copy data bank (no temporary vector)
+        auto data_bank = std::make_shared<FrontendEventBankData>(g.parents, g.hits);
+        data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
+        fev->addBank(data_bank);
+
+        // Optional user-defined postprocessing
         fev->finalize();
 
-        buffer_.push(fev);
-        emitted_any = true;
+        // Per-event timing bank
+        auto event_timing_bank =
+            std::make_shared<FrontendEventBankEventTiming>(g.created,
+                                                           static_cast<uint32_t>(g.hits.size()),
+                                                           g.parents);
+        event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
+        fev->addBank(event_timing_bank);
 
-        spdlog::debug("FrontendCollectorModeDefault: emitted event with {} hits "
-                      "from {} parent EventStruct(s)",
-                      g.hits.size(), g.parents.size());
+        frontend_buffer_.push(fev);
+        emitted_events_.emplace_back(std::move(fev));
     }
 
-    // -----------------------------------------------------------------------
-    // Step 4: Return whether anything was produced
-    // -----------------------------------------------------------------------
-    return true; //always return true for now
+    const auto t_finalize_end = std::chrono::steady_clock::now();
+    const auto finalize_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_finalize_end - t_finalize_start);
+    const auto total_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_finalize_end - t_start);
+
+    // ---------------------------------------------------------------------
+    // Step 5: Collector timing bank (last event only)
+    // ---------------------------------------------------------------------
+    if (!emitted_events_.empty()) {
+        FrontendEventBankCollectorTiming::Record rec{};
+        rec.collector_timestamp_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                t_start.time_since_epoch()).count());
+        rec.n_events       = static_cast<uint32_t>(emitted_events_.size());
+        rec.total_hits     = total_hits;
+        rec.wait_us        = static_cast<uint32_t>(wait_us.count());
+        rec.group_build_us = static_cast<uint32_t>(group_build_us.count());
+        rec.finalize_us    = static_cast<uint32_t>(finalize_us.count());
+        rec.total_us       = static_cast<uint32_t>(total_us.count());
+
+        auto collector_bank = std::make_shared<FrontendEventBankCollectorTiming>(rec);
+        collector_bank->setBankPrefix(mode_cfg_.collector_timing_bank_prefix);
+        emitted_events_.back()->addBank(collector_bank);
+    }
+
+    spdlog::debug("FrontendCollectorModeDefault: emitted {} FrontendEvents ({} total hits, {} µs total)",
+                  emitted_events_.size(), total_hits, total_us.count());
+    spdlog::trace("FrontendCollectorModeDefault timing: wait={}us, group={}us, finalize={}us, total={}us",
+                  wait_us.count(), group_build_us.count(), finalize_us.count(), total_us.count());
+
+    return true;
 }

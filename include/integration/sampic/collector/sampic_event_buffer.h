@@ -1,6 +1,7 @@
 #ifndef SAMPIC_EVENT_BUFFER_H
 #define SAMPIC_EVENT_BUFFER_H
 
+#include "integration/sampic/collector/sampic_event.h"
 #include <deque>
 #include <mutex>
 #include <condition_variable>
@@ -8,56 +9,53 @@
 #include <chrono>
 #include <vector>
 #include <memory>
-#include <spdlog/spdlog.h>
 
-extern "C" {
-#include <SAMPIC_256Ch_Type.h>
-}
-
-/// Timing breakdown for diagnostics
-struct SampicEventTiming {
-    std::chrono::microseconds prepare_duration{0};
-    std::chrono::microseconds read_duration{0};
-    std::chrono::microseconds decode_duration{0};
-    std::chrono::microseconds total_duration{0};
-};
-
-/// Wrapper: shared_ptr to EventStruct + timestamp + timing
-struct TimestampedSampicEvent {
-    std::shared_ptr<EventStruct> event;
-    std::chrono::steady_clock::time_point timestamp;
-    SampicEventTiming timing;
-    bool consumed{false};
-};
-
-/// Thread-safe buffer for holding timestamped SAMPIC events
+/**
+ * @brief Thread-safe buffer for holding SampicEvent objects.
+ *
+ * Provides blocking and non-blocking access methods for both
+ * producers (push) and consumers (pop, getSince, etc.).
+ * Mirrors the design of FrontendEventBuffer.
+ */
 class SampicEventBuffer {
 public:
     explicit SampicEventBuffer(size_t capacity);
 
-    // Producer
-    void push(const std::shared_ptr<EventStruct>& ev, 
-              const SampicEventTiming& timing);
+    /** @brief Add a new event to the buffer. Drops oldest if full. */
+    void push(const std::shared_ptr<SampicEvent>& ev);
 
-    // Consumer
-    std::optional<TimestampedSampicEvent> pop();        ///< destructive
-    std::optional<TimestampedSampicEvent> latest();     ///< peek latest, marks consumed
-    std::vector<TimestampedSampicEvent> getSince(std::chrono::steady_clock::time_point t);
+    /** @brief Retrieve and remove the oldest event, if available. */
+    std::optional<std::shared_ptr<SampicEvent>> pop();
 
-    // Polling helpers
+    /** @brief Get a reference to the most recent event without removing it. */
+    std::optional<std::shared_ptr<SampicEvent>> latest();
+
+    /** @brief Retrieve all events newer than a specified timestamp. */
+    std::vector<std::shared_ptr<SampicEvent>>
+    getSince(std::chrono::steady_clock::time_point t);
+
+    /** @brief Check if newer events exist after a given timestamp. */
     bool hasNewSince(std::chrono::steady_clock::time_point t) const;
+
+    /**
+     * @brief Wait until a new event is available or the timeout expires.
+     * @return true if a new event became available before timeout.
+     */
     bool waitForNew(std::chrono::steady_clock::time_point t,
                     std::chrono::milliseconds timeout);
 
-    // Info
+    /** @brief Number of events currently in the buffer. */
     size_t size() const;
+
+    /** @brief Return true if the buffer is empty. */
     bool empty() const;
 
 private:
     size_t capacity_;
     mutable std::mutex mtx_;
     std::condition_variable cv_;
-    std::deque<TimestampedSampicEvent> buffer_;
+    std::deque<std::pair<std::shared_ptr<SampicEvent>,
+                         std::chrono::steady_clock::time_point>> buffer_;
     std::chrono::steady_clock::time_point last_timestamp_;
 };
 

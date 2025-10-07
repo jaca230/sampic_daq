@@ -8,25 +8,36 @@ extern "C" {
 #include <SAMPIC_256Ch_lib.h>
 }
 
-/// Abstract base for all SAMPIC collector modes
+/**
+ * @brief Abstract base for all SAMPIC collector modes.
+ * Each mode defines how data is read, decoded, and pushed into the buffer.
+ */
 class SampicCollectorMode {
 public:
-    SampicCollectorMode(CrateInfoStruct& info,
+    SampicCollectorMode(SampicEventBuffer& buffer,
+                        CrateInfoStruct& info,
                         CrateParamStruct& params,
                         void* eventBuffer,
                         ML_Frame* mlFrames,
                         const SampicCollectorConfig& cfg)
-        : info_(info), params_(params),
-          eventBuffer_(eventBuffer), mlFrames_(mlFrames),
+        : buffer_(buffer),
+          info_(info),
+          params_(params),
+          eventBuffer_(eventBuffer),
+          mlFrames_(mlFrames),
           cfg_(cfg) {}
 
     virtual ~SampicCollectorMode() = default;
 
-    /// Perform one acquisition step, filling event + timing
-    virtual int readEvent(EventStruct& event,
-                          SampicEventTiming& timing) = 0;
+    /**
+     * @brief Perform one acquisition cycle.
+     * The mode may push zero or more SampicEvents into the buffer.
+     * @return true if successful, false on recoverable error.
+     */
+    virtual bool collect() = 0;
 
 protected:
+    SampicEventBuffer& buffer_;
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     void* eventBuffer_;

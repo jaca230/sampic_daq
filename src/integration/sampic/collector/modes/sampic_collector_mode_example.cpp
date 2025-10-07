@@ -1,71 +1,98 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
+#include "integration/sampic/collector/sampic_event.h"
+
 #include <spdlog/spdlog.h>
-#include <thread> // for sleep_for
+#include <thread>
+#include <chrono>
 
-int SampicCollectorModeExample::readEvent(EventStruct& event,
-                                          SampicEventTiming& timing)
+SampicCollectorModeExample::SampicCollectorModeExample(
+    SampicEventBuffer& buffer,
+    CrateInfoStruct& info,
+    CrateParamStruct& params,
+    void* eventBuffer,
+    ML_Frame* mlFrames,
+    const SampicCollectorConfig& cfg)
+    : SampicCollectorMode(buffer, info, params, eventBuffer, mlFrames, cfg),
+      mode_cfg_(cfg.example_mode)
 {
-    // Retrieve mode-specific configuration
-    const auto& mode_cfg = cfg_.example_mode.at("example_mode");
+}
 
-    auto t_start = std::chrono::steady_clock::now();
+bool SampicCollectorModeExample::collect()
+{
+    SampicTimingBreakdown timing{};
+    auto ev_data = std::make_shared<EventStruct>();
+
+    const auto t_start = std::chrono::steady_clock::now();
     SAMPIC256CH_PrepareEvent(&info_, &params_);
-    auto t_after_prepare = std::chrono::steady_clock::now();
+    const auto t_after_prepare = std::chrono::steady_clock::now();
 
     SAMPIC256CH_ErrCode errCode = SAMPIC256CH_NoFrameRead;
     int numberOfHits = 0;
     int nframes = 0;
     int dummy = 0;
-    int nloop_for_soft_trig = 0;
+    int nloop = 0;
 
-    while (errCode != SAMPIC256CH_Success) {
-        auto t_read_start = std::chrono::steady_clock::now();
+    // ---------------------------------------------------------------------
+    // Basic blocking acquisition loop
+    // ---------------------------------------------------------------------
+    while (errCode != SAMPIC256CH_Success)
+    {
+        const auto t_read_start = std::chrono::steady_clock::now();
         errCode = SAMPIC256CH_ReadEventBuffer(&info_, dummy, eventBuffer_, mlFrames_, &nframes);
-        auto t_read_end = std::chrono::steady_clock::now();
+        const auto t_read_end = std::chrono::steady_clock::now();
+        timing.read += std::chrono::duration_cast<std::chrono::microseconds>(t_read_end - t_read_start);
 
-        if (errCode == SAMPIC256CH_Success) {
-            auto t_decode_start = std::chrono::steady_clock::now();
-            errCode = SAMPIC256CH_DecodeEvent(&info_, &params_, mlFrames_, &event, nframes, &numberOfHits);
-            auto t_decode_end = std::chrono::steady_clock::now();
-
-            timing.decode_duration =
-                std::chrono::duration_cast<std::chrono::microseconds>(t_decode_end - t_decode_start);
+        if (errCode == SAMPIC256CH_Success)
+        {
+            const auto t_decode_start = std::chrono::steady_clock::now();
+            errCode = SAMPIC256CH_DecodeEvent(&info_, &params_, mlFrames_, ev_data.get(), nframes, &numberOfHits);
+            const auto t_decode_end = std::chrono::steady_clock::now();
+            timing.decode = std::chrono::duration_cast<std::chrono::microseconds>(t_decode_end - t_decode_start);
         }
 
-        timing.read_duration +=
-            std::chrono::duration_cast<std::chrono::microseconds>(t_read_end - t_read_start);
-
-        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent) {
-            spdlog::error("Example mode: Acquisition error (err={})", static_cast<int>(errCode));
-            return -1;
+        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent)
+        {
+            spdlog::error("Example mode: acquisition error (errCode={})",
+                          static_cast<int>(errCode));
+            return false;
         }
 
-        if ((nloop_for_soft_trig % mode_cfg.soft_trigger_prepare_interval) == 0) {
+        if ((nloop % mode_cfg_.soft_trigger_prepare_interval) == 0)
             SAMPIC256CH_PrepareEvent(&info_, &params_);
-        }
-        nloop_for_soft_trig++;
 
-        if (nloop_for_soft_trig > mode_cfg.soft_trigger_max_loops) {
-            spdlog::warn("Example mode: Timeout after {} loops", mode_cfg.soft_trigger_max_loops);
-            return 0;
+        ++nloop;
+
+        if (nloop > mode_cfg_.soft_trigger_max_loops)
+        {
+            spdlog::warn("Example mode: timeout after {} loops", nloop);
+            return true;
         }
 
-        if (errCode != SAMPIC256CH_Success && mode_cfg.soft_trigger_retry_sleep_us > 0) {
-            std::this_thread::sleep_for(
-                std::chrono::microseconds(mode_cfg.soft_trigger_retry_sleep_us));
-        }
+        if (errCode != SAMPIC256CH_Success && mode_cfg_.soft_trigger_retry_sleep_us > 0)
+            std::this_thread::sleep_for(std::chrono::microseconds(mode_cfg_.soft_trigger_retry_sleep_us));
     }
 
-    timing.prepare_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_after_prepare - t_start);
+    // ---------------------------------------------------------------------
+    // Timing and event packaging
+    // ---------------------------------------------------------------------
+    timing.prepare = std::chrono::duration_cast<std::chrono::microseconds>(t_after_prepare - t_start);
+    timing.total   = std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::steady_clock::now() - t_start);
 
-    if (errCode == SAMPIC256CH_Success && numberOfHits > 0) {
-        spdlog::debug("Example mode: Collected {} hits (prepare={}us, read={}us, decode={}us)",
+    if (errCode == SAMPIC256CH_Success && numberOfHits > 0)
+    {
+        auto ev = std::make_shared<SampicEvent>(
+            ev_data, timing, std::chrono::steady_clock::now());
+        buffer_.push(ev);
+
+        spdlog::debug("Example mode: collected {} hits "
+                      "(prepare={}us, read={}us, decode={}us, total={}us)",
                       numberOfHits,
-                      timing.prepare_duration.count(),
-                      timing.read_duration.count(),
-                      timing.decode_duration.count());
+                      timing.prepare.count(),
+                      timing.read.count(),
+                      timing.decode.count(),
+                      timing.total.count());
     }
 
-    return numberOfHits;
+    return true;
 }

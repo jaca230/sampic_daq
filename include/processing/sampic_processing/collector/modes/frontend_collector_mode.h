@@ -2,32 +2,36 @@
 #define FRONTEND_COLLECTOR_MODE_H
 
 #include <memory>
-#include <vector>
-
 #include "processing/sampic_processing/collector/frontend_event_buffer.h"
 #include "processing/sampic_processing/config/frontend_event_collector_config.h"
-#include "integration/sampic/collector/sampic_event_buffer.h"  // for TimestampedSampicEvent
+#include "integration/sampic/collector/sampic_event_buffer.h"
 
-/// Abstract base class for frontend collector modes.
-/// A mode defines *how* data is gathered and converted into FrontendEvents.
-/// The collector will invoke collect() periodically according to configuration.
+/**
+ * @brief Abstract base class for frontend collector modes.
+ * Each mode defines how SAMPIC events are transformed into FrontendEvents.
+ */
 class FrontendCollectorMode {
 public:
-    FrontendCollectorMode(FrontendEventBuffer& buffer,
+    FrontendCollectorMode(SampicEventBuffer& sampic_buffer,
+                          FrontendEventBuffer& frontend_buffer,
                           const FrontendEventCollectorConfig& cfg)
-        : buffer_(buffer), cfg_(cfg) {}
+        : sampic_buffer_(sampic_buffer),
+          frontend_buffer_(frontend_buffer),
+          cfg_(cfg) {}
 
     virtual ~FrontendCollectorMode() = default;
 
-    /// Perform one data collection cycle.
-    /// The input is a vector of new SAMPIC events fetched by the collector.
-    /// Implementations may push zero or more FrontendEvents into the buffer.
-    ///
-    /// Returns true if succeeded with no errors. (may replace with some status code enum in the future)
-    virtual bool collect(const std::vector<TimestampedSampicEvent>& new_events) = 0;
+    /**
+     * @brief Perform one data collection cycle.
+     * The mode may fetch new SampicEvents from sampic_buffer_ and push
+     * one or more FrontendEvents into frontend_buffer_.
+     * @return true if succeeded (no fatal error).
+     */
+    virtual bool collect() = 0;
 
 protected:
-    FrontendEventBuffer& buffer_;
+    SampicEventBuffer& sampic_buffer_;
+    FrontendEventBuffer& frontend_buffer_;
     const FrontendEventCollectorConfig& cfg_;
 };
 

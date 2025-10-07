@@ -1,60 +1,60 @@
 #include "integration/sampic/collector/sampic_event_buffer.h"
+#include <spdlog/spdlog.h>
 
 SampicEventBuffer::SampicEventBuffer(size_t capacity)
     : capacity_(capacity),
       last_timestamp_(std::chrono::steady_clock::time_point::min()) {}
 
-void SampicEventBuffer::push(const std::shared_ptr<EventStruct>& ev,
-                             const SampicEventTiming& timing) {
+void SampicEventBuffer::push(const std::shared_ptr<SampicEvent>& ev) {
+    if (!ev) return;
+
     std::unique_lock<std::mutex> lock(mtx_);
+
     if (buffer_.size() >= capacity_) {
-        const auto& oldest = buffer_.front();
-        if (!oldest.consumed) {
-            auto ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                             oldest.timestamp.time_since_epoch())
-                             .count();
-            spdlog::warn("SampicEventBuffer full ({}). Dropping UNCONSUMED event ts={} ns",
-                         capacity_, ts_ns);
-        }
         buffer_.pop_front();
     }
-    buffer_.push_back(TimestampedSampicEvent{
-        ev, std::chrono::steady_clock::now(), timing, false});
-    last_timestamp_ = buffer_.back().timestamp;
+
+    const auto ts = ev->timestamp();
+    buffer_.emplace_back(ev, ts);
+    last_timestamp_ = ts;
     cv_.notify_all();
 }
 
-std::optional<TimestampedSampicEvent> SampicEventBuffer::pop() {
+std::optional<std::shared_ptr<SampicEvent>> SampicEventBuffer::pop() {
     std::unique_lock<std::mutex> lock(mtx_);
-    if (buffer_.empty()) return std::nullopt;
-    auto ev = buffer_.front();
+    if (buffer_.empty())
+        return std::nullopt;
+
+    auto ev = buffer_.front().first;
     buffer_.pop_front();
-    return ev;
-}
 
-std::optional<TimestampedSampicEvent> SampicEventBuffer::latest() {
-    std::unique_lock<std::mutex> lock(mtx_);
-    if (buffer_.empty()) return std::nullopt;
-    auto& ev = buffer_.back();
-    if (ev.consumed) {
-        spdlog::warn("latest() returning already-consumed event");
+    // Warn if we are discarding an event that was never consumed
+    if (ev && !ev->consumed()) {
+        spdlog::warn("SampicEventBuffer: popping unconsumed event (timestamp={}us, hits={})",
+                     std::chrono::duration_cast<std::chrono::microseconds>(
+                         ev->timestamp().time_since_epoch()).count(),
+                     ev->numHits());
     }
-    ev.consumed = true;
+
     return ev;
 }
 
-std::vector<TimestampedSampicEvent>
+std::optional<std::shared_ptr<SampicEvent>> SampicEventBuffer::latest() {
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (buffer_.empty())
+        return std::nullopt;
+    return buffer_.back().first;
+}
+
+std::vector<std::shared_ptr<SampicEvent>>
 SampicEventBuffer::getSince(std::chrono::steady_clock::time_point t) {
     std::unique_lock<std::mutex> lock(mtx_);
-    std::vector<TimestampedSampicEvent> result;
-    for (auto& ev : buffer_) {
-        if (ev.timestamp > t) {
-            if (ev.consumed) {
-                spdlog::warn("getSince(): event already consumed");
-            }
-            ev.consumed = true;
+    std::vector<std::shared_ptr<SampicEvent>> result;
+    result.reserve(buffer_.size());
+
+    for (auto& [ev, ts] : buffer_) {
+        if (ts > t)
             result.push_back(ev);
-        }
     }
     return result;
 }
@@ -67,9 +67,7 @@ bool SampicEventBuffer::hasNewSince(std::chrono::steady_clock::time_point t) con
 bool SampicEventBuffer::waitForNew(std::chrono::steady_clock::time_point t,
                                    std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mtx_);
-    return cv_.wait_for(lock, timeout, [&] {
-        return last_timestamp_ > t;
-    });
+    return cv_.wait_for(lock, timeout, [&] { return last_timestamp_ > t; });
 }
 
 size_t SampicEventBuffer::size() const {
