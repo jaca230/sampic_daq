@@ -1,75 +1,83 @@
-# Compiled Object files
+# ------------------------------------------------------------------
+# Build artifacts
+# ------------------------------------------------------------------
 *.o
 *.obj
 *.lo
 *.slo
-
-# Precompiled Headers
 *.gch
 *.pch
 
-# Compiled Dynamic libraries
+# ------------------------------------------------------------------
+# Libraries and executables
+# ------------------------------------------------------------------
 *.so
 *.dylib
 *.dll
-
-# Compiled Static libraries
 *.a
 *.lib
-
-# Executables
 bin/
 *.exe
 *.out
 *.app
 
-# Debug files
+# ------------------------------------------------------------------
+# Debugging and profiling
+# ------------------------------------------------------------------
 *.dSYM/
 *.su
 *.idb
 *.pdb
 
-# CMake build directory
-/build/
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-CTestTestfile.cmake
+# ------------------------------------------------------------------
+# CMake, CPM, and other build directories
+# ------------------------------------------------------------------
+build/
+build-*/
+cmake-build-*/
+**/build/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/CTestTestfile.cmake
+**/CPM_modules/
+**/_deps/
 
-# IDE and Editor directories and files
+# ------------------------------------------------------------------
+# Tool outputs
+# ------------------------------------------------------------------
+scripts/tools/**/build/
+scripts/tools/**/generated/
+
+# ------------------------------------------------------------------
+# IDE/editor and temp files
+# ------------------------------------------------------------------
 .vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
-
-# Logs and databases
-*.log
-*.sql
-*.sqlite
-
-# Temporary files
+.DS_Store
+Thumbs.db
 *~
 *.tmp
 *.swp
 *.swo
-
-# Scripts build artifacts
-/build/
 *.sh~
 
-# MIDAS specific
+# ------------------------------------------------------------------
+# Logs and databases
+# ------------------------------------------------------------------
+*.log
+*.sql
+*.sqlite
+
+# ------------------------------------------------------------------
+# Misc project-specific ignores
+# ------------------------------------------------------------------
 *.mid*
 *.odb
-
-# Ignore binary files in scripts directory if any
 scripts/*.bin
-
-# Ignore deprecated
 deprecated/
 recycle/
 recycled/
 recycling_bin/
-
-# Other files to ignore
-.DS_Store
-Thumbs.db
