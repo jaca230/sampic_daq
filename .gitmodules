@@ -1,0 +1,3 @@
+[submodule "external/sampic_256ch_lib"]
+	path = external/sampic_256ch_lib
+	url = https://gitlab.com/sampic256ch_users/sampic_256ch_lib.git

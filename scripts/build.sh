@@ -54,6 +54,12 @@ if [ "$OVERWRITE" = true ]; then
     "$CLEANUP_SCRIPT"
 fi
 
+# Ensure git submodules are available
+if [ -f "$BASE_DIR/.gitmodules" ]; then
+    echo "[build.sh] Ensuring git submodules are initialized"
+    git -C "$BASE_DIR" submodule update --init --recursive
+fi
+
 # Create and enter build directory
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR" || exit 1
