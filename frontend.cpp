@@ -20,10 +20,10 @@
 
 // Project: ODB + logging + FE config
 #include "integration/midas/frontend_config.h"
-#include "integration/midas/odb/odb_manager.h"
+#include "integration/midas/frontend_odb_paths.h"
+#include "integration/midas/frontend_runtime.h"
 #include "integration/midas/odb/odb_utils.h"
-#include "integration/spdlog/logger_config.h"
-#include "integration/spdlog/logger_configurator.h"
+#include <spdlog/spdlog.h>
 
 // Project: SAMPIC controller + configs
 #include "integration/sampic/config/sampic_crate_config.h"
@@ -47,28 +47,6 @@ INT         display_period      = 0;
 INT         max_event_size      = 128 * 1024 * 1024;
 INT         max_event_size_frag = 5 * max_event_size;
 INT         event_buffer_size   = 5 * max_event_size;
-
-static INT  g_frontend_index     = 0;
-static char g_settings_path[256] = {0};
-static bool g_system_initialized = false;
-
-// Polling / timing
-static std::chrono::steady_clock::time_point g_last_poll_time;
-static std::chrono::microseconds             g_polling_interval(1'000'000);
-static std::chrono::steady_clock::time_point g_last_evt_ts =
-    std::chrono::steady_clock::time_point::min();
-
-// ODB-driven configs
-static FrontendConfig              g_fe_cfg;
-static LoggerConfig                g_logger_cfg;
-static SampicSystemSettings        g_sys_cfg;
-static SampicControllerConfig      g_ctrl_cfg;
-static SampicCollectorConfig       g_coll_cfg;
-static FrontendEventCollectorConfig g_fe_coll_cfg;
-
-// Core objects
-static std::unique_ptr<SampicController>       g_controller;
-static std::unique_ptr<FrontendEventCollector> g_frontend_collector;
 
 // ======================================================================
 // Prototypes
@@ -109,150 +87,74 @@ EQUIPMENT equipment[] = {
 };
 
 // ======================================================================
-// Utility
-// ======================================================================
-static std::string make_bank_name(const std::string& prefix, int idx2d) {
-    std::string p = prefix.empty() ? "XX" : prefix.substr(0, 2);
-    char name[8];
-    std::snprintf(name, sizeof(name), "%s%02d", p.c_str(), idx2d);
-    return std::string(name);
-}
-
-// ======================================================================
-// ODB configuration
-// ======================================================================
-static bool initialize_all_configs_from_odb(std::string& err_out) {
-    try {
-        OdbManager odb;
-        const std::string base = g_settings_path;
-
-        odb.initialize(base + "/Logger", LoggerConfig{});
-        g_logger_cfg = odb.read<LoggerConfig>(base + "/Logger");
-        LoggerConfigurator::configure(g_logger_cfg);
-
-        odb.initialize(base + "/Frontend", FrontendConfig{});
-        g_fe_cfg = odb.read<FrontendConfig>(base + "/Frontend");
-
-        odb.initialize(base + "/Crate", SampicSystemSettings{});
-        g_sys_cfg = odb.read<SampicSystemSettings>(base + "/Crate");
-
-        odb.initialize(base + "/Sampic Controller", SampicControllerConfig{});
-        g_ctrl_cfg = odb.read<SampicControllerConfig>(base + "/Sampic Controller");
-
-        odb.initialize(base + "/Sampic Event Collector", SampicCollectorConfig{});
-        g_coll_cfg = odb.read<SampicCollectorConfig>(base + "/Sampic Event Collector");
-
-        odb.initialize(base + "/Frontend Event Collector", FrontendEventCollectorConfig{});
-        g_fe_coll_cfg = odb.read<FrontendEventCollectorConfig>(base + "/Frontend Event Collector");
-
-        g_polling_interval = std::chrono::microseconds(g_fe_cfg.polling_interval_us);
-        return true;
-    } catch (const std::exception& e) {
-        err_out = e.what();
-        return false;
-    }
-}
-
-static bool read_all_configs_from_odb(std::string& err_out) {
-    try {
-        OdbManager odb;
-        const std::string base = g_settings_path;
-
-        g_logger_cfg = odb.read<LoggerConfig>(base + "/Logger");
-        g_fe_cfg     = odb.read<FrontendConfig>(base + "/Frontend");
-        g_sys_cfg    = odb.read<SampicSystemSettings>(base + "/Crate");
-        g_ctrl_cfg   = odb.read<SampicControllerConfig>(base + "/Sampic Controller");
-        g_coll_cfg   = odb.read<SampicCollectorConfig>(base + "/Sampic Event Collector");
-        g_fe_coll_cfg = odb.read<FrontendEventCollectorConfig>(base + "/Frontend Event Collector");
-
-        LoggerConfigurator::configure(g_logger_cfg);
-        g_polling_interval = std::chrono::microseconds(g_fe_cfg.polling_interval_us);
-        return true;
-    } catch (const std::exception& e) {
-        err_out = e.what();
-        return false;
-    }
-}
-
-// ======================================================================
-// SAMPIC controller init
-// ======================================================================
-static bool initialize_sampic_controller(std::string& err_out) {
-    try {
-        g_controller = std::make_unique<SampicController>(g_sys_cfg, g_ctrl_cfg, g_coll_cfg);
-        int rc = g_controller->initialize();
-        if (rc != 0) {
-            err_out = "SAMPIC controller initialize() failed with code " + std::to_string(rc);
-            return false;
-        }
-        return true;
-    } catch (const std::exception& e) {
-        err_out = e.what();
-        return false;
-    }
-}
-
-// ======================================================================
 // MIDAS lifecycle
 // ======================================================================
 INT frontend_init() {
-    g_frontend_index = get_frontend_index();
-    std::snprintf(g_settings_path, sizeof(g_settings_path),
-                  "/Equipment/SAMPIC %02d/Settings", g_frontend_index);
+    auto& runtime = frontend::runtime::Runtime::instance();
+    runtime.frontendIndex = get_frontend_index();
 
-    OdbUtils::odbSetStatusColor(g_frontend_index, g_fe_cfg.init_color);
+    char settings_buffer[128];
+    std::snprintf(settings_buffer, sizeof(settings_buffer),
+                  frontend::odb::kSettingsBaseFormat, runtime.frontendIndex);
+    runtime.settingsPath = settings_buffer;
+
+    OdbUtils::odbSetStatusColor(runtime.frontendIndex, runtime.configs.frontend.init_color);
 
     std::string err;
-    if (!initialize_all_configs_from_odb(err)) {
+    if (!runtime.loadInitialConfigs(err)) {
         cm_msg(MERROR, __FUNCTION__, "Failed to initialize configs: %s", err.c_str());
         return FE_ERR_ODB;
     }
-    if (!initialize_sampic_controller(err)) {
+    if (!runtime.initializeController(err)) {
         cm_msg(MERROR, __FUNCTION__, "Failed to init controller: %s", err.c_str());
         return FE_ERR_HW;
     }
 
     // Create frontend collector using controller's buffer
-    g_frontend_collector = std::make_unique<FrontendEventCollector>(
-        g_controller->buffer(),  // direct buffer reference
-        g_fe_coll_cfg
+    runtime.collector = std::make_unique<FrontendEventCollector>(
+        runtime.controller->buffer(),  // direct buffer reference
+        runtime.configs.frontend_collector
     );
 
     spdlog::info("FrontendEventCollector created (mode={}, buffer_size={})",
-                 static_cast<int>(g_fe_coll_cfg.mode), g_fe_coll_cfg.buffer_size);
+                 static_cast<int>(runtime.configs.frontend_collector.mode),
+                 runtime.configs.frontend_collector.buffer_size);
 
-    g_system_initialized = true;
-    OdbUtils::odbSetStatusColor(g_frontend_index, g_fe_cfg.ready_color);
+    runtime.initialized = true;
+    OdbUtils::odbSetStatusColor(runtime.frontendIndex, runtime.configs.frontend.ready_color);
     return SUCCESS;
 }
 
 INT begin_of_run(INT, char *error) {
     try {
-        if (!g_system_initialized || !g_controller) {
+        auto& runtime = frontend::runtime::Runtime::instance();
+        auto& cfgs = runtime.configs;
+
+        if (!runtime.initialized || !runtime.controller) {
             std::strcpy(error, "System not initialized");
             return FE_ERR_HW;
         }
 
         std::string err;
-        if (!read_all_configs_from_odb(err)) {
+        if (!runtime.refreshConfigs(err)) {
             std::snprintf(error, 256, "Failed to refresh configs: %s", err.c_str());
             return FE_ERR_ODB;
         }
 
         // --- Apply SAMPIC controller configs
-        g_controller->setSystemSettings(g_sys_cfg);
-        g_controller->setControllerConfig(g_ctrl_cfg);
-        g_controller->setCollectorConfig(g_coll_cfg);
+        runtime.controller->setSystemSettings(cfgs.system);
+        runtime.controller->setControllerConfig(cfgs.controller);
+        runtime.controller->setCollectorConfig(cfgs.collector);
 
-        if (g_controller->applySettings() != 0) {
+        if (runtime.controller->applySettings() != 0) {
             std::strcpy(error, "Failed to apply SAMPIC settings");
             return FE_ERR_HW;
         }
 
         // --- Apply FrontendEventCollector configs (if available)
-        if (g_frontend_collector) {
-            g_frontend_collector->setConfig(g_fe_coll_cfg);
-            if (g_frontend_collector->applySettings() != 0) {
+        if (runtime.collector) {
+            runtime.collector->setConfig(cfgs.frontend_collector);
+            if (runtime.collector->applySettings() != 0) {
                 std::strcpy(error, "Failed to apply frontend collector settings");
                 return FE_ERR_HW;
             }
@@ -261,17 +163,17 @@ INT begin_of_run(INT, char *error) {
         }
 
         // --- Start everything
-        g_controller->startCollector();
-        if (g_controller->startRun() != 0) {
+        runtime.controller->startCollector();
+        if (runtime.controller->startRun() != 0) {
             std::strcpy(error, "Failed to start SAMPIC run");
             return FE_ERR_HW;
         }
 
-        if (g_frontend_collector)
-            g_frontend_collector->start();
+        if (runtime.collector)
+            runtime.collector->start();
 
         spdlog::info("FrontendEventCollector started.");
-        g_last_evt_ts = std::chrono::steady_clock::time_point::min();
+        runtime.lastEventTimestamp = std::chrono::steady_clock::time_point::min();
         return SUCCESS;
 
     } catch (const std::exception& e) {
@@ -289,11 +191,12 @@ INT begin_of_run(INT, char *error) {
 
 INT end_of_run(INT, char *error) {
     try {
-        if (g_frontend_collector)
-            g_frontend_collector->stop();
-        if (g_controller) {
-            g_controller->stopCollector();
-            g_controller->stopRun();
+        auto& runtime = frontend::runtime::Runtime::instance();
+        if (runtime.collector)
+            runtime.collector->stop();
+        if (runtime.controller) {
+            runtime.controller->stopCollector();
+            runtime.controller->stopRun();
         }
     } catch (const std::exception& e) {
         std::snprintf(error, 256, "Error during EOR: %s", e.what());
@@ -309,16 +212,15 @@ INT frontend_loop()        { return SUCCESS; }
 
 INT frontend_exit() {
     try {
-        if (g_frontend_collector) g_frontend_collector->stop();
-        if (g_controller) {
-            g_controller->stopCollector();
-            g_controller->stopRun();
-            g_controller->cleanup();
+        auto& runtime = frontend::runtime::Runtime::instance();
+        if (runtime.collector) runtime.collector->stop();
+        if (runtime.controller) {
+            runtime.controller->stopCollector();
+            runtime.controller->stopRun();
+            runtime.controller->cleanup();
         }
     } catch (...) {}
-    g_frontend_collector.reset();
-    g_controller.reset();
-    g_system_initialized = false;
+    frontend::runtime::Runtime::instance().reset();
     return SUCCESS;
 }
 
@@ -326,15 +228,16 @@ INT frontend_exit() {
 // Polling
 // ======================================================================
 INT poll_event(INT, INT, BOOL test) {
-    if (!g_system_initialized || !g_frontend_collector)
+    auto& runtime = frontend::runtime::Runtime::instance();
+    if (!runtime.initialized || !runtime.collector)
         return test ? FALSE : 0;
 
     auto now = std::chrono::steady_clock::now();
-    if (now - g_last_poll_time < g_polling_interval)
+    if (now - runtime.lastPollTime < runtime.pollingInterval)
         return test ? FALSE : 0;
 
-    g_last_poll_time = now;
-    if (g_frontend_collector->buffer().hasNewSince(g_last_evt_ts))
+    runtime.lastPollTime = now;
+    if (runtime.collector->buffer().hasNewSince(runtime.lastEventTimestamp))
         return TRUE;
 
     return test ? FALSE : 0;
@@ -347,13 +250,14 @@ INT interrupt_configure(INT, INT, POINTER_T) { return SUCCESS; }
 // ======================================================================
 INT read_sampic_event(char *pevent, INT)
 {
-    if (!g_system_initialized || !g_frontend_collector)
+    auto& runtime = frontend::runtime::Runtime::instance();
+    if (!runtime.initialized || !runtime.collector)
         return 0;
 
     const auto t_start = std::chrono::steady_clock::now();
 
-    auto& fbuf = g_frontend_collector->buffer();
-    const auto new_events = fbuf.getSince(g_last_evt_ts);
+    auto& fbuf = runtime.collector->buffer();
+    const auto new_events = fbuf.getSince(runtime.lastEventTimestamp);
     if (new_events.empty())
         return 0;
 
@@ -364,7 +268,7 @@ INT read_sampic_event(char *pevent, INT)
         const auto& fev = new_events[i];
 
         for (const auto& bank : fev->banks()) {
-            const std::string bank_name = make_bank_name(bank->bankPrefix(), g_frontend_index);
+            const std::string bank_name = runtime.makeBankName(bank->bankPrefix());
             uint8_t* pdata = nullptr;
             bk_create(pevent, bank_name.c_str(), TID_UINT8, (void**)&pdata);
             uint8_t* const pstart = pdata;
@@ -394,7 +298,7 @@ INT read_sampic_event(char *pevent, INT)
         spdlog::trace("FrontendEvent[{}] serialization took {} µs", i, dur_evt_us);
     }
 
-    g_last_evt_ts = new_events.back()->timestamp();
+    runtime.lastEventTimestamp = new_events.back()->timestamp();
 
     const int total_size = bk_size(pevent);
     const auto t_end = std::chrono::steady_clock::now();
@@ -403,6 +307,10 @@ INT read_sampic_event(char *pevent, INT)
 
     spdlog::debug("read_sampic_event: wrote {} FrontendEvents, total MIDAS size={} B ({} µs)",
                   new_events.size(), total_size, dur_total_us);
+
+    if (runtime.collector) {
+        runtime.collector->buffer().pruneUpTo(runtime.lastEventTimestamp);
+    }
 
     return total_size;
 }

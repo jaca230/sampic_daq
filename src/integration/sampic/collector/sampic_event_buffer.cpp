@@ -79,3 +79,13 @@ bool SampicEventBuffer::empty() const {
     std::unique_lock<std::mutex> lock(mtx_);
     return buffer_.empty();
 }
+
+void SampicEventBuffer::pruneUpTo(std::chrono::steady_clock::time_point t) {
+    std::unique_lock<std::mutex> lock(mtx_);
+    while (!buffer_.empty() && buffer_.front().second <= t) {
+        if (auto& ev = buffer_.front().first) {
+            ev->markConsumed(true);
+        }
+        buffer_.pop_front();
+    }
+}

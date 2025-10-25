@@ -50,6 +50,9 @@ public:
     /** @brief Return true if the buffer is empty. */
     bool empty() const;
 
+    /** @brief Remove all events with timestamp <= given time. */
+    void pruneUpTo(std::chrono::steady_clock::time_point t);
+
 private:
     size_t capacity_;
     mutable std::mutex mtx_;

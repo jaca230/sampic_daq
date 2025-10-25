@@ -109,7 +109,7 @@ INDEX_STR=$(printf "%02d" "$INDEX")
 # --------------------------------------------------------------------------
 # Define executable path
 # --------------------------------------------------------------------------
-EXECUTABLE="$BASE_DIR/build/sampic_frontend"
+EXECUTABLE="$BASE_DIR/build/bin/sampic_frontend"
 
 if [ ! -x "$EXECUTABLE" ]; then
     echo "[ERROR] Executable not found or not executable: $EXECUTABLE"

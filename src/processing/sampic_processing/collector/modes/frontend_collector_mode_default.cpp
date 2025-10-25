@@ -188,5 +188,7 @@ bool FrontendCollectorModeDefault::collect()
     spdlog::trace("FrontendCollectorModeDefault timing: wait={}us, group={}us, finalize={}us, total={}us",
                   wait_us.count(), group_build_us.count(), finalize_us.count(), total_us.count());
 
+    sampic_buffer_.pruneUpTo(last_timestamp_);
+
     return true;
 }

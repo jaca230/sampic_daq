@@ -99,6 +99,13 @@ public:
      */
     bool empty() const;
 
+    /**
+     * @brief Remove all events with timestamp <= given time.
+     *
+     * Optionally marks removed events as consumed to avoid warnings.
+     */
+    void pruneUpTo(std::chrono::steady_clock::time_point t);
+
 private:
     size_t capacity_; ///< Maximum number of events before oldest are dropped.
     mutable std::mutex mtx_; ///< Mutex for thread safety.
