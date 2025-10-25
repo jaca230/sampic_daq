@@ -8,7 +8,8 @@ CLEANUP_SCRIPT="$SCRIPT_DIR/cleanup.sh"
 
 # Default flags
 OVERWRITE=false
-JOBS_ARG="-j"  # Use all processors
+DEFAULT_JOBS=$(command -v nproc >/dev/null 2>&1 && nproc || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+JOBS_ARG="-j${DEFAULT_JOBS}"  # Use available processors by default
 
 # Help message
 show_help() {
