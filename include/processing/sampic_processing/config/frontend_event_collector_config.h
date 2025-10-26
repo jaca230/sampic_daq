@@ -45,6 +45,15 @@ struct FrontendCollectorModeExampleConfig {
     int dummy_param = 0;
 };
 
+/// Diagnostics / instrumentation configuration.
+struct FrontendCollectorDiagnosticsConfig {
+    bool enabled = false;                  ///< Enable periodic logging.
+    uint32_t log_interval_ms = 1000;       ///< Summary interval in milliseconds.
+    uint32_t buffer_warning_threshold = 256; ///< Warn when FE buffer exceeds this size.
+    bool log_hit_details = false;          ///< Log individual hit details per event.
+    bool log_group_details = false;        ///< Log grouping summaries.
+};
+
 /// Configuration for the frontend event collector that assembles
 /// hardware-level events into higher-level FrontendEvents.
 struct FrontendEventCollectorConfig {
@@ -60,6 +69,9 @@ struct FrontendEventCollectorConfig {
     // --- Mode configurations ---
     FrontendCollectorModeDefaultConfig default_mode;
     FrontendCollectorModeExampleConfig example_mode;
+
+    // --- Diagnostics ---
+    FrontendCollectorDiagnosticsConfig diagnostics;
 };
 
 #endif // FRONTEND_EVENT_COLLECTOR_CONFIG_H

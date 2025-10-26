@@ -40,11 +40,8 @@ std::optional<std::shared_ptr<FrontendEvent>> FrontendEventBuffer::pop() {
     auto ev = buffer_.front().first;
     buffer_.pop_front();
 
-    // Warn if we are discarding an unconsumed event
-    if (ev && !ev->consumed()) {
-        spdlog::warn("FrontendEventBuffer: popping unconsumed event (banks={}, size={} B)",
-                     ev->numBanks(), ev->totalDataSize());
-    }
+    if (ev)
+        ev->markConsumed(true);
 
     return ev;
 }

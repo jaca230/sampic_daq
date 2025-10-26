@@ -11,8 +11,9 @@
 FrontendCollectorModeDefault::FrontendCollectorModeDefault(
     SampicEventBuffer& sampic_buffer,
     FrontendEventBuffer& frontend_buffer,
-    const FrontendEventCollectorConfig& cfg)
-    : FrontendCollectorMode(sampic_buffer, frontend_buffer, cfg),
+    const FrontendEventCollectorConfig& cfg,
+    frontend::collector::FrontendDiagnostics& diagnostics)
+    : FrontendCollectorMode(sampic_buffer, frontend_buffer, cfg, diagnostics),
       mode_cfg_(cfg.default_mode)
 {
     time_window_ns_ = mode_cfg_.time_window_ns;
@@ -130,10 +131,20 @@ bool FrontendCollectorModeDefault::collect()
     uint32_t total_hits = 0;
     const auto t_finalize_start = std::chrono::steady_clock::now();
 
+    size_t produced_events = 0;
+    size_t produced_hits = 0;
+
     for (auto& g : ready_groups_) {
         if (g.hits.empty())
             continue;
         total_hits += static_cast<uint32_t>(g.hits.size());
+        produced_hits += g.hits.size();
+        ++produced_events;
+
+        if (cfg_.diagnostics.log_group_details) {
+            spdlog::debug("Frontend grouping: hits={} parents={}",
+                          g.hits.size(), g.parents.size());
+        }
 
         auto fev = std::make_shared<FrontendEvent>(g.created);
 
@@ -155,6 +166,18 @@ bool FrontendCollectorModeDefault::collect()
 
         frontend_buffer_.push(fev);
         emitted_events_.emplace_back(std::move(fev));
+
+        if (cfg_.diagnostics.log_hit_details) {
+            size_t idx = 0;
+            for (const HitStruct* hit : g.hits) {
+                if (!hit)
+                    continue;
+                spdlog::debug("  hit[{}]: FEB={} sampic={} channel={} first_cell_ts(ns)={} amplitude={} TOT(ns)={}",
+                              idx++, hit->FeBoardIndex, hit->SampicIndex,
+                              hit->Channel, hit->FirstCellTimeStamp,
+                              hit->Amplitude, hit->TOTValue);
+            }
+        }
     }
 
     const auto t_finalize_end = std::chrono::steady_clock::now();
@@ -187,6 +210,10 @@ bool FrontendCollectorModeDefault::collect()
                   emitted_events_.size(), total_hits, total_us.count());
     spdlog::trace("FrontendCollectorModeDefault timing: wait={}us, group={}us, finalize={}us, total={}us",
                   wait_us.count(), group_build_us.count(), finalize_us.count(), total_us.count());
+
+    if (produced_events > 0) {
+        diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());
+    }
 
     sampic_buffer_.pruneUpTo(last_timestamp_);
 

@@ -4,6 +4,7 @@
 #include "processing/sampic_processing/config/frontend_event_collector_config.h"
 #include "processing/sampic_processing/collector/frontend_event_buffer.h"
 #include "processing/sampic_processing/collector/modes/frontend_collector_mode.h"
+#include "processing/sampic_processing/collector/frontend_diagnostics.h"
 #include "integration/sampic/collector/sampic_event_buffer.h"
 
 #include <thread>
@@ -29,6 +30,8 @@ public:
     int  applySettings();
 
     const FrontendEventCollectorConfig& config() const { return cfg_; }
+    frontend::collector::FrontendDiagnostics& diagnostics() { return *diagnostics_; }
+    const frontend::collector::FrontendDiagnostics& diagnostics() const { return *diagnostics_; }
 
     FrontendEventBuffer& buffer() { return *buffer_; }
     const FrontendEventBuffer& buffer() const { return *buffer_; }
@@ -41,6 +44,7 @@ private:
     FrontendEventCollectorConfig cfg_;
     std::unique_ptr<FrontendEventBuffer> buffer_;
     std::unique_ptr<FrontendCollectorMode> mode_;
+    std::unique_ptr<frontend::collector::FrontendDiagnostics> diagnostics_;
 
     std::thread worker_;
     std::atomic<bool> running_{false};

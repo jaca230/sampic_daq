@@ -3,6 +3,7 @@
 
 #include <memory>
 #include "processing/sampic_processing/collector/frontend_event_buffer.h"
+#include "processing/sampic_processing/collector/frontend_diagnostics.h"
 #include "processing/sampic_processing/config/frontend_event_collector_config.h"
 #include "integration/sampic/collector/sampic_event_buffer.h"
 
@@ -14,10 +15,12 @@ class FrontendCollectorMode {
 public:
     FrontendCollectorMode(SampicEventBuffer& sampic_buffer,
                           FrontendEventBuffer& frontend_buffer,
-                          const FrontendEventCollectorConfig& cfg)
+                          const FrontendEventCollectorConfig& cfg,
+                          frontend::collector::FrontendDiagnostics& diagnostics)
         : sampic_buffer_(sampic_buffer),
           frontend_buffer_(frontend_buffer),
-          cfg_(cfg) {}
+          cfg_(cfg),
+          diagnostics_(diagnostics) {}
 
     virtual ~FrontendCollectorMode() = default;
 
@@ -33,6 +36,7 @@ protected:
     SampicEventBuffer& sampic_buffer_;
     FrontendEventBuffer& frontend_buffer_;
     const FrontendEventCollectorConfig& cfg_;
+    frontend::collector::FrontendDiagnostics& diagnostics_;
 };
 
 #endif // FRONTEND_COLLECTOR_MODE_H

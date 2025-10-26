@@ -7,6 +7,7 @@ FrontendEventCollector::FrontendEventCollector(
     : sampic_buffer_(sampic_buffer),
       cfg_(cfg)
 {
+    diagnostics_ = std::make_unique<frontend::collector::FrontendDiagnostics>(cfg_.diagnostics);
     buildMode();
     spdlog::info("FrontendEventCollector initialized (mode={}, buffer_size={})",
                  static_cast<int>(cfg_.mode), cfg_.buffer_size);
@@ -18,11 +19,12 @@ FrontendEventCollector::~FrontendEventCollector() {
 
 void FrontendEventCollector::buildMode() {
     buffer_ = std::make_unique<FrontendEventBuffer>(cfg_.buffer_size);
+    diagnostics_ = std::make_unique<frontend::collector::FrontendDiagnostics>(cfg_.diagnostics);
 
     switch (cfg_.mode) {
         case FrontendCollectorModeType::DEFAULT:
             mode_ = std::make_unique<FrontendCollectorModeDefault>(
-                sampic_buffer_, *buffer_, cfg_);
+                sampic_buffer_, *buffer_, cfg_, *diagnostics_);
             break;
         default:
             throw std::runtime_error("Unsupported FrontendCollectorModeType");

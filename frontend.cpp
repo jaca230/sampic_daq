@@ -233,11 +233,11 @@ INT poll_event(INT, INT, BOOL test) {
         return test ? FALSE : 0;
 
     auto now = std::chrono::steady_clock::now();
-    if (now - runtime.lastPollTime < runtime.pollingInterval)
+    if (now - runtime.lastPollTime < runtime.pollingInterval && runtime.pollingInterval.count() > 0)
         return test ? FALSE : 0;
 
     runtime.lastPollTime = now;
-    if (runtime.collector->buffer().hasNewSince(runtime.lastEventTimestamp))
+    if (!runtime.collector->buffer().empty())
         return TRUE;
 
     return test ? FALSE : 0;
@@ -254,62 +254,62 @@ INT read_sampic_event(char *pevent, INT)
     if (!runtime.initialized || !runtime.collector)
         return 0;
 
-    const auto t_start = std::chrono::steady_clock::now();
-
-    auto& fbuf = runtime.collector->buffer();
-    const auto new_events = fbuf.getSince(runtime.lastEventTimestamp);
-    if (new_events.empty())
+    auto& buffer = runtime.collector->buffer();
+    auto opt_event = buffer.pop();
+    if (!opt_event)
         return 0;
+
+    const auto& fev = *opt_event;
+    if (!fev)
+        return 0;
+
+    const auto t_start = std::chrono::steady_clock::now();
 
     bk_init32(pevent);
 
-    for (size_t i = 0; i < new_events.size(); ++i) {
-        const auto t_evt_start = std::chrono::steady_clock::now();
-        const auto& fev = new_events[i];
+    size_t bank_index = 0;
+    for (const auto& bank : fev->banks()) {
+        if (!bank)
+            continue;
 
-        for (const auto& bank : fev->banks()) {
-            const std::string bank_name = runtime.makeBankName(bank->bankPrefix());
-            uint8_t* pdata = nullptr;
-            bk_create(pevent, bank_name.c_str(), TID_UINT8, (void**)&pdata);
-            uint8_t* const pstart = pdata;
+        const std::string bank_name = runtime.makeBankName(bank->bankPrefix());
+        uint8_t* pdata = nullptr;
+        bk_create(pevent, bank_name.c_str(), TID_UINT8, (void**)&pdata);
+        uint8_t* const pstart = pdata;
 
-            if (const auto* multi = dynamic_cast<const FrontendEventBankData*>(bank.get())) {
-                for (const auto& [ptr, len] : multi->slices()) {
-                    std::memcpy(pdata, ptr, len);
-                    pdata += len;
-                }
-            } else {
-                const uint8_t* src = bank->data();
-                const size_t len = bank->size();
-                if (src && len > 0) {
-                    std::memcpy(pdata, src, len);
-                    pdata += len;
-                }
+        if (const auto* multi = dynamic_cast<const FrontendEventBankData*>(bank.get())) {
+            for (const auto& [ptr, len] : multi->slices()) {
+                std::memcpy(pdata, ptr, len);
+                pdata += len;
             }
-
-            bk_close(pevent, pdata);
-            spdlog::trace("FrontendEvent[{}] → wrote bank {} ({} bytes)",
-                          i, bank_name, static_cast<int>(pdata - pstart));
+        } else {
+            const uint8_t* src = bank->data();
+            const size_t len = bank->size();
+            if (src && len > 0) {
+                std::memcpy(pdata, src, len);
+                pdata += len;
+            }
         }
 
-        const auto t_evt_end = std::chrono::steady_clock::now();
-        const auto dur_evt_us =
-            std::chrono::duration_cast<std::chrono::microseconds>(t_evt_end - t_evt_start).count();
-        spdlog::trace("FrontendEvent[{}] serialization took {} µs", i, dur_evt_us);
+        bk_close(pevent, pdata);
+        spdlog::trace("FrontendEvent bank[{}] → wrote {} ({} bytes)",
+                      bank_index++, bank_name, static_cast<int>(pdata - pstart));
     }
 
-    runtime.lastEventTimestamp = new_events.back()->timestamp();
+    fev->markConsumed(true);
+    runtime.lastEventTimestamp = fev->timestamp();
 
     const int total_size = bk_size(pevent);
     const auto t_end = std::chrono::steady_clock::now();
     const auto dur_total_us =
         std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
 
-    spdlog::debug("read_sampic_event: wrote {} FrontendEvents, total MIDAS size={} B ({} µs)",
-                  new_events.size(), total_size, dur_total_us);
+    spdlog::debug("read_sampic_event: wrote 1 FrontendEvent, total MIDAS size={} B ({} µs)",
+                  total_size, dur_total_us);
 
     if (runtime.collector) {
-        runtime.collector->buffer().pruneUpTo(runtime.lastEventTimestamp);
+        runtime.collector->diagnostics().consumed(1,
+                                                  runtime.collector->buffer().size());
     }
 
     return total_size;

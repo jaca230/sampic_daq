@@ -21,7 +21,8 @@ class FrontendCollectorModeDefault : public FrontendCollectorMode {
 public:
     FrontendCollectorModeDefault(SampicEventBuffer& sampic_buffer,
                                  FrontendEventBuffer& frontend_buffer,
-                                 const FrontendEventCollectorConfig& cfg);
+                                 const FrontendEventCollectorConfig& cfg,
+                                 frontend::collector::FrontendDiagnostics& diagnostics);
 
     bool collect() override;
 
