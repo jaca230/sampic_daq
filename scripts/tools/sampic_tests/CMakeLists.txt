@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(sampic_rate_tests LANGUAGES CXX)
+project(sampic_tests LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,21 +33,38 @@ find_package(Threads REQUIRED)
 add_executable(sampic_pulser_rate
   src/sampic_pulser_rate.cpp)
 
+add_executable(sampic_crate_smoke
+  src/sampic_crate_smoke.cpp)
+
 target_include_directories(sampic_pulser_rate PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
   ${LPDEVC_INCLUDE_DIR})
 
-target_link_libraries(sampic_pulser_rate PRIVATE
+target_include_directories(sampic_crate_smoke PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR})
+
+set(SAMPIC_VENDOR_LIBS
   ${SAMPIC_VENDOR_LIB_DIR}/libsampic256ch.so
   ${LPDEVC_LIB_DIR}/liblpdevC.so
   ${LPDEVC_LIB_DIR}/liblpdev.so
-  ${FTD2XX_LIB_PATH}
-  Threads::Threads
-  dl rt pthread m)
+  ${FTD2XX_LIB_PATH})
+
+foreach(target sampic_pulser_rate sampic_crate_smoke)
+  target_link_libraries(${target} PRIVATE
+    ${SAMPIC_VENDOR_LIBS}
+    Threads::Threads
+    dl rt pthread m)
+endforeach()
 
 set_target_properties(sampic_pulser_rate PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
   BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
   INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
 
-install(TARGETS sampic_pulser_rate RUNTIME DESTINATION bin)
+set_target_properties(sampic_crate_smoke PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+  BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
+  INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
+
+install(TARGETS sampic_pulser_rate sampic_crate_smoke RUNTIME DESTINATION bin)

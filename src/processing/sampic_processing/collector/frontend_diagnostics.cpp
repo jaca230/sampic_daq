@@ -54,10 +54,10 @@ void FrontendDiagnostics::maybe_log_locked(std::chrono::steady_clock::time_point
                                           produced_events_
                                     : 0.0;
 
-    spdlog::info("Frontend diagnostics: produced={} consumed={} backlog={} buffer={} rate={:.2f} evt/s hits={:.2f} hit/s",
-                 produced_events_, consumed_events_,
-                 produced_events_ - consumed_events_, buffer_size,
-                 rate, hit_rate);
+    spdlog::debug("Frontend diagnostics: produced={} consumed={} backlog={} buffer={} rate={:.2f} evt/s hits={:.2f} hit/s",
+                  produced_events_, consumed_events_,
+                  produced_events_ - consumed_events_, buffer_size,
+                  rate, hit_rate);
 
     last_log_time_ = now;
 }

@@ -12,6 +12,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <atomic>
+#include <cstdint>
 #include <unistd.h>
 
 // MIDAS
@@ -37,6 +39,9 @@
 #include "processing/sampic_processing/collector/frontend_event_buffer.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_data.h"
 
+int rb_get_wp(int handle, void **p, int millisec);
+int rb_increment_wp(int handle, int size);
+
 // ======================================================================
 // Globals
 // ======================================================================
@@ -47,6 +52,9 @@ INT         display_period      = 0;
 INT         max_event_size      = 128 * 1024 * 1024;
 INT         max_event_size_frag = 5 * max_event_size;
 INT         event_buffer_size   = 5 * max_event_size;
+
+static std::thread g_event_writer_thread;
+static std::atomic<bool> g_event_writer_stop{false};
 
 // ======================================================================
 // Prototypes
@@ -61,6 +69,10 @@ INT frontend_loop(void);
 INT read_sampic_event(char *pevent, INT off);
 INT poll_event(INT source, INT count, BOOL test);
 INT interrupt_configure(INT cmd, INT source, POINTER_T adr);
+static void event_writer_loop();
+static INT compose_frontend_event(char* dest,
+                                  const std::shared_ptr<FrontendEvent>& fev,
+                                  frontend::runtime::Runtime& runtime);
 
 // ======================================================================
 // Equipment definition
@@ -71,7 +83,7 @@ EQUIPMENT equipment[] = {
     {"SAMPIC %02d",
         { 1, 0,
           "SYSTEM",
-          EQ_POLLED | EQ_EB,
+          EQ_USER,
           0,
           "MIDAS",
           TRUE,
@@ -81,7 +93,7 @@ EQUIPMENT equipment[] = {
           0,
           TRUE,
           "", "", "", },
-        read_sampic_event
+        nullptr
     },
     {""}
 };
@@ -119,6 +131,10 @@ INT frontend_init() {
     spdlog::info("FrontendEventCollector created (mode={}, buffer_size={})",
                  static_cast<int>(runtime.configs.frontend_collector.mode),
                  runtime.configs.frontend_collector.buffer_size);
+
+    create_event_rb(0);
+    g_event_writer_stop = false;
+    g_event_writer_thread = std::thread(event_writer_loop);
 
     runtime.initialized = true;
     OdbUtils::odbSetStatusColor(runtime.frontendIndex, runtime.configs.frontend.ready_color);
@@ -220,6 +236,10 @@ INT frontend_exit() {
             runtime.controller->cleanup();
         }
     } catch (...) {}
+    g_event_writer_stop = true;
+    stop_readout_threads();
+    if (g_event_writer_thread.joinable())
+        g_event_writer_thread.join();
     frontend::runtime::Runtime::instance().reset();
     return SUCCESS;
 }
@@ -228,18 +248,6 @@ INT frontend_exit() {
 // Polling
 // ======================================================================
 INT poll_event(INT, INT, BOOL test) {
-    auto& runtime = frontend::runtime::Runtime::instance();
-    if (!runtime.initialized || !runtime.collector)
-        return test ? FALSE : 0;
-
-    auto now = std::chrono::steady_clock::now();
-    if (now - runtime.lastPollTime < runtime.pollingInterval && runtime.pollingInterval.count() > 0)
-        return test ? FALSE : 0;
-
-    runtime.lastPollTime = now;
-    if (!runtime.collector->buffer().empty())
-        return TRUE;
-
     return test ? FALSE : 0;
 }
 
@@ -265,7 +273,100 @@ INT read_sampic_event(char *pevent, INT)
 
     const auto t_start = std::chrono::steady_clock::now();
 
-    bk_init32(pevent);
+    const int total_size = compose_frontend_event(pevent, fev, runtime);
+    fev->markConsumed(true);
+    runtime.lastEventTimestamp = fev->timestamp();
+
+    const auto t_end = std::chrono::steady_clock::now();
+    const auto dur_total_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
+
+    spdlog::debug("read_sampic_event: wrote 1 FrontendEvent, total MIDAS size={} B ({} µs)",
+                  total_size, dur_total_us);
+
+    if (runtime.collector) {
+        runtime.collector->diagnostics().consumed(1,
+                                                  runtime.collector->buffer().size());
+    }
+
+    return total_size;
+}
+
+static void event_writer_loop()
+{
+    const int thread_index = 0;
+    signal_readout_thread_active(thread_index, TRUE);
+
+    const int rbh = get_event_rbh(thread_index);
+
+    while (is_readout_thread_enabled() && !g_event_writer_stop.load()) {
+        if (!readout_enabled()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+
+        auto& runtime = frontend::runtime::Runtime::instance();
+        if (!runtime.collector) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
+        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(100));
+        if (!fev) {
+            continue;
+        }
+
+        EVENT_HEADER* pevent = nullptr;
+        int status = DB_TIMEOUT;
+
+        while (!g_event_writer_stop.load()) {
+            status = rb_get_wp(rbh, (void**)&pevent, 0);
+            if (status == DB_SUCCESS)
+                break;
+
+            if (status == DB_TIMEOUT) {
+                if (!is_readout_thread_enabled() || g_event_writer_stop.load())
+                    break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;
+            }
+
+            spdlog::error("event_writer_loop: rb_get_wp failed with status={}", status);
+            pevent = nullptr;
+            break;
+        }
+
+        if (!pevent) {
+            spdlog::warn("event_writer_loop: dropping FrontendEvent due to ring buffer failure");
+            continue;
+        }
+
+        bm_compose_event_threadsafe(pevent,
+                                    equipment[0].info.event_id,
+                                    equipment[0].info.trigger_mask,
+                                    0,
+                                    &equipment[0].serial_number);
+
+        auto* payload = reinterpret_cast<char*>(pevent + 1);
+        const int total_size = compose_frontend_event(payload, fev, runtime);
+        pevent->data_size = total_size;
+        rb_increment_wp(rbh, sizeof(EVENT_HEADER) + pevent->data_size);
+
+        runtime.lastEventTimestamp = fev->timestamp();
+        runtime.collector->diagnostics().consumed(1,
+                                                  runtime.collector->buffer().size());
+    }
+
+    signal_readout_thread_active(thread_index, FALSE);
+}
+static INT compose_frontend_event(char* dest,
+                                  const std::shared_ptr<FrontendEvent>& fev,
+                                  frontend::runtime::Runtime& runtime)
+{
+    if (!dest || !fev)
+        return 0;
+
+    bk_init32(dest);
 
     size_t bank_index = 0;
     for (const auto& bank : fev->banks()) {
@@ -274,7 +375,7 @@ INT read_sampic_event(char *pevent, INT)
 
         const std::string bank_name = runtime.makeBankName(bank->bankPrefix());
         uint8_t* pdata = nullptr;
-        bk_create(pevent, bank_name.c_str(), TID_UINT8, (void**)&pdata);
+        bk_create(dest, bank_name.c_str(), TID_UINT8, (void**)&pdata);
         uint8_t* const pstart = pdata;
 
         if (const auto* multi = dynamic_cast<const FrontendEventBankData*>(bank.get())) {
@@ -291,26 +392,10 @@ INT read_sampic_event(char *pevent, INT)
             }
         }
 
-        bk_close(pevent, pdata);
+        bk_close(dest, pdata);
         spdlog::trace("FrontendEvent bank[{}] → wrote {} ({} bytes)",
                       bank_index++, bank_name, static_cast<int>(pdata - pstart));
     }
 
-    fev->markConsumed(true);
-    runtime.lastEventTimestamp = fev->timestamp();
-
-    const int total_size = bk_size(pevent);
-    const auto t_end = std::chrono::steady_clock::now();
-    const auto dur_total_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
-
-    spdlog::debug("read_sampic_event: wrote 1 FrontendEvent, total MIDAS size={} B ({} µs)",
-                  total_size, dur_total_us);
-
-    if (runtime.collector) {
-        runtime.collector->diagnostics().consumed(1,
-                                                  runtime.collector->buffer().size());
-    }
-
-    return total_size;
+    return bk_size(dest);
 }

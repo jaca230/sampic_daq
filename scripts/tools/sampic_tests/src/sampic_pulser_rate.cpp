@@ -30,7 +30,7 @@ struct Options {
   std::string ip = "192.168.0.4";
   int port = 27015;
   bool load_calibration = true;
-  std::string calibration_dir = "resources/calib";
+  std::string calibration_dir = "/home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/resources/calib";
   bool pulser_sync = false;
   int pulser_period_ticks = 6400;  // ≈1 µs @ 6.4 GHz
   double threshold = 0.1;          // volts

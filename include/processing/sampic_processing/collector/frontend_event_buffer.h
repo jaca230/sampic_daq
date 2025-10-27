@@ -53,6 +53,7 @@ public:
      *         Empty if the buffer was empty.
      */
     std::optional<std::shared_ptr<FrontendEvent>> pop();
+    std::shared_ptr<FrontendEvent> waitAndPop(std::chrono::milliseconds timeout);
 
     /**
      * @brief Retrieve the most recent event without removing it.

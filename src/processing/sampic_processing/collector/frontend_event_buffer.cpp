@@ -46,6 +46,20 @@ std::optional<std::shared_ptr<FrontendEvent>> FrontendEventBuffer::pop() {
     return ev;
 }
 
+std::shared_ptr<FrontendEvent> FrontendEventBuffer::waitAndPop(std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (!cv_.wait_for(lock, timeout, [&] { return !buffer_.empty(); }))
+        return nullptr;
+
+    auto ev = buffer_.front().first;
+    buffer_.pop_front();
+
+    if (ev)
+        ev->markConsumed(true);
+
+    return ev;
+}
+
 std::optional<std::shared_ptr<FrontendEvent>> FrontendEventBuffer::latest() {
     std::unique_lock<std::mutex> lock(mtx_);
     if (buffer_.empty())

@@ -1,14 +1,14 @@
-# sampic_rate_tests
+# sampic_tests
 
-A lightweight playground for SAMPIC crate experimentation outside the MIDAS frontend.  The initial utility, `sampic_pulser_rate`, connects directly to the crate, enables the on-board pulser, and measures the resulting acquisition rate.
+A lightweight playground for SAMPIC crate experimentation outside the MIDAS frontend.  The initial utility, `sampic_pulser_rate`, connects directly to the crate, enables the on-board pulser, and measures the resulting acquisition rate.  A second utility, `sampic_crate_smoke`, performs a single acquisition handshake and prints detailed diagnostics for each API call, which is handy when communications fail.
 
 The code is a C++ port of the vendor `sampic_test.c` example with additional pulser-specific configuration and timing diagnostics.  Use this tool to iterate on high-rate settings before shipping changes into the MIDAS frontend.
 
 ## Build
 
 ```bash
-cmake -S scripts/tools/sampic_rate_tests -B scripts/tools/sampic_rate_tests/build
-cmake --build scripts/tools/sampic_rate_tests/build
+cmake -S scripts/tools/sampic_tests -B scripts/tools/sampic_tests/build
+cmake --build scripts/tools/sampic_tests/build
 ```
 
 This project reuses the main build’s configuration for the vendor driver, so run it from the repository root.
@@ -16,7 +16,15 @@ This project reuses the main build’s configuration for the vendor driver, so r
 ## Usage
 
 ```bash
-scripts/tools/sampic_rate_tests/build/bin/sampic_pulser_rate \
+scripts/tools/sampic_tests/scripts/run.sh --pulser -- \
+    --ip 192.168.0.4 \
+    --port 27015 \
+    --period-ticks 6400 \
+    --events 500 \
+    --threshold 0.1
+
+# or run the binary directly:
+scripts/tools/sampic_tests/build/bin/sampic_pulser_rate \
     --ip 192.168.0.4 \
     --port 27015 \
     --period-ticks 6400 \
@@ -40,3 +48,14 @@ The program prints aggregate statistics (events/second, average hits, decoder ti
 > **Warning**
 >
 > The tool talks to the crate directly; do not run it concurrently with the MIDAS frontend.
+
+### Smoke test
+
+```bash
+scripts/tools/sampic_tests/scripts/run.sh --smoke -- --ip 192.168.0.4 --port 27015
+
+# or run the binary directly:
+scripts/tools/sampic_tests/build/bin/sampic_crate_smoke --ip 192.168.0.4 --port 27015
+```
+
+The smoke test walks through connection, configuration, memory allocation, run start, and a single read attempt.  Each API call is logged with the corresponding error-code mnemonic so you can quickly identify which step failed.
