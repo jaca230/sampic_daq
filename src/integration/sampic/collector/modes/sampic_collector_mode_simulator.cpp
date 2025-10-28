@@ -40,29 +40,36 @@ SampicCollectorModeSimulator::SampicCollectorModeSimulator(SampicEventBuffer& bu
                  baseline_level_);
 }
 
+SampicCollectorModeSimulator::~SampicCollectorModeSimulator()
+{
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    for (auto* ptr : event_pool_) {
+        delete ptr;
+    }
+    event_pool_.clear();
+}
+
 bool SampicCollectorModeSimulator::collect()
 {
     const std::uint32_t events_per_cycle = std::max<std::uint32_t>(1, mode_cfg_.events_per_cycle);
     const std::uint32_t hits_per_event = std::min<std::uint32_t>(
         std::max<std::uint32_t>(1, mode_cfg_.hits_per_event),
         kMaxHitsPerEvent);
-    const std::uint32_t waveform_length = std::min<std::uint32_t>(
-        std::max<std::uint32_t>(1, mode_cfg_.waveform_length),
-        kMaxWaveformSamples);
+    const std::uint32_t waveform_length = clampWaveformLength(mode_cfg_.waveform_length);
     const double event_span_ns =
         hit_time_step_ns_ * static_cast<double>(hits_per_event > 0 ? (hits_per_event - 1) : 0);
 
     for (std::uint32_t ev_idx = 0; ev_idx < events_per_cycle; ++ev_idx) {
-        auto ev_data = std::make_shared<EventStruct>();
-        std::memset(ev_data.get(), 0, sizeof(EventStruct));
-        ev_data->NbOfHitsInEvent = static_cast<int>(hits_per_event);
+        auto ev_data = acquireEventStruct();
 
         const double event_start_time_ns = current_event_time_ns_;
 
         for (std::uint32_t hit_idx = 0; hit_idx < hits_per_event; ++hit_idx) {
             auto& hit = ev_data->Hit[hit_idx];
+            std::memset(&hit, 0, sizeof(HitStruct));
             populateHit(hit, hit_idx, waveform_length, ev_idx, event_start_time_ns);
         }
+        ev_data->NbOfHitsInEvent = static_cast<int>(hits_per_event);
         SampicTimingBreakdown timing{};
         timing.prepare = std::chrono::microseconds(0);
         timing.read = std::chrono::microseconds(mode_cfg_.simulate_read_time_us);
@@ -133,6 +140,7 @@ void SampicCollectorModeSimulator::populateHit(HitStruct& hit,
     adv.FPGATimeStamp = static_cast<unsigned long long>(clamped_time_ns);
     adv.ADCCounter_LatchedAtEndOfConv = hit_index % ADC_11BITS_MAX_VALUE;
     adv.StartOfADCRamp = 0;
+    std::memset(adv.TriggerPosition, 0, sizeof(adv.TriggerPosition));
     adv.TriggerPosition[0] = TRUE;
 
     std::copy_n(raw_waveform_template_.data(), waveform_length, hit.RawDataSamples);
@@ -162,4 +170,44 @@ void SampicCollectorModeSimulator::prepareWaveformTemplate()
             std::clamp(adc_value, 0.0, adc_scale));
         corrected_waveform_template_[i] = static_cast<float>(clamped);
     }
+}
+
+std::shared_ptr<EventStruct> SampicCollectorModeSimulator::acquireEventStruct()
+{
+    EventStruct* raw = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(pool_mutex_);
+        if (!event_pool_.empty()) {
+            raw = event_pool_.back();
+            event_pool_.pop_back();
+        }
+    }
+
+    if (!raw) {
+        raw = new EventStruct{};
+    }
+
+    raw->NbOfHitsInEvent = 0;
+    raw->TriggerData.NbOfTriggers = 0;
+    raw->TriggerData.RawDataSize = 0;
+
+    return std::shared_ptr<EventStruct>(raw, [this](EventStruct* ptr) {
+        releaseEventStruct(ptr);
+    });
+}
+
+void SampicCollectorModeSimulator::releaseEventStruct(EventStruct* ptr)
+{
+    if (!ptr)
+        return;
+
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    event_pool_.push_back(ptr);
+}
+
+std::uint32_t SampicCollectorModeSimulator::clampWaveformLength(std::uint32_t requested) const
+{
+    return std::min<std::uint32_t>(
+        std::max<std::uint32_t>(1, requested),
+        kMaxWaveformSamples);
 }
