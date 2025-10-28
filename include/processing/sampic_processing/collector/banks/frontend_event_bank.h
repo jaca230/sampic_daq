@@ -19,11 +19,13 @@ public:
     void setBankPrefix(const std::string& prefix) {
         if (prefix.size() != 2)
             throw std::invalid_argument("FrontendEventBank prefix must be exactly 2 characters");
-        bank_prefix_ = prefix;
+        bank_prefix_[0] = prefix[0];
+        bank_prefix_[1] = prefix[1];
+        bank_prefix_[2] = '\0';
     }
 
-    /// Retrieve the prefix.
-    const std::string& bankPrefix() const { return bank_prefix_; }
+    /// Retrieve the prefix as a C string.
+    const char* bankPrefix() const { return bank_prefix_; }
 
     /// Pointer to start of serialized bank data (zero-copy reference)
     virtual const uint8_t* data() const = 0;
@@ -32,7 +34,7 @@ public:
     virtual size_t size() const = 0;
 
 protected:
-    std::string bank_prefix_{"XX"};
+    char bank_prefix_[3] = {'X', 'X', '\0'};  ///< 2-char prefix + null terminator
 };
 
 #endif // FRONTEND_EVENT_BANK_H

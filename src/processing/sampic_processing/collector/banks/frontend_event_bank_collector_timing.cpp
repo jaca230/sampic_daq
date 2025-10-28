@@ -5,7 +5,7 @@ FrontendEventBankCollectorTiming::FrontendEventBankCollectorTiming(
     const std::string& prefix)
     : record_(record)
 {
-    bank_prefix_ = prefix;
+    setBankPrefix(prefix);
 }
 
 const uint8_t* FrontendEventBankCollectorTiming::data() const {

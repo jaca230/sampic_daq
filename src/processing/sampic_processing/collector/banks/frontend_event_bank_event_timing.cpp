@@ -7,7 +7,7 @@ FrontendEventBankEventTiming::FrontendEventBankEventTiming(
     const std::vector<SampicEvent*>& parents,
     const std::string& prefix)
 {
-    bank_prefix_ = prefix;
+    setBankPrefix(prefix);
 
     record_.fe_timestamp_ns = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(

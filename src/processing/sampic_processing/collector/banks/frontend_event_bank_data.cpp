@@ -13,7 +13,7 @@ FrontendEventBankData::FrontendEventBankData(
     const std::vector<SampicEvent*>& parents,
     const std::vector<const HitStruct*>& hits)
 {
-    bank_prefix_ = "AD";
+    setBankPrefix("AD");
     slices_.reserve(hits.size() * 2);  ///< header + corrected section
     total_size_ = 0;
 
