@@ -72,7 +72,8 @@ bool FrontendCollectorModeDefault::collect()
             bool placed = false;
 
             for (auto& group : pending_groups_) {
-                if (group.hits.empty())
+                // Avoid empty() call - check size directly (faster in tight loop)
+                if (group.hits.size() == 0)
                     continue;
 
                 const double dt_ns =
@@ -135,7 +136,8 @@ bool FrontendCollectorModeDefault::collect()
     size_t produced_hits = 0;
 
     for (auto& g : ready_groups_) {
-        if (g.hits.empty())
+        // Direct size check is faster than empty()
+        if (g.hits.size() == 0)
             continue;
         total_hits += static_cast<uint32_t>(g.hits.size());
         produced_hits += g.hits.size();
