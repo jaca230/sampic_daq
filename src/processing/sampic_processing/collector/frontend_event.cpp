@@ -26,23 +26,33 @@ std::chrono::steady_clock::time_point FrontendEvent::timestamp() const {
 // Bank management
 // ------------------------------------------------------------------
 
-void FrontendEvent::addBank(const std::shared_ptr<FrontendEventBank>& bank) {
+void FrontendEvent::addBank(std::unique_ptr<FrontendEventBank> bank) {
     if (bank)
-        banks_.push_back(bank);
+        banks_.push_back(std::move(bank));
 }
 
-const std::vector<std::shared_ptr<FrontendEventBank>>& FrontendEvent::banks() const {
-    return banks_;
+std::vector<const FrontendEventBank*> FrontendEvent::banks() const {
+    std::vector<const FrontendEventBank*> result;
+    result.reserve(banks_.size());
+    for (const auto& bank : banks_) {
+        result.push_back(bank.get());
+    }
+    return result;
 }
 
-std::vector<std::shared_ptr<FrontendEventBank>>& FrontendEvent::banks() {
-    return banks_;
+std::vector<FrontendEventBank*> FrontendEvent::banks() {
+    std::vector<FrontendEventBank*> result;
+    result.reserve(banks_.size());
+    for (const auto& bank : banks_) {
+        result.push_back(bank.get());
+    }
+    return result;
 }
 
-std::shared_ptr<FrontendEventBank> FrontendEvent::findBankByPrefix(const std::string& prefix) const {
-    for (auto& bank : banks_) {
+FrontendEventBank* FrontendEvent::findBankByPrefix(const std::string& prefix) const {
+    for (const auto& bank : banks_) {
         if (bank && bank->bankPrefix() == prefix)
-            return bank;
+            return bank.get();
     }
     return nullptr;
 }

@@ -52,28 +52,28 @@ public:
 
     /**
      * @brief Add a data bank to the event.
-     * @param bank Shared pointer to the bank to attach.
+     * @param bank Unique pointer to the bank to attach (takes ownership).
      */
-    void addBank(const std::shared_ptr<FrontendEventBank>& bank);
+    void addBank(std::unique_ptr<FrontendEventBank> bank);
 
     /**
-     * @brief Access all banks (const).
-     * @return Const reference to the vector of attached banks.
+     * @brief Access all banks (const) - returns raw pointers.
+     * @return Vector of raw pointers to attached banks.
      */
-    const std::vector<std::shared_ptr<FrontendEventBank>>& banks() const;
+    std::vector<const FrontendEventBank*> banks() const;
 
     /**
-     * @brief Access all banks (mutable).
-     * @return Reference to the vector of attached banks.
+     * @brief Access all banks (mutable) - returns raw pointers.
+     * @return Vector of raw pointers to attached banks.
      */
-    std::vector<std::shared_ptr<FrontendEventBank>>& banks();
+    std::vector<FrontendEventBank*> banks();
 
     /**
      * @brief Find a bank by its prefix string.
      * @param prefix The prefix to search for.
-     * @return Shared pointer to the matching bank, or nullptr if not found.
+     * @return Raw pointer to the matching bank, or nullptr if not found.
      */
-    std::shared_ptr<FrontendEventBank> findBankByPrefix(const std::string& prefix) const;
+    FrontendEventBank* findBankByPrefix(const std::string& prefix) const;
 
     /** @brief Remove all attached banks. */
     void clearBanks();
@@ -114,7 +114,7 @@ public:
 
 private:
     std::chrono::steady_clock::time_point timestamp_{}; ///< Event timestamp
-    std::vector<std::shared_ptr<FrontendEventBank>> banks_; ///< Attached data banks
+    std::vector<std::unique_ptr<FrontendEventBank>> banks_; ///< Attached data banks
     bool consumed_{false}; ///< Indicates if this event has been processed downstream
 };
 

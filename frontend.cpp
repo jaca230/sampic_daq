@@ -380,7 +380,7 @@ static INT compose_frontend_event(char* dest,
         bk_create(dest, bank_name.c_str(), TID_UINT8, (void**)&pdata);
         uint8_t* const pstart = pdata;
 
-        if (const auto* multi = dynamic_cast<const FrontendEventBankData*>(bank.get())) {
+        if (const auto* multi = dynamic_cast<const FrontendEventBankData*>(bank)) {
             for (const auto& [ptr, len] : multi->slices()) {
                 std::memcpy(pdata, ptr, len);
                 pdata += len;

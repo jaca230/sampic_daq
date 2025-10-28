@@ -176,20 +176,20 @@ bool FrontendCollectorModeDefault::collect()
         auto fev = std::make_shared<FrontendEvent>(g.created);
 
         // Zero-copy data bank (no temporary vector)
-        auto data_bank = std::make_shared<FrontendEventBankData>(g.parents, g.hits);
+        auto data_bank = std::make_unique<FrontendEventBankData>(g.parents, g.hits);
         data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
-        fev->addBank(data_bank);
+        fev->addBank(std::move(data_bank));
 
         // Optional user-defined postprocessing
         fev->finalize();
 
         // Per-event timing bank
         auto event_timing_bank =
-            std::make_shared<FrontendEventBankEventTiming>(g.created,
+            std::make_unique<FrontendEventBankEventTiming>(g.created,
                                                            static_cast<uint32_t>(g.hits.size()),
                                                            g.parents);
         event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
-        fev->addBank(event_timing_bank);
+        fev->addBank(std::move(event_timing_bank));
 
         emitted_events_.emplace_back(std::move(fev));
 
@@ -227,9 +227,9 @@ bool FrontendCollectorModeDefault::collect()
         rec.finalize_us    = static_cast<uint32_t>(finalize_us.count());
         rec.total_us       = static_cast<uint32_t>(total_us.count());
 
-        auto collector_bank = std::make_shared<FrontendEventBankCollectorTiming>(rec);
+        auto collector_bank = std::make_unique<FrontendEventBankCollectorTiming>(rec);
         collector_bank->setBankPrefix(mode_cfg_.collector_timing_bank_prefix);
-        emitted_events_.back()->addBank(collector_bank);
+        emitted_events_.back()->addBank(std::move(collector_bank));
     }
 
     spdlog::trace("FrontendCollector: pushing {} FrontendEvents to buffer (ready_groups.size={})",
