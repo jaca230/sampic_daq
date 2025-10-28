@@ -54,12 +54,12 @@ bool SampicCollectorModeSimulator::collect()
         timing.decode = std::chrono::microseconds(0);
         timing.total = timing.prepare + timing.read + timing.decode;
 
-        auto event = buffer_.acquire();
+        auto event = std::make_shared<SampicEvent>();
         event->setData(ev_data);
         event->setTiming(timing);
         event->setTimestamp(std::chrono::steady_clock::now());
 
-        buffer_.push(std::move(event));
+        buffer_.push(event);
     }
 
     if (mode_cfg_.simulate_read_time_us > 0) {
