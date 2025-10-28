@@ -17,14 +17,11 @@ SampicCollectorModeSimulator::SampicCollectorModeSimulator(SampicEventBuffer& bu
                                                            ML_Frame* mlFrames,
                                                            const SampicCollectorConfig& cfg)
     : SampicCollectorMode(buffer, info, params, eventBuffer, mlFrames, cfg),
-      mode_cfg_(cfg.simulator_mode),
-      rng_(std::random_device{}())
+      mode_cfg_(cfg.simulator_mode)
 {
     hit_time_step_ns_ = std::max(1e-3, mode_cfg_.hit_time_step_ns);
     inter_event_gap_ns_ = std::max(0.0, mode_cfg_.inter_event_gap_ns);
     current_event_time_ns_ = mode_cfg_.start_timestamp_ns;
-    event_jitter_ns_ = std::max(0.0, mode_cfg_.event_jitter_ns);
-    hit_jitter_ns_ = std::max(0.0, mode_cfg_.hit_jitter_ns);
     baseline_level_ = std::clamp(mode_cfg_.baseline_level, 0.0, 1.0);
     signal_amplitude_ = std::clamp(mode_cfg_.signal_amplitude, 0.0, 1.0);
     tot_value_ns_ = std::max(0.0, mode_cfg_.tot_value_ns);
@@ -53,15 +50,14 @@ bool SampicCollectorModeSimulator::collect()
         std::max<std::uint32_t>(1, mode_cfg_.waveform_length),
         kMaxWaveformSamples);
     const double event_span_ns =
-        hit_time_step_ns_ * static_cast<double>(std::max<std::uint32_t>(hits_per_event, 1u));
+        hit_time_step_ns_ * static_cast<double>(hits_per_event > 0 ? (hits_per_event - 1) : 0);
 
     for (std::uint32_t ev_idx = 0; ev_idx < events_per_cycle; ++ev_idx) {
         auto ev_data = std::make_shared<EventStruct>();
         std::memset(ev_data.get(), 0, sizeof(EventStruct));
         ev_data->NbOfHitsInEvent = static_cast<int>(hits_per_event);
 
-        const double event_start_time_ns =
-            current_event_time_ns_ + sampleJitter(event_jitter_ns_);
+        const double event_start_time_ns = current_event_time_ns_;
 
         for (std::uint32_t hit_idx = 0; hit_idx < hits_per_event; ++hit_idx) {
             auto& hit = ev_data->Hit[hit_idx];
@@ -117,8 +113,7 @@ void SampicCollectorModeSimulator::populateHit(HitStruct& hit,
     hit.Baseline = static_cast<float>(baseline_level_);
     hit.Peak = hit.Amplitude + hit.Baseline;
     const double hit_time_ns = event_start_time_ns +
-        static_cast<double>(hit_index) * hit_time_step_ns_ +
-        sampleJitter(hit_jitter_ns_);
+        static_cast<double>(hit_index) * hit_time_step_ns_;
     const double clamped_time_ns = std::max(0.0, hit_time_ns);
     hit.TimeIndex = static_cast<float>(clamped_time_ns / std::max(1e-6, hit_time_step_ns_));
     hit.TimeInstant = clamped_time_ns;
@@ -143,15 +138,6 @@ void SampicCollectorModeSimulator::populateHit(HitStruct& hit,
     std::copy_n(raw_waveform_template_.data(), waveform_length, hit.RawDataSamples);
     std::copy_n(raw_waveform_template_.data(), waveform_length, hit.OrderedRawDataSamples);
     std::copy_n(corrected_waveform_template_.data(), waveform_length, hit.CorrectedDataSamples);
-}
-
-double SampicCollectorModeSimulator::sampleJitter(double sigma_ns)
-{
-    if (sigma_ns <= 0.0)
-        return 0.0;
-
-    std::normal_distribution<double> dist(0.0, sigma_ns);
-    return dist(rng_);
 }
 
 void SampicCollectorModeSimulator::prepareWaveformTemplate()

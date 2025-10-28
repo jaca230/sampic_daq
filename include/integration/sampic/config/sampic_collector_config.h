@@ -37,7 +37,7 @@ struct SampicCollectorModeSimulatorConfig {
     std::uint32_t events_per_cycle = 1;
 
     /// Number of hits to synthesize in each event
-    std::uint32_t hits_per_event = 16;
+    std::uint32_t hits_per_event = 1;
 
     /// Waveform samples (clamped to hardware max)
     std::uint32_t waveform_length = 64;
@@ -53,12 +53,6 @@ struct SampicCollectorModeSimulatorConfig {
 
     /// Initial timestamp assigned to the first synthetic event (nanoseconds)
     double start_timestamp_ns = 0.0;
-
-    /// Standard deviation applied to per-event start time (nanoseconds)
-    double event_jitter_ns = 0.0;
-
-    /// Standard deviation applied to per-hit timestamps (nanoseconds)
-    double hit_jitter_ns = 0.0;
 
     /// Baseline level (fraction of ADC full-scale) used for the template waveform
     double baseline_level = 0.05;

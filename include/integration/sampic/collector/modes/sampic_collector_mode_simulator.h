@@ -3,7 +3,6 @@
 
 #include "integration/sampic/collector/modes/sampic_collector_mode.h"
 
-#include <random>
 #include <array>
 
 /**
@@ -34,16 +33,12 @@ private:
                      std::uint32_t channel_offset,
                      double event_start_time_ns);
 
-    double sampleJitter(double sigma_ns);
     void prepareWaveformTemplate();
 
     const SampicCollectorModeSimulatorConfig& mode_cfg_;
-    std::mt19937 rng_;
     double current_event_time_ns_{0.0};
     double hit_time_step_ns_{5.0};
     double inter_event_gap_ns_{1'500'000.0};
-    double event_jitter_ns_{0.0};
-    double hit_jitter_ns_{0.0};
     double baseline_level_{0.05};
     double signal_amplitude_{0.8};
     double tot_value_ns_{120.0};

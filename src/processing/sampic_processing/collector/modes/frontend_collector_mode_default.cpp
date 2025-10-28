@@ -164,7 +164,6 @@ bool FrontendCollectorModeDefault::collect()
         event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
         fev->addBank(event_timing_bank);
 
-        frontend_buffer_.push(fev);
         emitted_events_.emplace_back(std::move(fev));
 
         if (cfg_.diagnostics.log_hit_details) {
@@ -204,6 +203,10 @@ bool FrontendCollectorModeDefault::collect()
         auto collector_bank = std::make_shared<FrontendEventBankCollectorTiming>(rec);
         collector_bank->setBankPrefix(mode_cfg_.collector_timing_bank_prefix);
         emitted_events_.back()->addBank(collector_bank);
+    }
+
+    for (const auto& fev : emitted_events_) {
+        frontend_buffer_.push(fev);
     }
 
     spdlog::debug("FrontendCollectorModeDefault: emitted {} FrontendEvents ({} total hits, {} µs total)",
