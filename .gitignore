@@ -70,6 +70,7 @@ Thumbs.db
 *.log
 *.sql
 *.sqlite
+*.data
 
 # ------------------------------------------------------------------
 # Misc project-specific ignores
