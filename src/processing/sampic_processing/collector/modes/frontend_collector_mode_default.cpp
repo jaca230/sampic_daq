@@ -73,8 +73,8 @@ bool FrontendCollectorModeDefault::collect()
             const HitStruct* hit = &parent->Hit[i];
             bool placed = false;
 
+            // Check existing groups for a match
             for (auto& group : pending_groups_) {
-                // Avoid empty() call - check size directly (faster in tight loop)
                 if (group.hits.size() == 0)
                     continue;
 
@@ -90,14 +90,36 @@ bool FrontendCollectorModeDefault::collect()
                         group.parents.emplace_back(ev);
                     }
 
+                    group.last_activity = now;
                     placed = true;
                     break;
                 }
             }
 
             if (!placed) {
+                // Before creating new group, finalize old groups that are now too far away
+                // Any group whose hits are outside the time window from this new hit
+                // can never receive more hits, so finalize immediately
+                auto it = pending_groups_.begin();
+                while (it != pending_groups_.end()) {
+                    if (it->hits.size() > 0) {
+                        const double dt_from_new_hit =
+                            std::abs(hit->FirstCellTimeStamp - it->hits.front()->FirstCellTimeStamp);
+
+                        // If this group is beyond the time window, it's complete
+                        if (dt_from_new_hit > time_window_ns_) {
+                            ready_groups_.emplace_back(std::move(*it));
+                            it = pending_groups_.erase(it);
+                            continue;
+                        }
+                    }
+                    ++it;
+                }
+
+                // Now create new group for this hit
                 PendingGroup g;
                 g.created = now;
+                g.last_activity = now;
                 g.parents.reserve(16);
                 g.hits.reserve(256);
                 g.parents.emplace_back(ev);
@@ -112,16 +134,17 @@ bool FrontendCollectorModeDefault::collect()
         std::chrono::duration_cast<std::chrono::microseconds>(t_group_end - t_group_start);
 
     // ---------------------------------------------------------------------
-    // Step 3: Finalize aged groups
+    // Step 3: Finalize groups that timed out (no activity for finalize_after_ms)
     // ---------------------------------------------------------------------
-    const auto cutoff = now - finalize_after_;
-    ready_groups_.clear();
+    const auto timeout_cutoff = now - finalize_after_;
 
-    while (!pending_groups_.empty() && pending_groups_.front().created < cutoff) {
+    // Remove groups from front that have timed out
+    while (!pending_groups_.empty() && pending_groups_.front().last_activity < timeout_cutoff) {
         ready_groups_.emplace_back(std::move(pending_groups_.front()));
         pending_groups_.pop_front();
     }
 
+    // If no groups ready, return early (ready_groups_ already populated by immediate finalization above)
     if (ready_groups_.empty())
         return true;
 
