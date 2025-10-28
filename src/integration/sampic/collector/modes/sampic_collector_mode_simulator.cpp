@@ -56,23 +56,26 @@ bool SampicCollectorModeSimulator::collect()
 
         const double event_start_time_ns = current_event_time_ns_;
 
+        // Initialize only the fields we use (avoid memset of entire struct)
+        ev_struct->NbOfHitsInEvent = static_cast<int>(hits_per_event);
+        ev_struct->TriggerData.NbOfTriggers = 0;
+        ev_struct->TriggerData.RawDataSize = 0;
+
         for (std::uint32_t hit_idx = 0; hit_idx < hits_per_event; ++hit_idx) {
             auto& hit = ev_struct->Hit[hit_idx];
             populateHit(hit, hit_idx, waveform_length, ev_idx, event_start_time_ns);
         }
-        ev_struct->NbOfHitsInEvent = static_cast<int>(hits_per_event);
+
         SampicTimingBreakdown timing{};
         timing.prepare = std::chrono::microseconds(0);
         timing.read = std::chrono::microseconds(mode_cfg_.simulate_read_time_us);
         timing.decode = std::chrono::microseconds(0);
         timing.total = timing.prepare + timing.read + timing.decode;
 
-        auto event = std::make_shared<SampicEvent>();
-        event->setData(std::move(ev_data));
-        event->setTiming(timing);
-        event->setTimestamp(std::chrono::steady_clock::now());
+        // Create SampicEvent directly with data (reduces one shared_ptr operation)
+        auto event = std::make_shared<SampicEvent>(std::move(ev_data), timing, std::chrono::steady_clock::now());
 
-        buffer_.push(event);
+        buffer_.push(std::move(event));
 
         const double scheduled_gap_ns = std::max(inter_event_gap_ns_, event_span_ns);
         current_event_time_ns_ += scheduled_gap_ns;
@@ -132,12 +135,15 @@ void SampicCollectorModeSimulator::populateHit(HitStruct& hit,
     adv.FPGATimeStamp = static_cast<unsigned long long>(clamped_time_ns);
     adv.ADCCounter_LatchedAtEndOfConv = hit_index % ADC_11BITS_MAX_VALUE;
     adv.StartOfADCRamp = 0;
-    std::memset(adv.TriggerPosition, 0, sizeof(adv.TriggerPosition));
+    // Zero first element is sufficient if we don't memset the whole array
     adv.TriggerPosition[0] = TRUE;
 
-    std::copy_n(raw_waveform_template_.data(), waveform_length, hit.RawDataSamples);
-    std::copy_n(raw_waveform_template_.data(), waveform_length, hit.OrderedRawDataSamples);
-    std::copy_n(corrected_waveform_template_.data(), waveform_length, hit.CorrectedDataSamples);
+    // Use memcpy for better performance (compiler can optimize better)
+    const std::size_t raw_bytes = waveform_length * sizeof(unsigned short);
+    const std::size_t corrected_bytes = waveform_length * sizeof(float);
+    std::memcpy(hit.RawDataSamples, raw_waveform_template_.data(), raw_bytes);
+    std::memcpy(hit.OrderedRawDataSamples, raw_waveform_template_.data(), raw_bytes);
+    std::memcpy(hit.CorrectedDataSamples, corrected_waveform_template_.data(), corrected_bytes);
 }
 
 void SampicCollectorModeSimulator::prepareWaveformTemplate()

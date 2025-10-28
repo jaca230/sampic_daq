@@ -24,6 +24,9 @@ public:
     /** @brief Add a new event to the buffer. Drops oldest if full. */
     void push(const std::shared_ptr<SampicEvent>& ev);
 
+    /** @brief Add a new event to the buffer (move semantics). Drops oldest if full. */
+    void push(std::shared_ptr<SampicEvent>&& ev);
+
     /** @brief Retrieve and remove the oldest event, if available. */
     std::optional<std::shared_ptr<SampicEvent>> pop();
 

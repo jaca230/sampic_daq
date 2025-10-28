@@ -8,15 +8,36 @@ SampicEventBuffer::SampicEventBuffer(size_t capacity)
 void SampicEventBuffer::push(const std::shared_ptr<SampicEvent>& ev) {
     if (!ev) return;
 
+    const auto ts = ev->timestamp();  // Get timestamp outside lock
+
     std::unique_lock<std::mutex> lock(mtx_);
 
     if (buffer_.size() >= capacity_) {
         buffer_.pop_front();
     }
 
-    const auto ts = ev->timestamp();
     buffer_.emplace_back(ev, ts);
     last_timestamp_ = ts;
+
+    lock.unlock();  // Unlock before notify for better performance
+    cv_.notify_all();
+}
+
+void SampicEventBuffer::push(std::shared_ptr<SampicEvent>&& ev) {
+    if (!ev) return;
+
+    const auto ts = ev->timestamp();  // Get timestamp outside lock
+
+    std::unique_lock<std::mutex> lock(mtx_);
+
+    if (buffer_.size() >= capacity_) {
+        buffer_.pop_front();
+    }
+
+    buffer_.emplace_back(std::move(ev), ts);
+    last_timestamp_ = ts;
+
+    lock.unlock();  // Unlock before notify for better performance
     cv_.notify_all();
 }
 

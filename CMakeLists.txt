@@ -228,6 +228,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(sampic_frontend PRIVATE -Wno-stringop-overflow -Wno-cpp)
 endif()
 
+# Aggressive optimizations for hot-path files
+set_source_files_properties(
+  "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator.cpp"
+  "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/sampic_event.cpp"
+  "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/sampic_event_buffer.cpp"
+  PROPERTIES COMPILE_OPTIONS "-O3;-march=native;-mtune=native;-ffast-math;-funroll-loops;-finline-functions"
+)
+
 set_target_properties(sampic_frontend PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
   BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"

@@ -10,9 +10,14 @@ struct EventStructPool {
     std::vector<EventStruct*> free_list;
     std::size_t limit = 1024;
 
+    EventStructPool() {
+        // Preallocate capacity to avoid vector reallocations
+        free_list.reserve(limit);
+    }
+
     ~EventStructPool() {
         for (auto* ptr : free_list) {
-            delete ptr;
+            ::operator delete(ptr);
         }
     }
 };
@@ -116,9 +121,16 @@ EventStruct* SampicEvent::acquireEventStruct() {
     if (!pool.free_list.empty()) {
         EventStruct* ptr = pool.free_list.back();
         pool.free_list.pop_back();
+        // Don't memset - reuse existing memory as-is
         return ptr;
     }
-    return new EventStruct{};
+    // Use malloc + placement new to avoid memset
+    void* mem = ::operator new(sizeof(EventStruct), std::nothrow);
+    if (!mem) {
+        throw std::bad_alloc();
+    }
+    // Don't initialize - let simulator populate the fields
+    return static_cast<EventStruct*>(mem);
 }
 
 void SampicEvent::releaseEventStruct(EventStruct* ptr) {
@@ -128,7 +140,7 @@ void SampicEvent::releaseEventStruct(EventStruct* ptr) {
     auto& pool = globalPool();
     std::lock_guard<std::mutex> lock(pool.mutex);
     if (pool.free_list.size() >= pooledEventLimit()) {
-        delete ptr;
+        ::operator delete(ptr);
     } else {
         pool.free_list.push_back(ptr);
     }
