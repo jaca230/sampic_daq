@@ -234,4 +234,20 @@ set_target_properties(sampic_frontend PROPERTIES
   INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
 )
 
+if(FTD2XX_LIB_PATH)
+  get_filename_component(FTD2XX_BASENAME "${FTD2XX_LIB_PATH}" NAME)
+  if(FTD2XX_LIB_DIR AND NOT FTD2XX_BASENAME STREQUAL "libftd2xx.so")
+    set(FTD2XX_SYMLINK "${FTD2XX_LIB_DIR}/libftd2xx.so")
+    add_custom_command(
+      OUTPUT "${FTD2XX_SYMLINK}"
+      COMMAND ${CMAKE_COMMAND} -E create_symlink "${FTD2XX_BASENAME}" "libftd2xx.so"
+      WORKING_DIRECTORY "${FTD2XX_LIB_DIR}"
+      DEPENDS "${FTD2XX_LIB_PATH}"
+      COMMENT "Ensuring libftd2xx.so -> ${FTD2XX_BASENAME} symlink"
+      VERBATIM)
+    add_custom_target(ftd2xx_symlink ALL DEPENDS "${FTD2XX_SYMLINK}")
+    add_dependencies(sampic_frontend ftd2xx_symlink)
+  endif()
+endif()
+
 install(TARGETS sampic_frontend DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")

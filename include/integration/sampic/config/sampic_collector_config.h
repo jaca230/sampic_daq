@@ -44,6 +44,30 @@ struct SampicCollectorModeSimulatorConfig {
 
     /// Optional sleep to simulate hardware read latency (microseconds)
     std::uint32_t simulate_read_time_us = 0;
+
+    /// Nominal spacing between hits inside an event (nanoseconds)
+    double hit_time_step_ns = 5.0;
+
+    /// Minimum time separation between successive events (nanoseconds)
+    double inter_event_gap_ns = 1'500'000.0; // 1.5 ms default
+
+    /// Initial timestamp assigned to the first synthetic event (nanoseconds)
+    double start_timestamp_ns = 0.0;
+
+    /// Standard deviation applied to per-event start time (nanoseconds)
+    double event_jitter_ns = 0.0;
+
+    /// Standard deviation applied to per-hit timestamps (nanoseconds)
+    double hit_jitter_ns = 0.0;
+
+    /// Baseline level (fraction of ADC full-scale) used for the template waveform
+    double baseline_level = 0.05;
+
+    /// Peak amplitude (fraction of ADC full-scale) used for the template waveform
+    double signal_amplitude = 0.8;
+
+    /// Nominal time-over-threshold assigned to each hit (nanoseconds)
+    double tot_value_ns = 120.0;
 };
 
 /// Top-level collector configuration
