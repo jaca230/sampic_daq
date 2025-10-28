@@ -6,12 +6,14 @@
 /// Modes for initialization and applying settings
 enum class SampicInitSettingsModeType {
     DEFAULT,
-    EXAMPLE
+    EXAMPLE,
+    SIMULATOR
 };
 
 enum class SampicApplySettingsModeType {
     DEFAULT,
-    EXAMPLE
+    EXAMPLE,
+    SIMULATOR
 };
 
 /// Configuration for the default initialization mode
@@ -21,6 +23,11 @@ struct SampicInitSettingsModeDefaultConfig {
 
 /// Example initialization mode configuration (placeholder)
 struct SampicInitSettingsModeExampleConfig {
+    int dummy_param = 0;
+};
+
+/// Simulator initialization mode configuration (no-op)
+struct SampicInitSettingsModeSimulatorConfig {
     int dummy_param = 0;
 };
 
@@ -34,6 +41,11 @@ struct SampicApplySettingsModeExampleConfig {
     int dummy_param = 0;
 };
 
+/// Simulator apply-settings mode configuration (no-op)
+struct SampicApplySettingsModeSimulatorConfig {
+    int dummy_param = 0;
+};
+
 /// Top-level controller configuration object
 /// Controls which init/apply modes are used and their parameters.
 struct SampicControllerConfig {
@@ -44,9 +56,11 @@ struct SampicControllerConfig {
     // --- Per-mode configurations ---
     SampicInitSettingsModeDefaultConfig  init_default_mode;
     SampicInitSettingsModeExampleConfig  init_example_mode;
+    SampicInitSettingsModeSimulatorConfig init_simulator_mode;
 
     SampicApplySettingsModeDefaultConfig apply_default_mode;
     SampicApplySettingsModeExampleConfig apply_example_mode;
+    SampicApplySettingsModeSimulatorConfig apply_simulator_mode;
 };
 
 #endif // SAMPIC_CONTROLLER_CONFIG_H

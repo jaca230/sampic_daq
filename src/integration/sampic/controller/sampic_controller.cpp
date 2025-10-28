@@ -1,8 +1,10 @@
 #include "integration/sampic/controller/sampic_controller.h"
 #include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h"
 #include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.h"
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_simulator.h"
 #include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.h"
 #include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h"
+#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_simulator.h"
 
 SampicController::SampicController(const SampicSystemSettings& sys_cfg,
                                    const SampicControllerConfig& ctrl_cfg,
@@ -21,6 +23,10 @@ SampicController::SampicController(const SampicSystemSettings& sys_cfg,
             init_mode_ = std::make_unique<SampicInitSettingsModeExample>(
                 info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
             break;
+        case SampicInitSettingsModeType::SIMULATOR:
+            init_mode_ = std::make_unique<SampicInitSettingsModeSimulator>(
+                info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
+            break;
     }
 
     // Select apply mode
@@ -31,6 +37,10 @@ SampicController::SampicController(const SampicSystemSettings& sys_cfg,
             break;
         case SampicApplySettingsModeType::EXAMPLE:
             apply_mode_ = std::make_unique<SampicApplySettingsModeExample>(
+                info_, params_, settings_, ctrl_cfg_);
+            break;
+        case SampicApplySettingsModeType::SIMULATOR:
+            apply_mode_ = std::make_unique<SampicApplySettingsModeSimulator>(
                 info_, params_, settings_, ctrl_cfg_);
             break;
     }
@@ -104,6 +114,11 @@ int SampicController::startRun() {
     }
 
     spdlog::info("Starting SAMPIC run...");
+    if (ctrl_cfg_.init_mode == SampicInitSettingsModeType::SIMULATOR) {
+        run_started_ = true;
+        return 0;
+    }
+
     auto err = SAMPIC256CH_StartRun(&info_, &params_, TRUE);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to start run (err={})", static_cast<int>(err));
@@ -120,6 +135,11 @@ int SampicController::stopRun() {
     }
 
     spdlog::info("Stopping SAMPIC run...");
+    if (ctrl_cfg_.init_mode == SampicInitSettingsModeType::SIMULATOR) {
+        run_started_ = false;
+        return 0;
+    }
+
     auto err = SAMPIC256CH_StopRun(&info_, &params_);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to stop run (err={})", static_cast<int>(err));
@@ -136,12 +156,14 @@ void SampicController::cleanup() {
     }
 
     spdlog::info("Cleaning up SAMPIC resources...");
-    if (eventBuffer_ || mlFrames_) {
-        SAMPIC256CH_FreeEventMemory(&eventBuffer_, &mlFrames_);
-        eventBuffer_ = nullptr;
-        mlFrames_ = nullptr;
+    if (ctrl_cfg_.init_mode != SampicInitSettingsModeType::SIMULATOR) {
+        if (eventBuffer_ || mlFrames_) {
+            SAMPIC256CH_FreeEventMemory(&eventBuffer_, &mlFrames_);
+            eventBuffer_ = nullptr;
+            mlFrames_ = nullptr;
+        }
+        SAMPIC256CH_CloseCrateConnection(&info_);
     }
-    SAMPIC256CH_CloseCrateConnection(&info_);
     initialized_ = false;
 }
 

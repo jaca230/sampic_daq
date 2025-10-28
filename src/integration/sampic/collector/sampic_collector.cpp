@@ -1,6 +1,7 @@
 #include "integration/sampic/collector/sampic_collector.h"
 #include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
+#include "integration/sampic/collector/modes/sampic_collector_mode_simulator.h"
 
 SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
                                  CrateInfoStruct& info,
@@ -32,6 +33,10 @@ void SampicCollector::buildMode() {
             break;
         case SampicCollectorModeType::EXAMPLE:
             mode_ = std::make_unique<SampicCollectorModeExample>(
+                *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_);
+            break;
+        case SampicCollectorModeType::SIMULATOR:
+            mode_ = std::make_unique<SampicCollectorModeSimulator>(
                 *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_);
             break;
         default:

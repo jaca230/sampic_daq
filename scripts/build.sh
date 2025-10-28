@@ -72,6 +72,26 @@ cmake "$BASE_DIR"
 echo "[build.sh] Building with make $JOBS_ARG"
 make $JOBS_ARG
 
+ensure_ftd2xx_symlink() {
+    local vendor_dir="$BASE_DIR/external/sampic_256ch_lib/lpdevc_install"
+    if [ ! -d "$vendor_dir" ]; then
+        return
+    fi
+
+    local newest
+    newest=$(ls "$vendor_dir"/libftd2xx.so.* 2>/dev/null | sort -V | tail -n 1)
+    if [ -z "$newest" ]; then
+        return
+    fi
+
+    if [ ! -e "$vendor_dir/libftd2xx.so" ]; then
+        (cd "$vendor_dir" && ln -s "$(basename "$newest")" libftd2xx.so)
+        echo "[build.sh] Created libftd2xx.so symlink -> $(basename "$newest")"
+    fi
+}
+
+ensure_ftd2xx_symlink
+
 echo "[build.sh] Build complete."
 echo "[build.sh] Executables are in: $BUILD_DIR/bin/"
 echo "[build.sh] Libraries are in: $BUILD_DIR/lib/"

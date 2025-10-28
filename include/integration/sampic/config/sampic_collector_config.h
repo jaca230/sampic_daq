@@ -3,11 +3,13 @@
 
 #include <string>
 #include <cstddef>
+#include <cstdint>
 
 /// Collector mode selector
 enum class SampicCollectorModeType {
     DEFAULT,
-    EXAMPLE
+    EXAMPLE,
+    SIMULATOR
 };
 
 /// Default collector mode configuration
@@ -29,6 +31,21 @@ struct SampicCollectorModeExampleConfig {
     int soft_trigger_retry_sleep_us = 100;
 };
 
+/// Simulator collector mode configuration (software-generated events)
+struct SampicCollectorModeSimulatorConfig {
+    /// Number of synthetic events generated per collect() invocation
+    std::uint32_t events_per_cycle = 1;
+
+    /// Number of hits to synthesize in each event
+    std::uint32_t hits_per_event = 16;
+
+    /// Waveform samples (clamped to hardware max)
+    std::uint32_t waveform_length = 64;
+
+    /// Optional sleep to simulate hardware read latency (microseconds)
+    std::uint32_t simulate_read_time_us = 0;
+};
+
 /// Top-level collector configuration
 struct SampicCollectorConfig {
     // --- Mode selection ---
@@ -44,6 +61,7 @@ struct SampicCollectorConfig {
     // --- Per-mode configurations ---
     SampicCollectorModeDefaultConfig default_mode;
     SampicCollectorModeExampleConfig example_mode;
+    SampicCollectorModeSimulatorConfig simulator_mode;
 };
 
 #endif // SAMPIC_COLLECTOR_CONFIG_H
