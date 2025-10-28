@@ -4,7 +4,6 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode.h"
 
 #include <array>
-#include <cstddef>
 
 /**
  * @brief Software-only SAMPIC collector used for throughput testing.
@@ -35,10 +34,7 @@ private:
                      double event_start_time_ns);
 
     void prepareWaveformTemplate();
-    std::shared_ptr<EventStruct> acquireEventStruct();
-    static void releaseEventStruct(EventStruct* ptr);
     std::uint32_t clampWaveformLength(std::uint32_t requested) const;
-    static std::size_t pooledEventLimit();
 
     const SampicCollectorModeSimulatorConfig& mode_cfg_;
     double current_event_time_ns_{0.0};

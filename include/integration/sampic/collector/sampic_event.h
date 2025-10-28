@@ -4,6 +4,7 @@
 #include <memory>
 #include <chrono>
 #include <string>
+#include <cstddef>
 
 extern "C" {
 #include <SAMPIC_256Ch_Type.h>
@@ -20,8 +21,13 @@ struct SampicTimingBreakdown {
 /// Represents a single low-level SAMPIC event with timing metadata.
 class SampicEvent {
 public:
+    using EventPtr = std::unique_ptr<EventStruct, void(*)(EventStruct*)>;
+
+    /// Acquire a pooled EventStruct wrapped in a unique_ptr deleter.
+    static EventPtr makeEventStruct();
+
     SampicEvent() = default;
-    SampicEvent(std::shared_ptr<EventStruct> data,
+    SampicEvent(EventPtr data,
                 const SampicTimingBreakdown& timing,
                 std::chrono::steady_clock::time_point ts);
     virtual ~SampicEvent();
@@ -32,8 +38,9 @@ public:
     void setTimestamp(std::chrono::steady_clock::time_point ts);
     std::chrono::steady_clock::time_point timestamp() const;
 
-    void setData(const std::shared_ptr<EventStruct>& data);
-    const std::shared_ptr<EventStruct>& data() const;
+    void setData(EventPtr data);
+    EventStruct* data();
+    const EventStruct* data() const;
 
     void setTiming(const SampicTimingBreakdown& timing);
     const SampicTimingBreakdown& timing() const;
@@ -56,7 +63,11 @@ public:
     virtual void finalize();
 
 private:
-    std::shared_ptr<EventStruct> data_;
+    static EventStruct* acquireEventStruct();
+    static void releaseEventStruct(EventStruct* ptr);
+    static std::size_t pooledEventLimit();
+
+    EventPtr data_{nullptr, &SampicEvent::releaseEventStruct};
     SampicTimingBreakdown timing_{};
     std::chrono::steady_clock::time_point timestamp_{};
     bool consumed_{false};  ///< Whether this event has been consumed by a downstream processor

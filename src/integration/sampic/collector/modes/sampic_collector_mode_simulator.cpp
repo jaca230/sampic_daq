@@ -9,30 +9,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <mutex>
-#include <vector>
-
-namespace {
-
-struct EventStructPool {
-    std::mutex mutex;
-    std::vector<EventStruct*> free_list;
-
-    ~EventStructPool() {
-        for (auto* ptr : free_list) {
-            delete ptr;
-        }
-    }
-};
-
-EventStructPool& globalEventStructPool() {
-    static EventStructPool pool;
-    return pool;
-}
-
-constexpr std::size_t kDefaultPooledEvents = 1024;
-
-} // namespace
 
 SampicCollectorModeSimulator::SampicCollectorModeSimulator(SampicEventBuffer& buffer,
                                                            CrateInfoStruct& info,
@@ -75,15 +51,16 @@ bool SampicCollectorModeSimulator::collect()
         hit_time_step_ns_ * static_cast<double>(hits_per_event > 0 ? (hits_per_event - 1) : 0);
 
     for (std::uint32_t ev_idx = 0; ev_idx < events_per_cycle; ++ev_idx) {
-        auto ev_data = acquireEventStruct();
+        auto ev_data = SampicEvent::makeEventStruct();
+        auto* ev_struct = ev_data.get();
 
         const double event_start_time_ns = current_event_time_ns_;
 
         for (std::uint32_t hit_idx = 0; hit_idx < hits_per_event; ++hit_idx) {
-            auto& hit = ev_data->Hit[hit_idx];
+            auto& hit = ev_struct->Hit[hit_idx];
             populateHit(hit, hit_idx, waveform_length, ev_idx, event_start_time_ns);
         }
-        ev_data->NbOfHitsInEvent = static_cast<int>(hits_per_event);
+        ev_struct->NbOfHitsInEvent = static_cast<int>(hits_per_event);
         SampicTimingBreakdown timing{};
         timing.prepare = std::chrono::microseconds(0);
         timing.read = std::chrono::microseconds(mode_cfg_.simulate_read_time_us);
@@ -91,7 +68,7 @@ bool SampicCollectorModeSimulator::collect()
         timing.total = timing.prepare + timing.read + timing.decode;
 
         auto event = std::make_shared<SampicEvent>();
-        event->setData(ev_data);
+        event->setData(std::move(ev_data));
         event->setTiming(timing);
         event->setTimestamp(std::chrono::steady_clock::now());
 
@@ -187,51 +164,9 @@ void SampicCollectorModeSimulator::prepareWaveformTemplate()
     }
 }
 
-std::shared_ptr<EventStruct> SampicCollectorModeSimulator::acquireEventStruct()
-{
-    EventStruct* raw = nullptr;
-    {
-        auto& pool = globalEventStructPool();
-        std::lock_guard<std::mutex> lock(pool.mutex);
-        if (!pool.free_list.empty()) {
-            raw = pool.free_list.back();
-            pool.free_list.pop_back();
-        }
-    }
-
-    if (!raw) {
-        raw = new EventStruct{};
-    }
-
-    raw->NbOfHitsInEvent = 0;
-    raw->TriggerData.NbOfTriggers = 0;
-    raw->TriggerData.RawDataSize = 0;
-
-    return std::shared_ptr<EventStruct>(raw, &SampicCollectorModeSimulator::releaseEventStruct);
-}
-
-void SampicCollectorModeSimulator::releaseEventStruct(EventStruct* ptr)
-{
-    if (!ptr)
-        return;
-
-    auto& pool = globalEventStructPool();
-    std::lock_guard<std::mutex> lock(pool.mutex);
-    if (pool.free_list.size() >= pooledEventLimit()) {
-        delete ptr;
-    } else {
-        pool.free_list.push_back(ptr);
-    }
-}
-
 std::uint32_t SampicCollectorModeSimulator::clampWaveformLength(std::uint32_t requested) const
 {
     return std::min<std::uint32_t>(
         std::max<std::uint32_t>(1, requested),
         kMaxWaveformSamples);
-}
-
-std::size_t SampicCollectorModeSimulator::pooledEventLimit()
-{
-    return kDefaultPooledEvents;
 }

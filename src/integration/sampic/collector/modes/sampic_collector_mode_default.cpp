@@ -27,7 +27,7 @@ SampicCollectorModeDefault::SampicCollectorModeDefault(
 bool SampicCollectorModeDefault::collect()
 {
     SampicTimingBreakdown timing{};
-    auto ev_data = std::make_shared<EventStruct>();
+    auto ev_data = SampicEvent::makeEventStruct();
 
     const auto t_start = std::chrono::steady_clock::now();
     SAMPIC256CH_PrepareEvent(&info_, &params_);
@@ -91,7 +91,7 @@ bool SampicCollectorModeDefault::collect()
     if (errCode == SAMPIC256CH_Success && numberOfHits > 0)
     {
         auto ev = std::make_shared<SampicEvent>(
-            ev_data, timing, std::chrono::steady_clock::now());
+            std::move(ev_data), timing, std::chrono::steady_clock::now());
         buffer_.push(ev);
 
         spdlog::debug("SAMPIC default mode: collected {} hits "

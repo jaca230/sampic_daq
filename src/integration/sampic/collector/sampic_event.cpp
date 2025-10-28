@@ -1,10 +1,39 @@
 #include "integration/sampic/collector/sampic_event.h"
 #include <spdlog/fmt/fmt.h>
+#include <mutex>
+#include <vector>
 
-SampicEvent::SampicEvent(std::shared_ptr<EventStruct> data,
+namespace {
+
+struct EventStructPool {
+    std::mutex mutex;
+    std::vector<EventStruct*> free_list;
+    std::size_t limit = 1024;
+
+    ~EventStructPool() {
+        for (auto* ptr : free_list) {
+            delete ptr;
+        }
+    }
+};
+
+EventStructPool& globalPool() {
+    static EventStructPool pool;
+    return pool;
+}
+
+} // namespace
+
+SampicEvent::EventPtr SampicEvent::makeEventStruct() {
+    return EventPtr(acquireEventStruct(), &SampicEvent::releaseEventStruct);
+}
+
+SampicEvent::SampicEvent(EventPtr data,
                          const SampicTimingBreakdown& timing,
                          std::chrono::steady_clock::time_point ts)
-    : data_(std::move(data)), timing_(timing), timestamp_(ts) {}
+    : data_(data ? std::move(data) : makeEventStruct()),
+      timing_(timing),
+      timestamp_(ts) {}
 
 SampicEvent::~SampicEvent() = default;
 
@@ -19,12 +48,16 @@ std::chrono::steady_clock::time_point SampicEvent::timestamp() const {
     return timestamp_;
 }
 
-void SampicEvent::setData(const std::shared_ptr<EventStruct>& data) {
-    data_ = data;
+void SampicEvent::setData(EventPtr data) {
+    data_ = data ? std::move(data) : makeEventStruct();
 }
 
-const std::shared_ptr<EventStruct>& SampicEvent::data() const {
-    return data_;
+EventStruct* SampicEvent::data() {
+    return data_.get();
+}
+
+const EventStruct* SampicEvent::data() const {
+    return data_.get();
 }
 
 void SampicEvent::setTiming(const SampicTimingBreakdown& timing) {
@@ -75,4 +108,32 @@ std::string SampicEvent::summary() const {
 void SampicEvent::finalize() {
     // No-op by default.
     // Can be overridden if additional derived metadata or validation is needed.
+}
+
+EventStruct* SampicEvent::acquireEventStruct() {
+    auto& pool = globalPool();
+    std::lock_guard<std::mutex> lock(pool.mutex);
+    if (!pool.free_list.empty()) {
+        EventStruct* ptr = pool.free_list.back();
+        pool.free_list.pop_back();
+        return ptr;
+    }
+    return new EventStruct{};
+}
+
+void SampicEvent::releaseEventStruct(EventStruct* ptr) {
+    if (!ptr)
+        return;
+
+    auto& pool = globalPool();
+    std::lock_guard<std::mutex> lock(pool.mutex);
+    if (pool.free_list.size() >= pooledEventLimit()) {
+        delete ptr;
+    } else {
+        pool.free_list.push_back(ptr);
+    }
+}
+
+std::size_t SampicEvent::pooledEventLimit() {
+    return globalPool().limit;
 }
