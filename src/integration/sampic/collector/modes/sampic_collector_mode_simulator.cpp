@@ -50,6 +50,9 @@ bool SampicCollectorModeSimulator::collect()
     const double event_span_ns =
         hit_time_step_ns_ * static_cast<double>(hits_per_event > 0 ? (hits_per_event - 1) : 0);
 
+    spdlog::trace("SampicSimulator: collect() - events_per_cycle={}, hits_per_event={}",
+                  events_per_cycle, hits_per_event);
+
     for (std::uint32_t ev_idx = 0; ev_idx < events_per_cycle; ++ev_idx) {
         auto ev_data = SampicEvent::makeEventStruct();
         auto* ev_struct = ev_data.get();

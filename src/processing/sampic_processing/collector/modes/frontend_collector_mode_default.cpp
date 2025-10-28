@@ -54,6 +54,8 @@ bool FrontendCollectorModeDefault::collect()
     if (new_events.empty())
         return true;
 
+    spdlog::trace("FrontendCollector: retrieved {} SampicEvents from buffer", new_events.size());
+
     last_timestamp_ = new_events.back()->timestamp();
     const auto now = std::chrono::steady_clock::now();
 
