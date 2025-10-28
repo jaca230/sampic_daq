@@ -366,6 +366,8 @@ static INT compose_frontend_event(char* dest,
     if (!dest || !fev)
         return 0;
 
+    spdlog::trace("compose_frontend_event: FrontendEvent has {} banks", fev->numBanks());
+
     bk_init32(dest);
 
     size_t bank_index = 0;

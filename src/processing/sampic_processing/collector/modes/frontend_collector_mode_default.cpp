@@ -209,7 +209,12 @@ bool FrontendCollectorModeDefault::collect()
         emitted_events_.back()->addBank(collector_bank);
     }
 
+    spdlog::trace("FrontendCollector: pushing {} FrontendEvents to buffer (ready_groups.size={})",
+                  emitted_events_.size(), ready_groups_.size());
+
     for (const auto& fev : emitted_events_) {
+        spdlog::trace("FrontendCollector: pushing FrontendEvent with {} banks, {} hits",
+                      fev->numBanks(), fev->totalDataSize());
         frontend_buffer_.push(fev);
     }
 
