@@ -4,8 +4,7 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode.h"
 
 #include <array>
-#include <mutex>
-#include <vector>
+#include <cstddef>
 
 /**
  * @brief Software-only SAMPIC collector used for throughput testing.
@@ -25,7 +24,6 @@ public:
                                  void* eventBuffer,
                                  ML_Frame* mlFrames,
                                  const SampicCollectorConfig& cfg);
-    ~SampicCollectorModeSimulator();
 
     bool collect() override;
 
@@ -38,8 +36,9 @@ private:
 
     void prepareWaveformTemplate();
     std::shared_ptr<EventStruct> acquireEventStruct();
-    void releaseEventStruct(EventStruct* ptr);
+    static void releaseEventStruct(EventStruct* ptr);
     std::uint32_t clampWaveformLength(std::uint32_t requested) const;
+    static std::size_t pooledEventLimit();
 
     const SampicCollectorModeSimulatorConfig& mode_cfg_;
     double current_event_time_ns_{0.0};
@@ -50,8 +49,6 @@ private:
     double tot_value_ns_{120.0};
     std::array<unsigned short, kMaxWaveformSamples> raw_waveform_template_{};
     std::array<float, kMaxWaveformSamples> corrected_waveform_template_{};
-    std::mutex pool_mutex_;
-    std::vector<EventStruct*> event_pool_;
 };
 
 #endif // SAMPIC_COLLECTOR_MODE_SIMULATOR_H

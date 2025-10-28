@@ -9,6 +9,30 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <mutex>
+#include <vector>
+
+namespace {
+
+struct EventStructPool {
+    std::mutex mutex;
+    std::vector<EventStruct*> free_list;
+
+    ~EventStructPool() {
+        for (auto* ptr : free_list) {
+            delete ptr;
+        }
+    }
+};
+
+EventStructPool& globalEventStructPool() {
+    static EventStructPool pool;
+    return pool;
+}
+
+constexpr std::size_t kDefaultPooledEvents = 1024;
+
+} // namespace
 
 SampicCollectorModeSimulator::SampicCollectorModeSimulator(SampicEventBuffer& buffer,
                                                            CrateInfoStruct& info,
@@ -40,15 +64,6 @@ SampicCollectorModeSimulator::SampicCollectorModeSimulator(SampicEventBuffer& bu
                  baseline_level_);
 }
 
-SampicCollectorModeSimulator::~SampicCollectorModeSimulator()
-{
-    std::lock_guard<std::mutex> lock(pool_mutex_);
-    for (auto* ptr : event_pool_) {
-        delete ptr;
-    }
-    event_pool_.clear();
-}
-
 bool SampicCollectorModeSimulator::collect()
 {
     const std::uint32_t events_per_cycle = std::max<std::uint32_t>(1, mode_cfg_.events_per_cycle);
@@ -66,7 +81,6 @@ bool SampicCollectorModeSimulator::collect()
 
         for (std::uint32_t hit_idx = 0; hit_idx < hits_per_event; ++hit_idx) {
             auto& hit = ev_data->Hit[hit_idx];
-            std::memset(&hit, 0, sizeof(HitStruct));
             populateHit(hit, hit_idx, waveform_length, ev_idx, event_start_time_ns);
         }
         ev_data->NbOfHitsInEvent = static_cast<int>(hits_per_event);
@@ -132,6 +146,7 @@ void SampicCollectorModeSimulator::populateHit(HitStruct& hit,
     adv.FirstTriggerPositionCell = 0;
     adv.TriggerPositionCell = 0;
     adv.PhysicalCell0TimeStamp = hit.TimeInstant;
+    adv.TimePhysicalIndex = 0;
     const double max_int = static_cast<double>(std::numeric_limits<int>::max());
     const double ts_a = std::fmod(clamped_time_ns, max_int);
     adv.SampicTimeStampA = static_cast<int>(ts_a);
@@ -176,10 +191,11 @@ std::shared_ptr<EventStruct> SampicCollectorModeSimulator::acquireEventStruct()
 {
     EventStruct* raw = nullptr;
     {
-        std::lock_guard<std::mutex> lock(pool_mutex_);
-        if (!event_pool_.empty()) {
-            raw = event_pool_.back();
-            event_pool_.pop_back();
+        auto& pool = globalEventStructPool();
+        std::lock_guard<std::mutex> lock(pool.mutex);
+        if (!pool.free_list.empty()) {
+            raw = pool.free_list.back();
+            pool.free_list.pop_back();
         }
     }
 
@@ -191,9 +207,7 @@ std::shared_ptr<EventStruct> SampicCollectorModeSimulator::acquireEventStruct()
     raw->TriggerData.NbOfTriggers = 0;
     raw->TriggerData.RawDataSize = 0;
 
-    return std::shared_ptr<EventStruct>(raw, [this](EventStruct* ptr) {
-        releaseEventStruct(ptr);
-    });
+    return std::shared_ptr<EventStruct>(raw, &SampicCollectorModeSimulator::releaseEventStruct);
 }
 
 void SampicCollectorModeSimulator::releaseEventStruct(EventStruct* ptr)
@@ -201,8 +215,13 @@ void SampicCollectorModeSimulator::releaseEventStruct(EventStruct* ptr)
     if (!ptr)
         return;
 
-    std::lock_guard<std::mutex> lock(pool_mutex_);
-    event_pool_.push_back(ptr);
+    auto& pool = globalEventStructPool();
+    std::lock_guard<std::mutex> lock(pool.mutex);
+    if (pool.free_list.size() >= pooledEventLimit()) {
+        delete ptr;
+    } else {
+        pool.free_list.push_back(ptr);
+    }
 }
 
 std::uint32_t SampicCollectorModeSimulator::clampWaveformLength(std::uint32_t requested) const
@@ -210,4 +229,9 @@ std::uint32_t SampicCollectorModeSimulator::clampWaveformLength(std::uint32_t re
     return std::min<std::uint32_t>(
         std::max<std::uint32_t>(1, requested),
         kMaxWaveformSamples);
+}
+
+std::size_t SampicCollectorModeSimulator::pooledEventLimit()
+{
+    return kDefaultPooledEvents;
 }
