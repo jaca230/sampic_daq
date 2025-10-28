@@ -5,25 +5,7 @@ SampicEventBuffer::SampicEventBuffer(size_t capacity)
     : capacity_(capacity),
       last_timestamp_(std::chrono::steady_clock::time_point::min()) {}
 
-void SampicEventBuffer::push(const std::shared_ptr<SampicEvent>& ev) {
-    if (!ev) return;
-
-    const auto ts = ev->timestamp();  // Get timestamp outside lock
-
-    std::unique_lock<std::mutex> lock(mtx_);
-
-    if (buffer_.size() >= capacity_) {
-        buffer_.pop_front();
-    }
-
-    buffer_.emplace_back(ev, ts);
-    last_timestamp_ = ts;
-
-    lock.unlock();  // Unlock before notify for better performance
-    cv_.notify_all();
-}
-
-void SampicEventBuffer::push(std::shared_ptr<SampicEvent>&& ev) {
+void SampicEventBuffer::push(std::unique_ptr<SampicEvent> ev) {
     if (!ev) return;
 
     const auto ts = ev->timestamp();  // Get timestamp outside lock
@@ -41,12 +23,12 @@ void SampicEventBuffer::push(std::shared_ptr<SampicEvent>&& ev) {
     cv_.notify_all();
 }
 
-std::optional<std::shared_ptr<SampicEvent>> SampicEventBuffer::pop() {
+std::unique_ptr<SampicEvent> SampicEventBuffer::pop() {
     std::unique_lock<std::mutex> lock(mtx_);
     if (buffer_.empty())
-        return std::nullopt;
+        return nullptr;
 
-    auto ev = buffer_.front().first;
+    auto ev = std::move(buffer_.front().first);
     buffer_.pop_front();
 
     // Warn if we are discarding an event that was never consumed
@@ -60,22 +42,23 @@ std::optional<std::shared_ptr<SampicEvent>> SampicEventBuffer::pop() {
     return ev;
 }
 
-std::optional<std::shared_ptr<SampicEvent>> SampicEventBuffer::latest() {
+SampicEvent* SampicEventBuffer::latest() {
     std::unique_lock<std::mutex> lock(mtx_);
     if (buffer_.empty())
-        return std::nullopt;
-    return buffer_.back().first;
+        return nullptr;
+    return buffer_.back().first.get();
 }
 
-std::vector<std::shared_ptr<SampicEvent>>
+std::vector<SampicEvent*>
 SampicEventBuffer::getSince(std::chrono::steady_clock::time_point t) {
     std::unique_lock<std::mutex> lock(mtx_);
-    std::vector<std::shared_ptr<SampicEvent>> result;
+    std::vector<SampicEvent*> result;
     result.reserve(buffer_.size());
 
     for (auto& [ev, ts] : buffer_) {
-        if (ts > t)
-            result.push_back(ev);
+        if (ts > t && ev) {
+            result.push_back(ev.get());
+        }
     }
     return result;
 }

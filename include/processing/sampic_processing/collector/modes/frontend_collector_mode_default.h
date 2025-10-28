@@ -29,7 +29,7 @@ public:
 private:
     struct PendingGroup {
         std::chrono::steady_clock::time_point created;
-        std::vector<std::shared_ptr<SampicEvent>> parents;  ///< References to contributing SampicEvents
+        std::vector<SampicEvent*> parents;  ///< Non-owning pointers to contributing SampicEvents
         std::vector<const HitStruct*> hits;                 ///< Direct pointers to hits (zero-copy)
     };
 

@@ -7,10 +7,10 @@
 #include <memory>
 
 /// Bank representing waveform and scalar data from multiple SampicEvents.
-/// Keeps SampicEvents alive and exposes zero-copy slices of their HitStructs.
+/// NOTE: Does not own the SampicEvents - caller must ensure they remain valid.
 class FrontendEventBankData : public FrontendEventBank {
 public:
-    FrontendEventBankData(std::vector<std::shared_ptr<SampicEvent>> parents,
+    FrontendEventBankData(const std::vector<SampicEvent*>& parents,
                           const std::vector<const HitStruct*>& hits);
 
     const uint8_t* data() const override { return nullptr; }  // multi-slice
@@ -19,7 +19,6 @@ public:
     const std::vector<std::pair<const uint8_t*, size_t>>& slices() const { return slices_; }
 
 private:
-    std::vector<std::shared_ptr<SampicEvent>> parents_;  ///< Keep SampicEvents alive
     std::vector<std::pair<const uint8_t*, size_t>> slices_;
     size_t total_size_{0};
 };

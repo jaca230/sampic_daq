@@ -22,19 +22,16 @@ public:
     explicit SampicEventBuffer(size_t capacity);
 
     /** @brief Add a new event to the buffer. Drops oldest if full. */
-    void push(const std::shared_ptr<SampicEvent>& ev);
-
-    /** @brief Add a new event to the buffer (move semantics). Drops oldest if full. */
-    void push(std::shared_ptr<SampicEvent>&& ev);
+    void push(std::unique_ptr<SampicEvent> ev);
 
     /** @brief Retrieve and remove the oldest event, if available. */
-    std::optional<std::shared_ptr<SampicEvent>> pop();
+    std::unique_ptr<SampicEvent> pop();
 
     /** @brief Get a reference to the most recent event without removing it. */
-    std::optional<std::shared_ptr<SampicEvent>> latest();
+    SampicEvent* latest();
 
-    /** @brief Retrieve all events newer than a specified timestamp. */
-    std::vector<std::shared_ptr<SampicEvent>>
+    /** @brief Retrieve all events newer than a specified timestamp (non-owning pointers). */
+    std::vector<SampicEvent*>
     getSince(std::chrono::steady_clock::time_point t);
 
     /** @brief Check if newer events exist after a given timestamp. */
@@ -60,7 +57,7 @@ private:
     size_t capacity_;
     mutable std::mutex mtx_;
     std::condition_variable cv_;
-    std::deque<std::pair<std::shared_ptr<SampicEvent>,
+    std::deque<std::pair<std::unique_ptr<SampicEvent>,
                          std::chrono::steady_clock::time_point>> buffer_;
     std::chrono::steady_clock::time_point last_timestamp_;
 };

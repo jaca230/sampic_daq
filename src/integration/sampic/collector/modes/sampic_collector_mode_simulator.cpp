@@ -72,8 +72,8 @@ bool SampicCollectorModeSimulator::collect()
         timing.decode = std::chrono::microseconds(0);
         timing.total = timing.prepare + timing.read + timing.decode;
 
-        // Create SampicEvent directly with data (reduces one shared_ptr operation)
-        auto event = std::make_shared<SampicEvent>(std::move(ev_data), timing, std::chrono::steady_clock::now());
+        // Create SampicEvent directly with data using unique_ptr (no refcount overhead)
+        auto event = std::make_unique<SampicEvent>(std::move(ev_data), timing, std::chrono::steady_clock::now());
 
         buffer_.push(std::move(event));
 

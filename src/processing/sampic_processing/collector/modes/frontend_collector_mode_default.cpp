@@ -81,8 +81,8 @@ bool FrontendCollectorModeDefault::collect()
                     group.hits.emplace_back(hit);
 
                     if (std::none_of(group.parents.begin(), group.parents.end(),
-                                     [&](const std::shared_ptr<SampicEvent>& p) {
-                                         return p.get() == ev.get();
+                                     [&](SampicEvent* p) {
+                                         return p == ev;
                                      })) {
                         group.parents.emplace_back(ev);
                     }

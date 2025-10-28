@@ -10,9 +10,8 @@
  * after CorrectedDataSamples, up to but not including AdvancedParams.
  */
 FrontendEventBankData::FrontendEventBankData(
-    std::vector<std::shared_ptr<SampicEvent>> parents,
+    const std::vector<SampicEvent*>& parents,
     const std::vector<const HitStruct*>& hits)
-    : parents_(std::move(parents))
 {
     bank_prefix_ = "AD";
     slices_.reserve(hits.size() * 2);  ///< header + corrected section

@@ -90,9 +90,9 @@ bool SampicCollectorModeDefault::collect()
 
     if (errCode == SAMPIC256CH_Success && numberOfHits > 0)
     {
-        auto ev = std::make_shared<SampicEvent>(
+        auto ev = std::make_unique<SampicEvent>(
             std::move(ev_data), timing, std::chrono::steady_clock::now());
-        buffer_.push(ev);
+        buffer_.push(std::move(ev));
 
         spdlog::debug("SAMPIC default mode: collected {} hits "
                       "(prepare={}us, read={}us, decode={}us, total={}us)",

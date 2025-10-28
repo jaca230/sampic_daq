@@ -50,7 +50,7 @@ public:
      */
     FrontendEventBankEventTiming(std::chrono::steady_clock::time_point fe_ts,
                                  uint32_t nhits,
-                                 const std::vector<std::shared_ptr<SampicEvent>>& parents,
+                                 const std::vector<SampicEvent*>& parents,
                                  const std::string& prefix = "AT");
 
     /** @brief Return pointer to serialized record data. */
