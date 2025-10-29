@@ -410,7 +410,7 @@ static void event_writer_loop()
                 spdlog::info("  rb_increment_wp: {:.2f} us", avg_rb_increment);
                 spdlog::info("  TOTAL:           {:.2f} us/event ({:.1f} kHz theoretical max)",
                             avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment,
-                            1000000.0 / (avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment));
+                            1000.0 / (avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment));
                 spdlog::info("  FrontendEventBuffer: {} events queued", buffer_size);
 
                 // CRITICAL: Check if buffer is often empty
@@ -418,6 +418,12 @@ static void event_writer_loop()
                     spdlog::warn("  ^^^ BOTTLENECK: Buffer nearly empty ({} events) - PRODUCER is slow! (Collector not producing fast enough)", buffer_size);
                 } else if (buffer_size > 5000) {
                     spdlog::warn("  ^^^ BOTTLENECK: Buffer very full ({} events) - CONSUMER is slow! (event_writer_loop not draining fast enough)", buffer_size);
+                }
+
+                // Also print collector production rate for comparison
+                if (runtime.collector) {
+                    // Force diagnostics print by calling consumed which triggers maybe_log
+                    runtime.collector->diagnostics().consumed(0, buffer_size);
                 }
             }
 
