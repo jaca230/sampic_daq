@@ -299,6 +299,15 @@ static void event_writer_loop()
 
     const int rbh = get_event_rbh(thread_index);
 
+    // Timing statistics
+    uint64_t events_processed = 0;
+    uint64_t total_wait_pop_us = 0;
+    uint64_t total_rb_get_wp_us = 0;
+    uint64_t total_compose_us = 0;
+    uint64_t total_rb_increment_us = 0;
+    uint64_t rb_get_wp_retries = 0;
+    auto last_stats_print = std::chrono::steady_clock::now();
+
     while (is_readout_thread_enabled() && !g_event_writer_stop.load()) {
         if (!readout_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -311,14 +320,20 @@ static void event_writer_loop()
             continue;
         }
 
+        // Time: waitAndPop
+        auto t0 = std::chrono::steady_clock::now();
         auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(10));
+        auto t1 = std::chrono::steady_clock::now();
         if (!fev) {
             continue;
         }
+        total_wait_pop_us += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 
         EVENT_HEADER* pevent = nullptr;
         int status = DB_TIMEOUT;
 
+        // Time: rb_get_wp (with retries)
+        auto t2 = std::chrono::steady_clock::now();
         while (!g_event_writer_stop.load()) {
             status = rb_get_wp(rbh, (void**)&pevent, 0);
             if (status == DB_SUCCESS)
@@ -327,6 +342,7 @@ static void event_writer_loop()
             if (status == DB_TIMEOUT) {
                 if (!is_readout_thread_enabled() || g_event_writer_stop.load())
                     break;
+                rb_get_wp_retries++;
                 std::this_thread::yield();  // Yield instead of sleeping
                 continue;
             }
@@ -335,6 +351,8 @@ static void event_writer_loop()
             pevent = nullptr;
             break;
         }
+        auto t3 = std::chrono::steady_clock::now();
+        total_rb_get_wp_us += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
 
         if (!pevent) {
             spdlog::warn("event_writer_loop: dropping FrontendEvent due to ring buffer failure");
@@ -347,14 +365,55 @@ static void event_writer_loop()
                                     0,
                                     &equipment[0].serial_number);
 
+        // Time: compose_frontend_event (bank serialization)
+        auto t4 = std::chrono::steady_clock::now();
         auto* payload = reinterpret_cast<char*>(pevent + 1);
         const int total_size = compose_frontend_event(payload, fev, runtime);
         pevent->data_size = total_size;
+        auto t5 = std::chrono::steady_clock::now();
+        total_compose_us += std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4).count();
+
+        // Time: rb_increment_wp
+        auto t6 = std::chrono::steady_clock::now();
         rb_increment_wp(rbh, sizeof(EVENT_HEADER) + pevent->data_size);
+        auto t7 = std::chrono::steady_clock::now();
+        total_rb_increment_us += std::chrono::duration_cast<std::chrono::microseconds>(t7 - t6).count();
 
         runtime.lastEventTimestamp = fev->timestamp();
         runtime.collector->diagnostics().consumed(1,
                                                   runtime.collector->buffer().size());
+
+        events_processed++;
+
+        // Print timing stats every 10 seconds
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_print).count() >= 10) {
+            if (events_processed > 0) {
+                double avg_wait_pop = total_wait_pop_us / (double)events_processed;
+                double avg_rb_get_wp = total_rb_get_wp_us / (double)events_processed;
+                double avg_compose = total_compose_us / (double)events_processed;
+                double avg_rb_increment = total_rb_increment_us / (double)events_processed;
+                double avg_retries = rb_get_wp_retries / (double)events_processed;
+
+                spdlog::info("=== event_writer_loop timing (avg per event, {} events) ===", events_processed);
+                spdlog::info("  waitAndPop:      {:.2f} us", avg_wait_pop);
+                spdlog::info("  rb_get_wp:       {:.2f} us (avg {:.2f} retries)", avg_rb_get_wp, avg_retries);
+                spdlog::info("  compose_event:   {:.2f} us", avg_compose);
+                spdlog::info("  rb_increment_wp: {:.2f} us", avg_rb_increment);
+                spdlog::info("  TOTAL:           {:.2f} us/event ({:.1f} kHz theoretical max)",
+                            avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment,
+                            1000000.0 / (avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment));
+            }
+
+            // Reset counters
+            events_processed = 0;
+            total_wait_pop_us = 0;
+            total_rb_get_wp_us = 0;
+            total_compose_us = 0;
+            total_rb_increment_us = 0;
+            rb_get_wp_retries = 0;
+            last_stats_print = now;
+        }
     }
 
     signal_readout_thread_active(thread_index, FALSE);
