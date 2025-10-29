@@ -305,10 +305,13 @@ static void event_writer_loop()
     uint64_t total_rb_get_wp_us = 0;
     uint64_t total_compose_us = 0;
     uint64_t total_rb_increment_us = 0;
+    uint64_t total_loop_us = 0;  // Total wall-clock time for all iterations
     uint64_t rb_get_wp_retries = 0;
     auto last_stats_print = std::chrono::steady_clock::now();
+    auto loop_start_time = last_stats_print;  // Track start of timing period
 
     while (is_readout_thread_enabled() && !g_event_writer_stop.load()) {
+        auto iteration_start = std::chrono::steady_clock::now();
         if (!readout_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -383,6 +386,10 @@ static void event_writer_loop()
         runtime.collector->diagnostics().consumed(1,
                                                   runtime.collector->buffer().size());
 
+        // Track end of iteration for wall-clock time
+        auto iteration_end = std::chrono::steady_clock::now();
+        total_loop_us += std::chrono::duration_cast<std::chrono::microseconds>(iteration_end - iteration_start).count();
+
         events_processed++;
 
         // Print timing stats every 10 seconds
@@ -393,6 +400,7 @@ static void event_writer_loop()
                 double avg_rb_get_wp = total_rb_get_wp_us / (double)events_processed;
                 double avg_compose = total_compose_us / (double)events_processed;
                 double avg_rb_increment = total_rb_increment_us / (double)events_processed;
+                double avg_loop = total_loop_us / (double)events_processed;
                 double avg_retries = rb_get_wp_retries / (double)events_processed;
 
                 // Calculate actual event rate
@@ -402,15 +410,18 @@ static void event_writer_loop()
                 // Get buffer status
                 size_t buffer_size = runtime.collector->buffer().size();
 
+                double sum_measured = avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment;
+                double unaccounted = avg_loop - sum_measured;
+
                 spdlog::info("=== event_writer_loop timing ({} events in {:.1f}s = {:.1f} kHz) ===",
                             events_processed, elapsed_s, actual_rate_khz);
                 spdlog::info("  waitAndPop:      {:.2f} us", avg_wait_pop);
                 spdlog::info("  rb_get_wp:       {:.2f} us (avg {:.2f} retries)", avg_rb_get_wp, avg_retries);
                 spdlog::info("  compose_event:   {:.2f} us", avg_compose);
                 spdlog::info("  rb_increment_wp: {:.2f} us", avg_rb_increment);
-                spdlog::info("  TOTAL:           {:.2f} us/event ({:.1f} kHz theoretical max)",
-                            avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment,
-                            1000.0 / (avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment));
+                spdlog::info("  Measured sum:    {:.2f} us/event", sum_measured);
+                spdlog::info("  ACTUAL (wall):   {:.2f} us/event ({:.1f} kHz actual max)", avg_loop, 1000.0 / avg_loop);
+                spdlog::info("  UNACCOUNTED:     {:.2f} us/event ({:.1f}% overhead!)", unaccounted, (unaccounted / avg_loop) * 100.0);
                 spdlog::info("  FrontendEventBuffer: {} events queued", buffer_size);
 
                 // CRITICAL: Check if buffer is often empty
@@ -433,8 +444,10 @@ static void event_writer_loop()
             total_rb_get_wp_us = 0;
             total_compose_us = 0;
             total_rb_increment_us = 0;
+            total_loop_us = 0;
             rb_get_wp_retries = 0;
             last_stats_print = now;
+            loop_start_time = now;
         }
     }
 

@@ -34,8 +34,8 @@ void FrontendDiagnostics::maybe_log_locked(std::chrono::steady_clock::time_point
                                            size_t buffer_size) {
     const auto warn_threshold = cfg_.buffer_warning_threshold;
     if (warn_threshold > 0 && buffer_size >= warn_threshold) {
-        spdlog::warn("Frontend buffer occupancy high: {} events queued (threshold {})",
-                     buffer_size, warn_threshold);
+        //spdlog::warn("Frontend buffer occupancy high: {} events queued (threshold {})",
+        //             buffer_size, warn_threshold);
     }
 
     const auto interval = std::chrono::milliseconds(cfg_.log_interval_ms);
