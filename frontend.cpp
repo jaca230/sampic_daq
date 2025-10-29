@@ -395,7 +395,15 @@ static void event_writer_loop()
                 double avg_rb_increment = total_rb_increment_us / (double)events_processed;
                 double avg_retries = rb_get_wp_retries / (double)events_processed;
 
-                spdlog::info("=== event_writer_loop timing (avg per event, {} events) ===", events_processed);
+                // Calculate actual event rate
+                double elapsed_s = std::chrono::duration<double>(now - last_stats_print).count();
+                double actual_rate_khz = (events_processed / elapsed_s) / 1000.0;
+
+                // Get buffer status
+                size_t buffer_size = runtime.collector->buffer().size();
+
+                spdlog::info("=== event_writer_loop timing ({} events in {:.1f}s = {:.1f} kHz) ===",
+                            events_processed, elapsed_s, actual_rate_khz);
                 spdlog::info("  waitAndPop:      {:.2f} us", avg_wait_pop);
                 spdlog::info("  rb_get_wp:       {:.2f} us (avg {:.2f} retries)", avg_rb_get_wp, avg_retries);
                 spdlog::info("  compose_event:   {:.2f} us", avg_compose);
@@ -403,6 +411,14 @@ static void event_writer_loop()
                 spdlog::info("  TOTAL:           {:.2f} us/event ({:.1f} kHz theoretical max)",
                             avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment,
                             1000000.0 / (avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment));
+                spdlog::info("  FrontendEventBuffer: {} events queued", buffer_size);
+
+                // CRITICAL: Check if buffer is often empty
+                if (buffer_size < 10) {
+                    spdlog::warn("  ^^^ BOTTLENECK: Buffer nearly empty ({} events) - PRODUCER is slow! (Collector not producing fast enough)", buffer_size);
+                } else if (buffer_size > 5000) {
+                    spdlog::warn("  ^^^ BOTTLENECK: Buffer very full ({} events) - CONSUMER is slow! (event_writer_loop not draining fast enough)", buffer_size);
+                }
             }
 
             // Reset counters

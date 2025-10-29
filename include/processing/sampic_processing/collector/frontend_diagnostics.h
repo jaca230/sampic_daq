@@ -29,6 +29,7 @@ private:
     uint64_t produced_events_ = 0;
     uint64_t produced_hits_ = 0;
     uint64_t consumed_events_ = 0;
+    uint64_t last_log_produced_events_ = 0;
 
     std::mutex mutex_;
 };
