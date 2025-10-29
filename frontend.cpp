@@ -311,7 +311,7 @@ static void event_writer_loop()
             continue;
         }
 
-        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(100));
+        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(10));
         if (!fev) {
             continue;
         }
@@ -327,7 +327,7 @@ static void event_writer_loop()
             if (status == DB_TIMEOUT) {
                 if (!is_readout_thread_enabled() || g_event_writer_stop.load())
                     break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                std::this_thread::yield();  // Yield instead of sleeping
                 continue;
             }
 
