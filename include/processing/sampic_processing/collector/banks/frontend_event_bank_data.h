@@ -16,6 +16,13 @@ public:
     const uint8_t* data() const override { return nullptr; }  // multi-slice
     size_t size() const override { return total_size_; }
 
+    void writeTo(uint8_t* dest) const override {
+        for (const auto& [ptr, len] : slices_) {
+            std::memcpy(dest, ptr, len);
+            dest += len;
+        }
+    }
+
     const std::vector<std::pair<const uint8_t*, size_t>>& slices() const { return slices_; }
 
 private:

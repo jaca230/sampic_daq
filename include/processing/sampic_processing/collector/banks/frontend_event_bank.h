@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include <cstddef>
+#include <cstring>
 #include <stdexcept>
 
 /// Base class for all frontend event banks.
@@ -32,6 +33,15 @@ public:
 
     /// Total size in bytes of serialized data
     virtual size_t size() const = 0;
+
+    /// Write bank data to destination buffer (optimized for each bank type)
+    /// Default implementation does single memcpy; overridden for multi-slice banks
+    virtual void writeTo(uint8_t* dest) const {
+        const uint8_t* src = data();
+        if (src) {
+            std::memcpy(dest, src, size());
+        }
+    }
 
 protected:
     char bank_prefix_[3] = {'X', 'X', '\0'};  ///< 2-char prefix + null terminator

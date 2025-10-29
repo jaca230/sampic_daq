@@ -380,19 +380,9 @@ static INT compose_frontend_event(char* dest,
         bk_create(dest, bank_name.c_str(), TID_UINT8, (void**)&pdata);
         uint8_t* const pstart = pdata;
 
-        if (const auto* multi = dynamic_cast<const FrontendEventBankData*>(bank)) {
-            for (const auto& [ptr, len] : multi->slices()) {
-                std::memcpy(pdata, ptr, len);
-                pdata += len;
-            }
-        } else {
-            const uint8_t* src = bank->data();
-            const size_t len = bank->size();
-            if (src && len > 0) {
-                std::memcpy(pdata, src, len);
-                pdata += len;
-            }
-        }
+        // Optimized: Use virtual writeTo() instead of dynamic_cast + branching
+        bank->writeTo(pdata);
+        pdata += bank->size();
 
         bk_close(dest, pdata);
         spdlog::trace("FrontendEvent bank[{}] → wrote {} ({} bytes)",

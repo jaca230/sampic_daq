@@ -111,10 +111,14 @@ void Runtime::reset() {
 }
 
 std::string Runtime::makeBankName(const std::string& prefix, int idx2d) const {
-  std::string p = prefix.empty() ? "XX" : prefix.substr(0, 2);
-  char buffer[8];
-  std::snprintf(buffer, sizeof(buffer), "%s%02d", p.c_str(), idx2d);
-  return std::string(buffer);
+  // Optimized: avoid substr and snprintf overhead
+  char buffer[5];  // "AB00\0"
+  buffer[0] = prefix.empty() ? 'X' : prefix[0];
+  buffer[1] = (prefix.size() < 2) ? 'X' : prefix[1];
+  buffer[2] = '0' + (idx2d / 10);
+  buffer[3] = '0' + (idx2d % 10);
+  buffer[4] = '\0';
+  return std::string(buffer, 4);  // Don't include null terminator
 }
 
 std::string Runtime::makeBankName(const std::string& prefix) const {
