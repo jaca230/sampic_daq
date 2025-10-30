@@ -325,7 +325,7 @@ static void event_writer_loop()
 
         // Time: waitAndPop
         auto t0 = std::chrono::steady_clock::now();
-        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(10));
+        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(1));  // 1ms instead of 10ms!
         auto t1 = std::chrono::steady_clock::now();
         if (!fev) {
             continue;
@@ -383,8 +383,6 @@ static void event_writer_loop()
         total_rb_increment_us += std::chrono::duration_cast<std::chrono::microseconds>(t7 - t6).count();
 
         runtime.lastEventTimestamp = fev->timestamp();
-        runtime.collector->diagnostics().consumed(1,
-                                                  runtime.collector->buffer().size());
 
         // Track end of iteration for wall-clock time
         auto iteration_end = std::chrono::steady_clock::now();
@@ -429,12 +427,6 @@ static void event_writer_loop()
                     spdlog::warn("  ^^^ BOTTLENECK: Buffer nearly empty ({} events) - PRODUCER is slow! (Collector not producing fast enough)", buffer_size);
                 } else if (buffer_size > 5000) {
                     spdlog::warn("  ^^^ BOTTLENECK: Buffer very full ({} events) - CONSUMER is slow! (event_writer_loop not draining fast enough)", buffer_size);
-                }
-
-                // Also print collector production rate for comparison
-                if (runtime.collector) {
-                    // Force diagnostics print by calling consumed which triggers maybe_log
-                    runtime.collector->diagnostics().consumed(0, buffer_size);
                 }
             }
 
