@@ -140,6 +140,25 @@ if(NOT FTD2XX_LIB_PATH)
 endif()
 get_filename_component(FTD2XX_LIB_DIR "${FTD2XX_LIB_PATH}" DIRECTORY)
 
+# Create libftd2xx.so symlink if needed (before defining imported targets)
+get_filename_component(FTD2XX_BASENAME "${FTD2XX_LIB_PATH}" NAME)
+if(NOT FTD2XX_BASENAME STREQUAL "libftd2xx.so")
+  set(FTD2XX_SYMLINK "${FTD2XX_LIB_DIR}/libftd2xx.so")
+  if(NOT EXISTS "${FTD2XX_SYMLINK}")
+    message(STATUS "Creating symlink: libftd2xx.so -> ${FTD2XX_BASENAME}")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E create_symlink "${FTD2XX_BASENAME}" "libftd2xx.so"
+      WORKING_DIRECTORY "${FTD2XX_LIB_DIR}"
+      RESULT_VARIABLE SYMLINK_RESULT
+    )
+    if(NOT SYMLINK_RESULT EQUAL 0)
+      message(WARNING "Failed to create libftd2xx.so symlink. Build may fail.")
+    endif()
+  endif()
+  # Update FTD2XX_LIB_PATH to point to the symlink for proper linking
+  set(FTD2XX_LIB_PATH "${FTD2XX_SYMLINK}")
+endif()
+
 # Imported vendor-shipped shared libraries
 add_library(lpdevC SHARED IMPORTED GLOBAL)
 set_target_properties(lpdevC PROPERTIES
@@ -241,21 +260,5 @@ set_target_properties(sampic_frontend PROPERTIES
   BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
   INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
 )
-
-if(FTD2XX_LIB_PATH)
-  get_filename_component(FTD2XX_BASENAME "${FTD2XX_LIB_PATH}" NAME)
-  if(FTD2XX_LIB_DIR AND NOT FTD2XX_BASENAME STREQUAL "libftd2xx.so")
-    set(FTD2XX_SYMLINK "${FTD2XX_LIB_DIR}/libftd2xx.so")
-    add_custom_command(
-      OUTPUT "${FTD2XX_SYMLINK}"
-      COMMAND ${CMAKE_COMMAND} -E create_symlink "${FTD2XX_BASENAME}" "libftd2xx.so"
-      WORKING_DIRECTORY "${FTD2XX_LIB_DIR}"
-      DEPENDS "${FTD2XX_LIB_PATH}"
-      COMMENT "Ensuring libftd2xx.so -> ${FTD2XX_BASENAME} symlink"
-      VERBATIM)
-    add_custom_target(ftd2xx_symlink ALL DEPENDS "${FTD2XX_SYMLINK}")
-    add_dependencies(sampic_frontend ftd2xx_symlink)
-  endif()
-endif()
 
 install(TARGETS sampic_frontend DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")

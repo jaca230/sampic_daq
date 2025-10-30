@@ -1,5 +1,6 @@
 #include "integration/sampic/collector/sampic_event.h"
 #include <spdlog/fmt/fmt.h>
+#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -121,7 +122,9 @@ EventStruct* SampicEvent::acquireEventStruct() {
     if (!pool.free_list.empty()) {
         EventStruct* ptr = pool.free_list.back();
         pool.free_list.pop_back();
-        // Don't memset - reuse existing memory as-is
+        // MUST zero-initialize for hardware decode (SAMPIC256CH_DecodeEvent expects clean structure)
+        // Simulator mode can skip this, but hardware mode requires it to avoid stale data
+        std::memset(ptr, 0, sizeof(EventStruct));
         return ptr;
     }
     // Use malloc + placement new to avoid memset
@@ -129,7 +132,8 @@ EventStruct* SampicEvent::acquireEventStruct() {
     if (!mem) {
         throw std::bad_alloc();
     }
-    // Don't initialize - let simulator populate the fields
+    // MUST zero-initialize for hardware decode - SAMPIC library functions assume zeroed structure
+    std::memset(mem, 0, sizeof(EventStruct));
     return static_cast<EventStruct*>(mem);
 }
 
