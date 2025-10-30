@@ -54,8 +54,6 @@ bool FrontendCollectorModeDefault::collect()
     if (new_events.empty())
         return true;
 
-    spdlog::trace("FrontendCollector: retrieved {} SampicEvents from buffer", new_events.size());
-
     last_timestamp_ = new_events.back()->timestamp();
     const auto now = std::chrono::steady_clock::now();
 
@@ -232,23 +230,14 @@ bool FrontendCollectorModeDefault::collect()
         emitted_events_.back()->addBank(std::move(collector_bank));
     }
 
-    spdlog::trace("FrontendCollector: pushing {} FrontendEvents to buffer (ready_groups.size={})",
-                  emitted_events_.size(), ready_groups_.size());
-
     for (const auto& fev : emitted_events_) {
-        spdlog::trace("FrontendCollector: pushing FrontendEvent with {} banks, {} hits",
-                      fev->numBanks(), fev->totalDataSize());
         frontend_buffer_.push(fev);
     }
 
-    spdlog::debug("FrontendCollectorModeDefault: emitted {} FrontendEvents ({} total hits, {} µs total)",
-                  emitted_events_.size(), total_hits, total_us.count());
-    spdlog::trace("FrontendCollectorModeDefault timing: wait={}us, group={}us, finalize={}us, total={}us",
-                  wait_us.count(), group_build_us.count(), finalize_us.count(), total_us.count());
-
-    if (produced_events > 0) {
-        diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());
-    }
+    // Disabled for performance - diagnostics add mutex overhead
+    // if (produced_events > 0) {
+    //     diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());
+    // }
 
     sampic_buffer_.pruneUpTo(last_timestamp_);
 
