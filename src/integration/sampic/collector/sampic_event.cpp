@@ -1,11 +1,47 @@
 #include "integration/sampic/collector/sampic_event.h"
 #include <spdlog/fmt/fmt.h>
 #include <cstring>
+#include <mutex>
+#include <vector>
+
+namespace {
+
+class EventStructPool {
+public:
+    static EventStructPool& instance() {
+        static EventStructPool pool;
+        return pool;
+    }
+
+    EventStruct* acquire() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (!pool_.empty()) {
+            EventStruct* ptr = pool_.back();
+            pool_.pop_back();
+            return ptr;
+        }
+        return new EventStruct;
+    }
+
+    void release(EventStruct* ptr) {
+        if (!ptr) return;
+        std::lock_guard<std::mutex> lock(mtx_);
+        pool_.push_back(ptr);
+    }
+
+private:
+    std::mutex mtx_;
+    std::vector<EventStruct*> pool_;
+};
+
+} // namespace
+
+void SampicEvent::EventStructDeleter::operator()(EventStruct* ptr) const {
+    EventStructPool::instance().release(ptr);
+}
 
 SampicEvent::EventPtr SampicEvent::makeEventStruct() {
-    // Allocate without initialization (matching old pool behavior)
-    // Simulator/collector modes populate all required fields
-    return std::unique_ptr<EventStruct>(new EventStruct);
+    return EventPtr(EventStructPool::instance().acquire());
 }
 
 SampicEvent::SampicEvent(EventPtr data,

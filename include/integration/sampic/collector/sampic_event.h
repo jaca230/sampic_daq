@@ -21,7 +21,10 @@ struct SampicTimingBreakdown {
 /// Represents a single low-level SAMPIC event with timing metadata.
 class SampicEvent {
 public:
-    using EventPtr = std::unique_ptr<EventStruct>;
+    struct EventStructDeleter {
+        void operator()(EventStruct* ptr) const;
+    };
+    using EventPtr = std::unique_ptr<EventStruct, EventStructDeleter>;
 
     /// Allocate a zero-initialized EventStruct.
     static EventPtr makeEventStruct();
