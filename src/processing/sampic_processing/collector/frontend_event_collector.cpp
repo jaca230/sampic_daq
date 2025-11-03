@@ -1,5 +1,40 @@
 #include "processing/sampic_processing/collector/frontend_event_collector.h"
 #include "processing/sampic_processing/collector/modes/frontend_collector_mode_default.h"
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
+#endif
+
+namespace {
+#ifdef __linux__
+void configure_worker_thread(const char* name, int core_hint) {
+    pthread_t handle = pthread_self();
+    if (name) {
+        pthread_setname_np(handle, name);
+    }
+
+    if (core_hint >= 0) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        const long core_count = sysconf(_SC_NPROCESSORS_ONLN);
+        if (core_count > 0) {
+            CPU_SET(core_hint % core_count, &cpuset);
+            pthread_setaffinity_np(handle, sizeof(cpu_set_t), &cpuset);
+        }
+    }
+
+    sched_param sch{};
+    sch.sched_priority = 10;
+    if (pthread_setschedparam(handle, SCHED_FIFO, &sch) != 0) {
+        sch.sched_priority = 0;
+        pthread_setschedparam(handle, SCHED_OTHER, &sch);
+    }
+}
+#else
+void configure_worker_thread(const char*, int) {}
+#endif
+} // namespace
 
 FrontendEventCollector::FrontendEventCollector(
     SampicEventBuffer& sampic_buffer,
@@ -67,6 +102,7 @@ void FrontendEventCollector::stop() {
 }
 
 void FrontendEventCollector::run() {
+    configure_worker_thread("fe_collector", 1);
     spdlog::info("FrontendEventCollector started (mode={})", static_cast<int>(cfg_.mode));
 
     while (running_) {
