@@ -3,9 +3,9 @@
 #include <cstring>
 
 SampicEvent::EventPtr SampicEvent::makeEventStruct() {
-    // Allocate without initialization (matching old pool behavior)
-    // Simulator/collector modes populate all required fields
-    return std::unique_ptr<EventStruct>(new EventStruct);
+    auto ptr = std::unique_ptr<EventStruct>(new EventStruct);
+    std::memset(ptr.get(), 0, sizeof(EventStruct));  // zero-init reduces downstream patching cost
+    return ptr;
 }
 
 SampicEvent::SampicEvent(EventPtr data,
