@@ -241,10 +241,6 @@ bool FrontendCollectorModeDefault::collect()
         frontend_buffer_.push(fev);
     }
 
-    spdlog::debug("FrontendCollectorModeDefault: emitted {} FrontendEvents ({} total hits, {} µs total)",
-                  emitted_events_.size(), total_hits, total_us.count());
-    spdlog::trace("FrontendCollectorModeDefault timing: wait={}us, group={}us, finalize={}us, total={}us",
-                  wait_us.count(), group_build_us.count(), finalize_us.count(), total_us.count());
 
     if (produced_events > 0) {
         diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());

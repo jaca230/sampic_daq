@@ -271,18 +271,9 @@ INT read_sampic_event(char *pevent, INT)
     if (!fev)
         return 0;
 
-    const auto t_start = std::chrono::steady_clock::now();
-
     const int total_size = compose_frontend_event(pevent, fev, runtime);
     fev->markConsumed(true);
     runtime.lastEventTimestamp = fev->timestamp();
-
-    const auto t_end = std::chrono::steady_clock::now();
-    const auto dur_total_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
-
-    spdlog::debug("read_sampic_event: wrote 1 FrontendEvent, total MIDAS size={} B ({} µs)",
-                  total_size, dur_total_us);
 
     if (runtime.collector) {
         runtime.collector->diagnostics().consumed(1,
@@ -299,19 +290,7 @@ static void event_writer_loop()
 
     const int rbh = get_event_rbh(thread_index);
 
-    // Timing statistics
-    uint64_t events_processed = 0;
-    uint64_t total_wait_pop_us = 0;
-    uint64_t total_rb_get_wp_us = 0;
-    uint64_t total_compose_us = 0;
-    uint64_t total_rb_increment_us = 0;
-    uint64_t total_loop_us = 0;  // Total wall-clock time for all iterations
-    uint64_t rb_get_wp_retries = 0;
-    auto last_stats_print = std::chrono::steady_clock::now();
-    auto loop_start_time = last_stats_print;  // Track start of timing period
-
     while (is_readout_thread_enabled() && !g_event_writer_stop.load()) {
-        auto iteration_start = std::chrono::steady_clock::now();
         if (!readout_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -323,20 +302,14 @@ static void event_writer_loop()
             continue;
         }
 
-        // Time: waitAndPop
-        auto t0 = std::chrono::steady_clock::now();
         auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(10));
-        auto t1 = std::chrono::steady_clock::now();
         if (!fev) {
             continue;
         }
-        total_wait_pop_us += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 
         EVENT_HEADER* pevent = nullptr;
         int status = DB_TIMEOUT;
 
-        // Time: rb_get_wp (with retries)
-        auto t2 = std::chrono::steady_clock::now();
         while (!g_event_writer_stop.load()) {
             status = rb_get_wp(rbh, (void**)&pevent, 0);
             if (status == DB_SUCCESS)
@@ -345,8 +318,7 @@ static void event_writer_loop()
             if (status == DB_TIMEOUT) {
                 if (!is_readout_thread_enabled() || g_event_writer_stop.load())
                     break;
-                rb_get_wp_retries++;
-                std::this_thread::yield();  // Yield instead of sleeping
+                std::this_thread::yield();
                 continue;
             }
 
@@ -354,8 +326,6 @@ static void event_writer_loop()
             pevent = nullptr;
             break;
         }
-        auto t3 = std::chrono::steady_clock::now();
-        total_rb_get_wp_us += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
 
         if (!pevent) {
             spdlog::warn("event_writer_loop: dropping FrontendEvent due to ring buffer failure");
@@ -368,87 +338,15 @@ static void event_writer_loop()
                                     0,
                                     &equipment[0].serial_number);
 
-        // Time: compose_frontend_event (bank serialization)
-        auto t4 = std::chrono::steady_clock::now();
         auto* payload = reinterpret_cast<char*>(pevent + 1);
         const int total_size = compose_frontend_event(payload, fev, runtime);
         pevent->data_size = total_size;
-        auto t5 = std::chrono::steady_clock::now();
-        total_compose_us += std::chrono::duration_cast<std::chrono::microseconds>(t5 - t4).count();
 
-        // Time: rb_increment_wp
-        auto t6 = std::chrono::steady_clock::now();
         rb_increment_wp(rbh, sizeof(EVENT_HEADER) + pevent->data_size);
-        auto t7 = std::chrono::steady_clock::now();
-        total_rb_increment_us += std::chrono::duration_cast<std::chrono::microseconds>(t7 - t6).count();
 
         runtime.lastEventTimestamp = fev->timestamp();
         runtime.collector->diagnostics().consumed(1,
                                                   runtime.collector->buffer().size());
-
-        // Track end of iteration for wall-clock time
-        auto iteration_end = std::chrono::steady_clock::now();
-        total_loop_us += std::chrono::duration_cast<std::chrono::microseconds>(iteration_end - iteration_start).count();
-
-        events_processed++;
-
-        // Print timing stats every 10 seconds
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_print).count() >= 10) {
-            if (events_processed > 0) {
-                double avg_wait_pop = total_wait_pop_us / (double)events_processed;
-                double avg_rb_get_wp = total_rb_get_wp_us / (double)events_processed;
-                double avg_compose = total_compose_us / (double)events_processed;
-                double avg_rb_increment = total_rb_increment_us / (double)events_processed;
-                double avg_loop = total_loop_us / (double)events_processed;
-                double avg_retries = rb_get_wp_retries / (double)events_processed;
-
-                // Calculate actual event rate
-                double elapsed_s = std::chrono::duration<double>(now - last_stats_print).count();
-                double actual_rate_khz = (events_processed / elapsed_s) / 1000.0;
-
-                // Get buffer status
-                size_t buffer_size = runtime.collector->buffer().size();
-
-                double sum_measured = avg_wait_pop + avg_rb_get_wp + avg_compose + avg_rb_increment;
-                double unaccounted = avg_loop - sum_measured;
-
-                spdlog::info("=== event_writer_loop timing ({} events in {:.1f}s = {:.1f} kHz) ===",
-                            events_processed, elapsed_s, actual_rate_khz);
-                spdlog::info("  waitAndPop:      {:.2f} us", avg_wait_pop);
-                spdlog::info("  rb_get_wp:       {:.2f} us (avg {:.2f} retries)", avg_rb_get_wp, avg_retries);
-                spdlog::info("  compose_event:   {:.2f} us", avg_compose);
-                spdlog::info("  rb_increment_wp: {:.2f} us", avg_rb_increment);
-                spdlog::info("  Measured sum:    {:.2f} us/event", sum_measured);
-                spdlog::info("  ACTUAL (wall):   {:.2f} us/event ({:.1f} kHz actual max)", avg_loop, 1000.0 / avg_loop);
-                spdlog::info("  UNACCOUNTED:     {:.2f} us/event ({:.1f}% overhead!)", unaccounted, (unaccounted / avg_loop) * 100.0);
-                spdlog::info("  FrontendEventBuffer: {} events queued", buffer_size);
-
-                // CRITICAL: Check if buffer is often empty
-                if (buffer_size < 10) {
-                    spdlog::warn("  ^^^ BOTTLENECK: Buffer nearly empty ({} events) - PRODUCER is slow! (Collector not producing fast enough)", buffer_size);
-                } else if (buffer_size > 5000) {
-                    spdlog::warn("  ^^^ BOTTLENECK: Buffer very full ({} events) - CONSUMER is slow! (event_writer_loop not draining fast enough)", buffer_size);
-                }
-
-                // Also print collector production rate for comparison
-                if (runtime.collector) {
-                    // Force diagnostics print by calling consumed which triggers maybe_log
-                    runtime.collector->diagnostics().consumed(0, buffer_size);
-                }
-            }
-
-            // Reset counters
-            events_processed = 0;
-            total_wait_pop_us = 0;
-            total_rb_get_wp_us = 0;
-            total_compose_us = 0;
-            total_rb_increment_us = 0;
-            total_loop_us = 0;
-            rb_get_wp_retries = 0;
-            last_stats_print = now;
-            loop_start_time = now;
-        }
     }
 
     signal_readout_thread_active(thread_index, FALSE);

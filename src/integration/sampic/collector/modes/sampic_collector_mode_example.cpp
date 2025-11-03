@@ -84,14 +84,6 @@ bool SampicCollectorModeExample::collect()
         auto ev = std::make_unique<SampicEvent>(
             std::move(ev_data), timing, std::chrono::steady_clock::now());
         buffer_.push(std::move(ev));
-
-        spdlog::debug("Example mode: collected {} hits "
-                      "(prepare={}us, read={}us, decode={}us, total={}us)",
-                      numberOfHits,
-                      timing.prepare.count(),
-                      timing.read.count(),
-                      timing.decode.count(),
-                      timing.total.count());
     }
 
     return true;
