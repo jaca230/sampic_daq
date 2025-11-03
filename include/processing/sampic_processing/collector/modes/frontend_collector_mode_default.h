@@ -38,6 +38,7 @@ private:
     std::deque<PendingGroup> pending_groups_;
     std::vector<PendingGroup> ready_groups_;
     std::vector<std::shared_ptr<FrontendEvent>> emitted_events_;
+    mutable std::vector<SampicEvent*> parent_ptr_scratch_;
 
     std::chrono::steady_clock::time_point last_timestamp_{std::chrono::steady_clock::time_point::min()};
 
