@@ -113,6 +113,9 @@ bool FrontendCollectorModeDefault::collect()
                             ready_groups_.emplace_back(std::move(*it));
                             it = pending_groups_.erase(it);
                             continue;
+                        } else {
+                            // pending groups are time-ordered; newer groups will be closer in time
+                            break;
                         }
                     }
                     ++it;
