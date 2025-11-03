@@ -1,36 +1,11 @@
 #include "integration/sampic/collector/sampic_event.h"
 #include <spdlog/fmt/fmt.h>
-#include <mutex>
-#include <vector>
-
-namespace {
-
-struct EventStructPool {
-    std::mutex mutex;
-    std::vector<EventStruct*> free_list;
-    std::size_t limit = 1024;
-
-    EventStructPool() {
-        // Preallocate capacity to avoid vector reallocations
-        free_list.reserve(limit);
-    }
-
-    ~EventStructPool() {
-        for (auto* ptr : free_list) {
-            ::operator delete(ptr);
-        }
-    }
-};
-
-EventStructPool& globalPool() {
-    static EventStructPool pool;
-    return pool;
-}
-
-} // namespace
+#include <cstring>
 
 SampicEvent::EventPtr SampicEvent::makeEventStruct() {
-    return EventPtr(acquireEventStruct(), &SampicEvent::releaseEventStruct);
+    auto ptr = std::make_unique<EventStruct>();
+    std::memset(ptr.get(), 0, sizeof(EventStruct));
+    return ptr;
 }
 
 SampicEvent::SampicEvent(EventPtr data,
@@ -113,39 +88,4 @@ std::string SampicEvent::summary() const {
 void SampicEvent::finalize() {
     // No-op by default.
     // Can be overridden if additional derived metadata or validation is needed.
-}
-
-EventStruct* SampicEvent::acquireEventStruct() {
-    auto& pool = globalPool();
-    std::lock_guard<std::mutex> lock(pool.mutex);
-    if (!pool.free_list.empty()) {
-        EventStruct* ptr = pool.free_list.back();
-        pool.free_list.pop_back();
-        // Don't memset - reuse existing memory as-is
-        return ptr;
-    }
-    // Use malloc + placement new to avoid memset
-    void* mem = ::operator new(sizeof(EventStruct), std::nothrow);
-    if (!mem) {
-        throw std::bad_alloc();
-    }
-    // Don't initialize - let simulator populate the fields
-    return static_cast<EventStruct*>(mem);
-}
-
-void SampicEvent::releaseEventStruct(EventStruct* ptr) {
-    if (!ptr)
-        return;
-
-    auto& pool = globalPool();
-    std::lock_guard<std::mutex> lock(pool.mutex);
-    if (pool.free_list.size() >= pooledEventLimit()) {
-        ::operator delete(ptr);
-    } else {
-        pool.free_list.push_back(ptr);
-    }
-}
-
-std::size_t SampicEvent::pooledEventLimit() {
-    return globalPool().limit;
 }
