@@ -6,6 +6,13 @@ SampicEventBuffer::SampicEventBuffer(size_t capacity)
       last_timestamp_(std::chrono::steady_clock::time_point::min()) {}
 
 void SampicEventBuffer::push(std::unique_ptr<SampicEvent> ev) {
+    if (!ev) {
+        return;
+    }
+    push(std::shared_ptr<SampicEvent>(std::move(ev)));
+}
+
+void SampicEventBuffer::push(std::shared_ptr<SampicEvent> ev) {
     if (!ev) return;
 
     const auto ts = ev->timestamp();  // Get timestamp outside lock
@@ -23,12 +30,12 @@ void SampicEventBuffer::push(std::unique_ptr<SampicEvent> ev) {
     cv_.notify_all();
 }
 
-std::unique_ptr<SampicEvent> SampicEventBuffer::pop() {
+std::shared_ptr<SampicEvent> SampicEventBuffer::pop() {
     std::unique_lock<std::mutex> lock(mtx_);
     if (buffer_.empty())
         return nullptr;
 
-    auto ev = std::move(buffer_.front().first);
+    auto ev = buffer_.front().first;
     buffer_.pop_front();
 
     // Warn if we are discarding an event that was never consumed
@@ -42,22 +49,22 @@ std::unique_ptr<SampicEvent> SampicEventBuffer::pop() {
     return ev;
 }
 
-SampicEvent* SampicEventBuffer::latest() {
+std::shared_ptr<SampicEvent> SampicEventBuffer::latest() {
     std::unique_lock<std::mutex> lock(mtx_);
     if (buffer_.empty())
         return nullptr;
-    return buffer_.back().first.get();
+    return buffer_.back().first;
 }
 
-std::vector<SampicEvent*>
+std::vector<std::shared_ptr<SampicEvent>>
 SampicEventBuffer::getSince(std::chrono::steady_clock::time_point t) {
     std::unique_lock<std::mutex> lock(mtx_);
-    std::vector<SampicEvent*> result;
+    std::vector<std::shared_ptr<SampicEvent>> result;
     result.reserve(buffer_.size());
 
     for (auto& [ev, ts] : buffer_) {
         if (ts > t && ev) {
-            result.push_back(ev.get());
+            result.push_back(ev);
         }
     }
     return result;

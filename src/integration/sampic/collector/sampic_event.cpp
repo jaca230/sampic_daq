@@ -6,32 +6,42 @@
 
 namespace {
 
-struct EventStructPool {
-    std::mutex mutex;
-    std::vector<EventStruct*> free_list;
-    std::size_t limit = 1024;
-
-    EventStructPool() {
-        // Preallocate capacity to avoid vector reallocations
-        free_list.reserve(limit);
+class EventStructPool {
+public:
+    static EventStructPool& instance() {
+        static EventStructPool pool;
+        return pool;
     }
 
-    ~EventStructPool() {
-        for (auto* ptr : free_list) {
-            ::operator delete(ptr);
+    EventStruct* acquire() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (!pool_.empty()) {
+            EventStruct* ptr = pool_.back();
+            pool_.pop_back();
+            return ptr;
         }
+        return new EventStruct;
     }
-};
 
-EventStructPool& globalPool() {
-    static EventStructPool pool;
-    return pool;
-}
+    void release(EventStruct* ptr) {
+        if (!ptr) return;
+        std::lock_guard<std::mutex> lock(mtx_);
+        pool_.push_back(ptr);
+    }
+
+private:
+    std::mutex mtx_;
+    std::vector<EventStruct*> pool_;
+};
 
 } // namespace
 
+void SampicEvent::EventStructDeleter::operator()(EventStruct* ptr) const {
+    EventStructPool::instance().release(ptr);
+}
+
 SampicEvent::EventPtr SampicEvent::makeEventStruct() {
-    return EventPtr(acquireEventStruct(), &SampicEvent::releaseEventStruct);
+    return EventPtr(EventStructPool::instance().acquire());
 }
 
 SampicEvent::SampicEvent(EventPtr data,
@@ -114,42 +124,4 @@ std::string SampicEvent::summary() const {
 void SampicEvent::finalize() {
     // No-op by default.
     // Can be overridden if additional derived metadata or validation is needed.
-}
-
-EventStruct* SampicEvent::acquireEventStruct() {
-    auto& pool = globalPool();
-    std::lock_guard<std::mutex> lock(pool.mutex);
-    if (!pool.free_list.empty()) {
-        EventStruct* ptr = pool.free_list.back();
-        pool.free_list.pop_back();
-        // MUST zero-initialize for hardware decode (SAMPIC256CH_DecodeEvent expects clean structure)
-        // Simulator mode can skip this, but hardware mode requires it to avoid stale data
-        std::memset(ptr, 0, sizeof(EventStruct));
-        return ptr;
-    }
-    // Use malloc + placement new to avoid memset
-    void* mem = ::operator new(sizeof(EventStruct), std::nothrow);
-    if (!mem) {
-        throw std::bad_alloc();
-    }
-    // MUST zero-initialize for hardware decode - SAMPIC library functions assume zeroed structure
-    std::memset(mem, 0, sizeof(EventStruct));
-    return static_cast<EventStruct*>(mem);
-}
-
-void SampicEvent::releaseEventStruct(EventStruct* ptr) {
-    if (!ptr)
-        return;
-
-    auto& pool = globalPool();
-    std::lock_guard<std::mutex> lock(pool.mutex);
-    if (pool.free_list.size() >= pooledEventLimit()) {
-        ::operator delete(ptr);
-    } else {
-        pool.free_list.push_back(ptr);
-    }
-}
-
-std::size_t SampicEvent::pooledEventLimit() {
-    return globalPool().limit;
 }

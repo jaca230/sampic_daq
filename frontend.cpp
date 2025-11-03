@@ -271,18 +271,9 @@ INT read_sampic_event(char *pevent, INT)
     if (!fev)
         return 0;
 
-    const auto t_start = std::chrono::steady_clock::now();
-
     const int total_size = compose_frontend_event(pevent, fev, runtime);
     fev->markConsumed(true);
     runtime.lastEventTimestamp = fev->timestamp();
-
-    const auto t_end = std::chrono::steady_clock::now();
-    const auto dur_total_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
-
-    spdlog::debug("read_sampic_event: wrote 1 FrontendEvent, total MIDAS size={} B ({} µs)",
-                  total_size, dur_total_us);
 
     if (runtime.collector) {
         runtime.collector->diagnostics().consumed(1,
@@ -311,7 +302,7 @@ static void event_writer_loop()
             continue;
         }
 
-        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(1));
+        auto fev = runtime.collector->buffer().waitAndPop(std::chrono::milliseconds(10));
         if (!fev) {
             continue;
         }
@@ -350,9 +341,12 @@ static void event_writer_loop()
         auto* payload = reinterpret_cast<char*>(pevent + 1);
         const int total_size = compose_frontend_event(payload, fev, runtime);
         pevent->data_size = total_size;
+
         rb_increment_wp(rbh, sizeof(EVENT_HEADER) + pevent->data_size);
 
         runtime.lastEventTimestamp = fev->timestamp();
+        runtime.collector->diagnostics().consumed(1,
+                                                  runtime.collector->buffer().size());
     }
 
     signal_readout_thread_active(thread_index, FALSE);
@@ -364,8 +358,11 @@ static INT compose_frontend_event(char* dest,
     if (!dest || !fev)
         return 0;
 
+    spdlog::trace("compose_frontend_event: FrontendEvent has {} banks", fev->numBanks());
+
     bk_init32(dest);
 
+    size_t bank_index = 0;
     for (const auto& bank : fev->banks()) {
         if (!bank)
             continue;
@@ -373,12 +370,15 @@ static INT compose_frontend_event(char* dest,
         const std::string bank_name = runtime.makeBankName(bank->bankPrefix());
         uint8_t* pdata = nullptr;
         bk_create(dest, bank_name.c_str(), TID_UINT8, (void**)&pdata);
+        uint8_t* const pstart = pdata;
 
         // Optimized: Use virtual writeTo() instead of dynamic_cast + branching
         bank->writeTo(pdata);
         pdata += bank->size();
 
         bk_close(dest, pdata);
+        spdlog::trace("FrontendEvent bank[{}] → wrote {} ({} bytes)",
+                      bank_index++, bank_name, static_cast<int>(pdata - pstart));
     }
 
     return bk_size(dest);

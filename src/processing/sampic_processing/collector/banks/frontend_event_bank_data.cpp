@@ -1,5 +1,6 @@
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_data.h"
 #include <cstddef>
+#include <cstring>
 #include <spdlog/spdlog.h>
 
 /**
@@ -10,10 +11,11 @@
  * after CorrectedDataSamples, up to but not including AdvancedParams.
  */
 FrontendEventBankData::FrontendEventBankData(
-    const std::vector<SampicEvent*>& parents,
+    std::vector<std::shared_ptr<SampicEvent>> parents,
     const std::vector<const HitStruct*>& hits)
 {
     setBankPrefix("AD");
+    parent_refs_ = std::move(parents);
     slices_.reserve(hits.size() * 2);  ///< header + corrected section
     total_size_ = 0;
 

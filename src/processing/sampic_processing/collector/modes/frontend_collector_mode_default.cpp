@@ -54,6 +54,10 @@ bool FrontendCollectorModeDefault::collect()
     if (new_events.empty())
         return true;
 
+    if (spdlog::should_log(spdlog::level::trace)) {
+        spdlog::trace("FrontendCollector: retrieved {} SampicEvents from buffer", new_events.size());
+    }
+
     last_timestamp_ = new_events.back()->timestamp();
     const auto now = std::chrono::steady_clock::now();
 
@@ -82,8 +86,8 @@ bool FrontendCollectorModeDefault::collect()
                     group.hits.emplace_back(hit);
 
                     if (std::none_of(group.parents.begin(), group.parents.end(),
-                                     [&](SampicEvent* p) {
-                                         return p == ev;
+                                     [&](const std::shared_ptr<SampicEvent>& p) {
+                                         return p.get() == ev.get();
                                      })) {
                         group.parents.emplace_back(ev);
                     }
@@ -109,6 +113,9 @@ bool FrontendCollectorModeDefault::collect()
                             ready_groups_.emplace_back(std::move(*it));
                             it = pending_groups_.erase(it);
                             continue;
+                        } else {
+                            // pending groups are time-ordered; newer groups will be closer in time
+                            break;
                         }
                     }
                     ++it;
@@ -149,8 +156,12 @@ bool FrontendCollectorModeDefault::collect()
     // ---------------------------------------------------------------------
     // Step 4: Emit finalized FrontendEvents
     // ---------------------------------------------------------------------
+    auto groups_to_process = std::move(ready_groups_);
+    ready_groups_.clear();
+
     emitted_events_.clear();
-    emitted_events_.reserve(ready_groups_.size());
+    emitted_events_.reserve(groups_to_process.size());
+    const auto ready_group_count = groups_to_process.size();
 
     uint32_t total_hits = 0;
     const auto t_finalize_start = std::chrono::steady_clock::now();
@@ -158,7 +169,7 @@ bool FrontendCollectorModeDefault::collect()
     size_t produced_events = 0;
     size_t produced_hits = 0;
 
-    for (auto& g : ready_groups_) {
+    for (auto& g : groups_to_process) {
         // Direct size check is faster than empty()
         if (g.hits.size() == 0)
             continue;
@@ -166,15 +177,22 @@ bool FrontendCollectorModeDefault::collect()
         produced_hits += g.hits.size();
         ++produced_events;
 
-        if (cfg_.diagnostics.log_group_details) {
+        if (cfg_.diagnostics.log_group_details && spdlog::should_log(spdlog::level::debug)) {
             spdlog::debug("Frontend grouping: hits={} parents={}",
                           g.hits.size(), g.parents.size());
+        }
+
+        parent_ptr_scratch_.clear();
+        parent_ptr_scratch_.reserve(g.parents.size());
+        for (const auto& parent_ref : g.parents) {
+            parent_ptr_scratch_.push_back(parent_ref.get());
         }
 
         auto fev = std::make_shared<FrontendEvent>(g.created);
 
         // Zero-copy data bank (no temporary vector)
-        auto data_bank = std::make_unique<FrontendEventBankData>(g.parents, g.hits);
+        auto data_bank =
+            std::make_unique<FrontendEventBankData>(std::move(g.parents), g.hits);
         data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
         fev->addBank(std::move(data_bank));
 
@@ -185,13 +203,13 @@ bool FrontendCollectorModeDefault::collect()
         auto event_timing_bank =
             std::make_unique<FrontendEventBankEventTiming>(g.created,
                                                            static_cast<uint32_t>(g.hits.size()),
-                                                           g.parents);
+                                                           parent_ptr_scratch_);
         event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
         fev->addBank(std::move(event_timing_bank));
 
         emitted_events_.emplace_back(std::move(fev));
 
-        if (cfg_.diagnostics.log_hit_details) {
+        if (cfg_.diagnostics.log_hit_details && spdlog::should_log(spdlog::level::debug)) {
             size_t idx = 0;
             for (const HitStruct* hit : g.hits) {
                 if (!hit)
@@ -203,6 +221,7 @@ bool FrontendCollectorModeDefault::collect()
             }
         }
     }
+    groups_to_process.clear();
 
     const auto t_finalize_end = std::chrono::steady_clock::now();
     const auto finalize_us =
@@ -230,14 +249,23 @@ bool FrontendCollectorModeDefault::collect()
         emitted_events_.back()->addBank(std::move(collector_bank));
     }
 
+    if (spdlog::should_log(spdlog::level::trace)) {
+        spdlog::trace("FrontendCollector: pushing {} FrontendEvents to buffer (ready_groups.size={})",
+                      emitted_events_.size(), ready_group_count);
+    }
+
     for (const auto& fev : emitted_events_) {
+        if (spdlog::should_log(spdlog::level::trace)) {
+            spdlog::trace("FrontendCollector: pushing FrontendEvent with {} banks, {} hits",
+                          fev->numBanks(), fev->totalDataSize());
+        }
         frontend_buffer_.push(fev);
     }
 
-    // Disabled for performance - diagnostics add mutex overhead
-    // if (produced_events > 0) {
-    //     diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());
-    // }
+
+    if (produced_events > 0) {
+        diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());
+    }
 
     sampic_buffer_.pruneUpTo(last_timestamp_);
 
