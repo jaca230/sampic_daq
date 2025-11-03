@@ -3,9 +3,8 @@
 #include <cstring>
 
 SampicEvent::EventPtr SampicEvent::makeEventStruct() {
-    auto ptr = std::make_unique<EventStruct>();
-    std::memset(ptr.get(), 0, sizeof(EventStruct));
-    return ptr;
+    // Use value-initialization (EventStruct{}) to zero-initialize all members
+    return std::make_unique<EventStruct>(EventStruct{});
 }
 
 SampicEvent::SampicEvent(EventPtr data,
