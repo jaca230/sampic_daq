@@ -84,8 +84,8 @@ bool FrontendCollectorModeDefault::collect()
                     group.hits.emplace_back(hit);
 
                     if (std::none_of(group.parents.begin(), group.parents.end(),
-                                     [&](SampicEvent* p) {
-                                         return p == ev;
+                                     [&](const std::shared_ptr<SampicEvent>& p) {
+                                         return p.get() == ev.get();
                                      })) {
                         group.parents.emplace_back(ev);
                     }
@@ -153,6 +153,7 @@ bool FrontendCollectorModeDefault::collect()
     // ---------------------------------------------------------------------
     emitted_events_.clear();
     emitted_events_.reserve(ready_groups_.size());
+    const auto ready_group_count = ready_groups_.size();
 
     uint32_t total_hits = 0;
     const auto t_finalize_start = std::chrono::steady_clock::now();
@@ -173,10 +174,17 @@ bool FrontendCollectorModeDefault::collect()
                           g.hits.size(), g.parents.size());
         }
 
+        std::vector<SampicEvent*> parent_ptrs;
+        parent_ptrs.reserve(g.parents.size());
+        for (const auto& parent_ref : g.parents) {
+            parent_ptrs.push_back(parent_ref.get());
+        }
+
         auto fev = std::make_shared<FrontendEvent>(g.created);
 
         // Zero-copy data bank (no temporary vector)
-        auto data_bank = std::make_unique<FrontendEventBankData>(g.parents, g.hits);
+        auto data_bank =
+            std::make_unique<FrontendEventBankData>(std::move(g.parents), g.hits);
         data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
         fev->addBank(std::move(data_bank));
 
@@ -187,7 +195,7 @@ bool FrontendCollectorModeDefault::collect()
         auto event_timing_bank =
             std::make_unique<FrontendEventBankEventTiming>(g.created,
                                                            static_cast<uint32_t>(g.hits.size()),
-                                                           g.parents);
+                                                           parent_ptrs);
         event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
         fev->addBank(std::move(event_timing_bank));
 
@@ -205,6 +213,7 @@ bool FrontendCollectorModeDefault::collect()
             }
         }
     }
+    ready_groups_.clear();
 
     const auto t_finalize_end = std::chrono::steady_clock::now();
     const auto finalize_us =
@@ -233,7 +242,7 @@ bool FrontendCollectorModeDefault::collect()
     }
 
     spdlog::trace("FrontendCollector: pushing {} FrontendEvents to buffer (ready_groups.size={})",
-                  emitted_events_.size(), ready_groups_.size());
+                  emitted_events_.size(), ready_group_count);
 
     for (const auto& fev : emitted_events_) {
         spdlog::trace("FrontendCollector: pushing FrontendEvent with {} banks, {} hits",

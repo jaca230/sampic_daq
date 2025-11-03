@@ -30,7 +30,7 @@ private:
     struct PendingGroup {
         std::chrono::steady_clock::time_point created;
         std::chrono::steady_clock::time_point last_activity;  ///< Last time a hit was added
-        std::vector<SampicEvent*> parents;  ///< Non-owning pointers to contributing SampicEvents
+        std::vector<std::shared_ptr<SampicEvent>> parents;  ///< Shared ownership of SampicEvents
         std::vector<const HitStruct*> hits;                 ///< Direct pointers to hits (zero-copy)
     };
 

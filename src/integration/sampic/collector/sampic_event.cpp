@@ -3,8 +3,9 @@
 #include <cstring>
 
 SampicEvent::EventPtr SampicEvent::makeEventStruct() {
-    // Use value-initialization (EventStruct{}) to zero-initialize all members
-    return std::make_unique<EventStruct>(EventStruct{});
+    // Allocate without initialization (matching old pool behavior)
+    // Simulator/collector modes populate all required fields
+    return std::unique_ptr<EventStruct>(new EventStruct);
 }
 
 SampicEvent::SampicEvent(EventPtr data,
