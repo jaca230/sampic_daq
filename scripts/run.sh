@@ -117,6 +117,30 @@ if [ ! -x "$EXECUTABLE" ]; then
 fi
 
 # --------------------------------------------------------------------------
+# Ensure the project-built vendor libraries are loaded first
+# --------------------------------------------------------------------------
+VENDOR_LIB_DIR="$BASE_DIR/external/sampic_256ch_lib/lib"
+LPDEVC_LIB_DIR="$BASE_DIR/external/sampic_256ch_lib/lpdevc_install/lib"
+RUNTIME_LIB_PATHS=()
+
+if [ -d "$VENDOR_LIB_DIR" ]; then
+    RUNTIME_LIB_PATHS+=("$VENDOR_LIB_DIR")
+fi
+
+if [ -d "$LPDEVC_LIB_DIR" ]; then
+    RUNTIME_LIB_PATHS+=("$LPDEVC_LIB_DIR")
+fi
+
+if [ ${#RUNTIME_LIB_PATHS[@]} -gt 0 ]; then
+    RUNTIME_LIB_PATH=$(IFS=:; echo "${RUNTIME_LIB_PATHS[*]}")
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH:$LD_LIBRARY_PATH"
+    else
+        export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH"
+    fi
+fi
+
+# --------------------------------------------------------------------------
 # Run executable
 # --------------------------------------------------------------------------
 cd "$BASE_DIR" || exit 1
