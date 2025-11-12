@@ -6,6 +6,10 @@ PROJECT_DIR=$(realpath "$SCRIPT_DIR/..")
 BUILD_DIR="$PROJECT_DIR/build"
 MODE="pulser"
 POSITIONAL=()
+PROJECT_ROOT=$(realpath "$SCRIPT_DIR/../../../..")
+VENDOR_LIB_DIR="$PROJECT_ROOT/external/sampic_256ch_lib/lib"
+LPDEVC_LIB_DIR="$PROJECT_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
+declare -a RUNTIME_LIB_PATHS=()
 
 print_help() {
   cat <<EOF
@@ -62,6 +66,23 @@ esac
 if [[ ! -x "$BINARY" ]]; then
   echo "Binary not found at $BINARY. Build it first with ./build.sh" >&2
   exit 1
+fi
+
+if [[ -d "$VENDOR_LIB_DIR" ]]; then
+  RUNTIME_LIB_PATHS+=("$VENDOR_LIB_DIR")
+fi
+
+if [[ -d "$LPDEVC_LIB_DIR" ]]; then
+  RUNTIME_LIB_PATHS+=("$LPDEVC_LIB_DIR")
+fi
+
+if [[ ${#RUNTIME_LIB_PATHS[@]} -gt 0 ]]; then
+  RUNTIME_LIB_PATH=$(IFS=:; echo "${RUNTIME_LIB_PATHS[*]}")
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH:$LD_LIBRARY_PATH"
+  else
+    export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH"
+  fi
 fi
 
 exec "$BINARY" "${POSITIONAL[@]}"

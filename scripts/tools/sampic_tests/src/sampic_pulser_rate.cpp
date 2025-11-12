@@ -230,6 +230,7 @@ struct AcquisitionStats {
   size_t total_hits = 0;
   size_t retries = 0;
   size_t decode_errors = 0;
+  size_t total_bytes = 0;
   std::chrono::steady_clock::duration elapsed{};
 };
 
@@ -284,10 +285,6 @@ AcquisitionStats run_pulser_rate_test(SampicSession& session, const Options& opt
       if (err == SAMPIC256CH_Success) {
         err = SAMPIC256CH_DecodeEvent(&session.info(), &session.params(),
                                       session.ml_frames(), &event, nframes, &hits);
-        if (err == SAMPIC256CH_Success && !opts.quiet) {
-          std::cout << "Event " << stats.events + 1 << ": hits=" << hits
-                    << " frames=" << nframes << "\n";
-        }
       }
 
       if (err == SAMPIC256CH_AcquisitionError || err == SAMPIC256CH_ErrInvalidEvent) {
@@ -313,9 +310,21 @@ AcquisitionStats run_pulser_rate_test(SampicSession& session, const Options& opt
     }
 
     if (err == SAMPIC256CH_Success) {
+      size_t event_bytes = 0;
+      ML_Frame* frames = session.ml_frames();
+      for (int i = 0; i < nframes; ++i) {
+        const int frame_size = frames[i].data_size;
+        if (frame_size > 0) {
+          event_bytes += static_cast<size_t>(frame_size);
+        }
+      }
+      stats.total_bytes += event_bytes;
       ++stats.events;
       stats.total_hits += static_cast<size_t>(hits);
       if (!opts.quiet) {
+        std::cout << "Event " << stats.events << ": hits=" << hits
+                  << " frames=" << nframes
+                  << " bytes=" << event_bytes << "\n";
         for (int i = 0; i < hits; ++i) {
           const HitStruct& hit = event.Hit[i];
           std::cout << "    hit[" << i << "]: FEB=" << hit.FeBoardIndex
@@ -341,13 +350,16 @@ void print_summary(const AcquisitionStats& stats) {
   std::cout << "\nSummary\n-------\n";
   std::cout << "Events       : " << stats.events << "\n";
   std::cout << "Total hits   : " << stats.total_hits << "\n";
+  std::cout << "Total bytes  : " << stats.total_bytes << "\n";
   std::cout << "Retries      : " << stats.retries << "\n";
   std::cout << "Decode errors: " << stats.decode_errors << "\n";
   std::cout << "Elapsed      : " << format_duration(stats.elapsed) << "\n";
   if (duration > 0.0) {
+    const double bytes_per_second = static_cast<double>(stats.total_bytes) / duration;
     std::cout << std::fixed << std::setprecision(2)
               << "Events/s    : " << stats.events / duration << "\n"
-              << "Hits/s      : " << stats.total_hits / duration << "\n";
+              << "Hits/s      : " << stats.total_hits / duration << "\n"
+              << "Data MB/s   : " << bytes_per_second / (1024.0 * 1024.0) << "\n";
     if (stats.events > 0) {
       std::cout << "Hits/event : "
                 << static_cast<double>(stats.total_hits) / static_cast<double>(stats.events)

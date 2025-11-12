@@ -19,6 +19,39 @@ int SampicInitSettingsModeDefault::initialize() {
     }
     spdlog::info("InitSettingsModeDefault: Connection opened with {} FE boards.", info_.NbOfFeBoards);
 
+    err = SAMPIC256CH_CheckCrateFirmwareVersions(&info_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeDefault: Failed to read crate firmware versions (err={})",
+                      static_cast<int>(err));
+        return err;
+    }
+
+    const auto& ctrlFw = info_.CrateBoardsInfo.ControlBoardInfo.FirmwareVersion;
+    spdlog::info("InitSettingsModeDefault: Control board firmware v{}.{}.{}",
+                 ctrlFw.BoardVersion,
+                 ctrlFw.FPGAVersion,
+                 ctrlFw.FPGAEvolution);
+
+    for (int feIndex = 0; feIndex < info_.NbOfFeBoards; ++feIndex) {
+        const auto& feInfo = info_.CrateBoardsInfo.FeBoardInfo[feIndex];
+        const auto& ctrlFpgaFw = feInfo.ControlFpgaFirmwareVersion;
+        spdlog::info("InitSettingsModeDefault: FE[{}] control FPGA firmware v{}.{}.{}",
+                     feIndex,
+                     ctrlFpgaFw.BoardVersion,
+                     ctrlFpgaFw.FPGAVersion,
+                     ctrlFpgaFw.FPGAEvolution);
+
+        for (int fpgaIndex = 0; fpgaIndex < NB_OF_FE_FPGAS_IN_FE_BOARD; ++fpgaIndex) {
+            const auto& feFpgaFw = feInfo.FeFpgaFirmwareVersion[fpgaIndex];
+            spdlog::info("InitSettingsModeDefault: FE[{}] FE-FPGA[{}] firmware v{}.{}.{}",
+                         feIndex,
+                         fpgaIndex,
+                         feFpgaFw.BoardVersion,
+                         feFpgaFw.FPGAVersion,
+                         feFpgaFw.FPGAEvolution);
+        }
+    }
+
     err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("InitSettingsModeDefault: Failed to open crate connection (err={})", static_cast<int>(err));
@@ -29,6 +62,23 @@ int SampicInitSettingsModeDefault::initialize() {
                                                   const_cast<char*>(settings_.calibration_directory.c_str()));
     if (err != SAMPIC256CH_Success) {
         spdlog::warn("InitSettingsModeDefault: Calibration files missing, continuing anyway...");
+    }
+    Boolean adcCorrectionEnabled{};
+    Boolean timeInlCorrectionEnabled{};
+    Boolean residualPedestalCorrectionEnabled{};
+    err = SAMPIC256CH_GetCrateCorrectionLevels(&info_,
+                                               &params_,
+                                               &adcCorrectionEnabled,
+                                               &timeInlCorrectionEnabled,
+                                               &residualPedestalCorrectionEnabled);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::warn("InitSettingsModeDefault: Failed to read crate correction levels (err={})",
+                     static_cast<int>(err));
+    } else {
+        spdlog::info("InitSettingsModeDefault: Correction levels - ADC linearity: {}, Time INL: {}, Residual pedestal: {}",
+                      adcCorrectionEnabled ? "enabled" : "disabled",
+                      timeInlCorrectionEnabled ? "enabled" : "disabled",
+                      residualPedestalCorrectionEnabled ? "enabled" : "disabled");
     }
 
     err = SAMPIC256CH_AllocateEventMemory(&eventBuffer_, &mlFrames_);
