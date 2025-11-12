@@ -108,13 +108,14 @@ std::string SampicEvent::summary() const {
             timestamp_.time_since_epoch()).count());
 
     return fmt::format(
-        "SAMPIC Event @ {} us | hits={} | prepare={}us | read={}us | decode={}us | total={}us | consumed={}",
+        "SAMPIC Event @ {} us | hits={} | prepare={}us | read={}us | decode={}us | total={}us | retries={} | consumed={}",
         t_us,
         numHits(),
         timing_.prepare.count(),
         timing_.read.count(),
         timing_.decode.count(),
         timing_.total.count(),
+        timing_.acquisition_retries,
         consumed_ ? "true" : "false");
 }
 

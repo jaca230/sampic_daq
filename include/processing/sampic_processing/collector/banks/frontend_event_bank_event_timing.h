@@ -38,6 +38,10 @@ public:
         uint32_t sp_read_us_max;
         uint32_t sp_decode_us_max;
         uint32_t sp_total_us_max;
+
+        /** Acquisition retry statistics across parents. */
+        uint32_t sp_acq_retry_max;
+        uint32_t sp_acq_retry_sum;
     };
 #pragma pack(pop)
 

@@ -87,6 +87,7 @@ bool SampicCollectorModeDefault::collect()
     timing.prepare = std::chrono::duration_cast<std::chrono::microseconds>(t_after_prepare - t_start);
     timing.total   = std::chrono::duration_cast<std::chrono::microseconds>(
                          std::chrono::steady_clock::now() - t_start);
+    timing.acquisition_retries = nloop > 0 ? static_cast<uint32_t>(nloop - 1) : 0;
 
     if (errCode == SAMPIC256CH_Success && numberOfHits > 0)
     {

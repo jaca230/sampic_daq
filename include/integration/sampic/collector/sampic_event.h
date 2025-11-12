@@ -5,6 +5,7 @@
 #include <chrono>
 #include <string>
 #include <cstddef>
+#include <cstdint>
 
 extern "C" {
 #include <SAMPIC_256Ch_Type.h>
@@ -16,6 +17,7 @@ struct SampicTimingBreakdown {
     std::chrono::microseconds read{0};
     std::chrono::microseconds decode{0};
     std::chrono::microseconds total{0};
+    uint32_t acquisition_retries{0};
 };
 
 /// Represents a single low-level SAMPIC event with timing metadata.
