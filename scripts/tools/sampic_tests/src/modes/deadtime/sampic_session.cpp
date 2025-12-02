@@ -1,0 +1,280 @@
+#include "sampic_tests/modes/deadtime/sampic_session.h"
+
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <iostream>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <thread>
+
+namespace sampic::deadtime {
+
+SampicSession::SampicSession(const ConnectionConfig& conn)
+    : conn_opts_(conn) {
+  initialise_connection();
+  configure_base();
+  allocate_event_memory();
+  configure_channel_defaults();
+}
+
+SampicSession::~SampicSession() {
+  stop_run();
+  if (event_buffer_ || ml_frames_) {
+    SAMPIC256CH_FreeEventMemory(&event_buffer_, &ml_frames_);
+  }
+  if (connected_) {
+    SAMPIC256CH_CloseCrateConnection(&info_);
+  }
+}
+
+void SampicSession::configure_for_combo(const ParameterCombination& combo, int board_index) {
+  const int pulser_ticks = combo.pulser_period_us;
+  if (pulser_ticks < 2 || pulser_ticks > 65535) {
+    throw std::runtime_error("Pulser period outside allowed [2, 65535] tick range.");
+  }
+  configure_sampling(combo.digitizer_rate_mhz);
+  configure_pulser(pulser_ticks);
+  configure_channel_mask(board_index, combo.channel_set.channels);
+}
+
+AppliedSettings SampicSession::readback_settings(int board_index) {
+  AppliedSettings applied;
+  Boolean use_ext = FALSE;
+  check(SAMPIC256CH_GetSamplingFrequency(&params_, &applied.sampling_frequency_mhz, &use_ext),
+        "GetSamplingFrequency");
+  applied.use_external_clock = static_cast<bool>(use_ext);
+  check(SAMPIC256CH_GetAutoPulserPeriod(&params_, &applied.pulser_period_ticks),
+        "GetAutoPulserPeriod");
+
+  if (board_index < 0 || board_index >= info_.NbOfFeBoards) {
+    std::ostringstream oss;
+    oss << "Board index " << board_index << " out of range (FEB count "
+        << info_.NbOfFeBoards << ")";
+    throw std::runtime_error(oss.str());
+  }
+
+  applied.enabled_channels.clear();
+  for (int ch = 0; ch < NB_OF_CHANNELS_IN_FE_BOARD; ++ch) {
+    Boolean enabled = FALSE;
+    check(SAMPIC256CH_GetChannelMode(&params_, board_index, ch, &enabled),
+          "GetChannelMode");
+    if (enabled) {
+      applied.enabled_channels.push_back(ch);
+    }
+  }
+  return applied;
+}
+
+bool SampicSession::start_run_with_retry(const StartRetryConfig& retry_cfg,
+                                         int& attempts_out,
+                                         std::vector<std::string>& errors) {
+  for (int attempt = 1; attempt <= retry_cfg.max_attempts; ++attempt) {
+    attempts_out = attempt;
+    const auto err = SAMPIC256CH_StartRun(&info_, &params_, TRUE);
+    if (err == SAMPIC256CH_Success) {
+      run_active_ = true;
+      return true;
+    }
+    std::ostringstream oss;
+    oss << "StartRun failed (code=" << static_cast<int>(err)
+        << ", attempt=" << attempt << ")";
+    errors.push_back(oss.str());
+    const double sleep_seconds =
+        retry_cfg.initial_delay_s * std::pow(retry_cfg.backoff, attempt - 1);
+    std::this_thread::sleep_for(std::chrono::duration<double>(sleep_seconds));
+  }
+  return false;
+}
+
+void SampicSession::stop_run() {
+  if (!run_active_) return;
+  SAMPIC256CH_StopRun(&info_, &params_);
+  run_active_ = false;
+}
+
+scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg,
+                                                double duration_s,
+                                                volatile std::sig_atomic_t* stop_flag) {
+  scan::SampleStats stats;
+  EventStruct event{};
+  auto last_timestamp_ns = std::optional<double>{};
+
+  const auto t_begin = std::chrono::steady_clock::now();
+  auto should_stop = [&](const std::chrono::steady_clock::time_point& now) {
+    if (stop_flag && *stop_flag) return true;
+    const double elapsed = std::chrono::duration<double>(now - t_begin).count();
+    return elapsed >= duration_s;
+  };
+
+  while (!should_stop(std::chrono::steady_clock::now())) {
+    SAMPIC256CH_PrepareEvent(&info_, &params_);
+
+    SAMPIC256CH_ErrCode err = SAMPIC256CH_NoFrameRead;
+    int nframes = 0;
+    int hits = 0;
+    int loop_counter = 0;
+
+    while (err != SAMPIC256CH_Success && !(stop_flag && *stop_flag)) {
+      err = SAMPIC256CH_ReadEventBuffer(&info_, 0, event_buffer_, ml_frames_, &nframes);
+      if (err == SAMPIC256CH_Success) {
+        err = SAMPIC256CH_DecodeEvent(&info_, &params_, ml_frames_, &event, nframes, &hits);
+      }
+
+      if (err == SAMPIC256CH_AcquisitionError || err == SAMPIC256CH_ErrInvalidEvent) {
+        ++stats.decode_errors;
+        stats.record_error("Acquisition/Decode error code " + std::to_string(static_cast<int>(err)));
+        break;
+      }
+
+      if (err != SAMPIC256CH_Success) {
+        ++stats.retries;
+        if ((loop_counter % readout_cfg.prepare_interval) == 0) {
+          SAMPIC256CH_PrepareEvent(&info_, &params_);
+        }
+        ++loop_counter;
+        if (readout_cfg.max_loops > 0 && loop_counter > readout_cfg.max_loops) {
+          ++stats.max_loop_hits;
+          stats.record_error("Read loop exceeded max attempts");
+          break;
+        }
+        if (readout_cfg.retry_sleep_us > 0) {
+          std::this_thread::sleep_for(
+              std::chrono::microseconds(readout_cfg.retry_sleep_us));
+        }
+      }
+    }
+
+    if (err == SAMPIC256CH_Success) {
+      std::size_t event_bytes = 0;
+      for (int i = 0; i < nframes; ++i) {
+        const int frame_size = ml_frames_[i].data_size;
+        if (frame_size > 0) {
+          event_bytes += static_cast<std::size_t>(frame_size);
+        }
+      }
+      stats.total_bytes += event_bytes;
+      ++stats.events;
+      stats.total_hits += static_cast<std::size_t>(hits);
+
+      for (int i = 0; i < hits; ++i) {
+        const double timestamp = event.Hit[i].FirstCellTimeStamp;
+        if (last_timestamp_ns.has_value()) {
+          const double delta = timestamp - *last_timestamp_ns;
+          if (delta >= 0) {
+            stats.hit_separation.add(delta);
+          }
+        }
+        last_timestamp_ns = timestamp;
+      }
+    }
+
+    if (stop_flag && *stop_flag) break;
+  }
+
+  const auto t_end = std::chrono::steady_clock::now();
+  stats.duration_s = std::chrono::duration<double>(t_end - t_begin).count();
+  return stats;
+}
+
+void SampicSession::initialise_connection() {
+  std::memset(&conn_, 0, sizeof(conn_));
+  conn_.ConnectionType = UDP_CONNECTION;
+  conn_.ControlBoardControlType = CTRL_AND_DAQ;
+  std::snprintf(conn_.CtrlIpAddress, sizeof(conn_.CtrlIpAddress), "%s",
+                conn_opts_.ip.c_str());
+  conn_.CtrlPort = conn_opts_.port;
+  check(SAMPIC256CH_OpenCrateConnection(conn_, &info_), "OpenCrateConnection");
+  connected_ = true;
+  std::cout << "Connected to crate. FEBs=" << info_.NbOfFeBoards << "\n";
+}
+
+void SampicSession::configure_base() {
+  check(SAMPIC256CH_SetDefaultParameters(&info_, &params_), "SetDefaultParameters");
+  if (conn_opts_.load_calibration) {
+    namespace fs = std::filesystem;
+    fs::path calib{conn_opts_.calibration_dir};
+    if (!calib.is_absolute()) {
+      calib = fs::current_path() / calib;
+    }
+    std::array<char, MAX_PATHNAME_LENGTH> dir{};
+    std::snprintf(dir.data(), dir.size(), "%s", calib.string().c_str());
+    const auto err = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_, dir.data());
+    if (err != SAMPIC256CH_Success) {
+      std::cerr << "Warning: calibration load failed (code " << static_cast<int>(err)
+                << ")\n";
+    } else {
+      std::cout << "Calibration loaded from " << calib << "\n";
+    }
+  }
+}
+
+void SampicSession::allocate_event_memory() {
+  check(SAMPIC256CH_AllocateEventMemory(&event_buffer_, &ml_frames_),
+        "AllocateEventMemory");
+}
+
+void SampicSession::configure_channel_defaults() {
+  check(SAMPIC256CH_SetChannelMode(&info_, &params_, ALL_FE_BOARDs, ALL_CHANNELs, FALSE),
+        "DisableAllChannels");
+
+  check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, ALL_FE_BOARDs,
+                                                ALL_SAMPICs, ALL_CHANNELs,
+                                                SAMPIC_CHANNEL_SELF_TRIGGER_MODE),
+        "SetSampicChannelTriggerMode");
+
+  check(SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_, ALL_FE_BOARDs,
+                                               ALL_SAMPICs, ALL_CHANNELs, RISING_EDGE),
+        "SetChannelSelfTriggerEdge");
+
+  check(SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_, ALL_FE_BOARDs,
+                                              ALL_SAMPICs, ALL_CHANNELs, TRUE),
+        "SetSampicChannelPulseMode");
+
+  check(SAMPIC256CH_SetSampicChannelInternalThreshold(
+            &info_, &params_, ALL_FE_BOARDs, ALL_SAMPICs, ALL_CHANNELs,
+            static_cast<float>(conn_opts_.threshold_volts)),
+        "SetSampicChannelInternalThreshold");
+
+  check(SAMPIC256CH_SetPulserMode(&info_, &params_, TRUE, PULSER_SRC_IS_AUTO,
+                                  conn_opts_.pulser_sync),
+        "SetPulserMode");
+}
+
+void SampicSession::configure_sampling(int rate_mhz) {
+  check(SAMPIC256CH_SetSamplingFrequency(&info_, &params_, rate_mhz,
+                                         conn_opts_.use_external_clock),
+        "SetSamplingFrequency");
+}
+
+void SampicSession::configure_pulser(int pulser_ticks) {
+  check(SAMPIC256CH_SetAutoPulserPeriod(&info_, &params_, pulser_ticks),
+        "SetAutoPulserPeriod");
+}
+
+void SampicSession::configure_channel_mask(int board_index, const std::vector<int>& channels) {
+  if (board_index < 0 || board_index >= info_.NbOfFeBoards) {
+    std::ostringstream oss;
+    oss << "Board index " << board_index << " out of range (FEB count "
+        << info_.NbOfFeBoards << ")";
+    throw std::runtime_error(oss.str());
+  }
+  check(SAMPIC256CH_SetChannelMode(&info_, &params_, board_index, ALL_CHANNELs, FALSE),
+        "DisableBoardChannels");
+  for (int channel : channels) {
+    check(SAMPIC256CH_SetChannelMode(&info_, &params_, board_index, channel, TRUE),
+          "EnableChannel");
+  }
+}
+
+void SampicSession::check(SAMPIC256CH_ErrCode err, std::string_view what) {
+  if (err != SAMPIC256CH_Success) {
+    throw std::runtime_error(std::string(what) + " failed (code " +
+                             std::to_string(static_cast<int>(err)) + ")");
+  }
+}
+
+}  // namespace sampic::deadtime

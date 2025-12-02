@@ -1,0 +1,47 @@
+PARAM start_sequence_index, "Index to start at (1-based)", 1
+PARAM end_sequence_index, "Index to stop at (<= 66)", 66
+TOTAL_COMBINATIONS = 66
+parameter_script = "/home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/scripts/sequencer_helpers/set_sampic_parameter_combo.py"
+snapshot_script = "/home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/scripts/sequencer_helpers/save_sampic_odb_snapshot.py"
+IF ($end_sequence_index > $TOTAL_COMBINATIONS)
+   MSG "end_sequence_index cannot exceed 66", ERROR
+   EXIT
+ENDIF
+IF ($start_sequence_index < 1)
+   MSG "start_sequence_index must be >= 1", ERROR
+   EXIT
+ENDIF
+IF ($start_sequence_index > $end_sequence_index)
+   MSG "start_sequence_index cannot be larger than end_sequence_index", ERROR
+   EXIT
+ENDIF
+
+sequence_iterations = $end_sequence_index - $start_sequence_index + 1
+
+ODBCREATE /Sequencer/Helpers/sequence_index, UINT16
+ODBCREATE /Sequencer/Helpers/sample_duration_seconds, UINT16
+
+LOOP i, $sequence_iterations
+   sequence_index = $i + $start_sequence_index - 1
+   ODBSET /Sequencer/Helpers/sequence_index, $sequence_index
+
+   SCRIPT /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/scripts/sequencer_helpers/set_sampic_parameter_combo.py
+
+   TRANSITION START
+   WAIT Seconds, 3
+
+   ODBGET /Sequencer/Helpers/sample_duration_seconds, sample_duration
+   IF ($sample_duration <= 0)
+      sample_duration = 15
+   ENDIF
+
+   WAIT Seconds, $sample_duration
+
+   SCRIPT /home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/scripts/sequencer_helpers/save_sampic_odb_snapshot.py
+
+   TRANSITION STOP
+   WAIT Seconds, 2
+ENDLOOP
+
+ODBDELETE /Sequencer/Helpers/sequence_index
+ODBDELETE /Sequencer/Helpers/sample_duration_seconds

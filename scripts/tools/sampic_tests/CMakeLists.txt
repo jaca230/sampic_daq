@@ -11,6 +11,8 @@ set(SAMPIC_VENDOR_LIB_DIR ${SAMPIC_VENDOR_ROOT}/lib)
 set(LPDEVC_INCLUDE_DIR ${SAMPIC_VENDOR_ROOT}/lpdevc_install/include)
 set(LPDEVC_LIB_DIR ${SAMPIC_VENDOR_ROOT}/lpdevc_install/lib)
 
+include(${PROJECT_ROOT}/cmake/CPM.cmake)
+
 foreach(path ${SAMPIC_VENDOR_INCLUDE} ${LPDEVC_INCLUDE_DIR} ${LPDEVC_LIB_DIR} ${SAMPIC_VENDOR_LIB_DIR})
   if(NOT EXISTS ${path})
     message(FATAL_ERROR "Required vendor component missing: ${path}. Build the vendor library first.")
@@ -30,19 +32,74 @@ get_filename_component(FTD2XX_LIB_DIR ${FTD2XX_LIB_PATH} DIRECTORY)
 
 find_package(Threads REQUIRED)
 
-add_executable(sampic_pulser_rate
-  src/sampic_pulser_rate.cpp)
+CPMAddPackage(
+  NAME nlohmann_json
+  GITHUB_REPOSITORY nlohmann/json
+  VERSION 3.11.2
+)
 
-add_executable(sampic_crate_smoke
-  src/sampic_crate_smoke.cpp)
+add_executable(sampic_deadtime_scan
+  src/app/main.cpp
+  src/app/mode_registry.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  src/modes/crate_smoke/crate_smoke_mode.cpp
+  src/modes/deadtime/config.cpp
+  src/modes/deadtime/mode.cpp
+  src/modes/deadtime/scan_runner.cpp
+  src/modes/deadtime/sampic_session.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/mode.cpp
+  src/modes/double_pulse/scan_runner.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp
+  src/modes/pulser/pulser_mode.cpp)
 
-target_include_directories(sampic_pulser_rate PRIVATE
+add_executable(lecroy_test
+  src/tests/lecroy_test.cpp
+  src/lecroy/lecroy_client.cpp)
+
+add_executable(delay_separation_test
+  src/tests/delay_separation_test.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
+add_executable(external_trigger_probe
+  src/tests/external_trigger_probe.cpp
+  src/modes/double_pulse/config.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/manual_trigger_controller.cpp)
+
+target_include_directories(sampic_deadtime_scan PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
-  ${LPDEVC_INCLUDE_DIR})
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_include_directories(sampic_crate_smoke PRIVATE
+target_include_directories(lecroy_test PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${nlohmann_json_SOURCE_DIR}/include)
+
+target_include_directories(delay_separation_test PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
-  ${LPDEVC_INCLUDE_DIR})
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(external_trigger_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set(SAMPIC_VENDOR_LIBS
   ${SAMPIC_VENDOR_LIB_DIR}/libsampic256ch.so
@@ -50,21 +107,29 @@ set(SAMPIC_VENDOR_LIBS
   ${LPDEVC_LIB_DIR}/liblpdev.so
   ${FTD2XX_LIB_PATH})
 
-foreach(target sampic_pulser_rate sampic_crate_smoke)
+set(SAMPIC_TEST_TARGETS
+  sampic_deadtime_scan
+  delay_separation_test
+  external_trigger_probe)
+
+foreach(target ${SAMPIC_TEST_TARGETS})
   target_link_libraries(${target} PRIVATE
     ${SAMPIC_VENDOR_LIBS}
     Threads::Threads
     dl rt pthread m)
 endforeach()
 
-set_target_properties(sampic_pulser_rate PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-  BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
-  INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
+foreach(target ${SAMPIC_TEST_TARGETS})
+  set_target_properties(${target} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
+    INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
+endforeach()
 
-set_target_properties(sampic_crate_smoke PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-  BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
-  INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
+set_target_properties(lecroy_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-install(TARGETS sampic_pulser_rate sampic_crate_smoke RUNTIME DESTINATION bin)
+set_target_properties(external_trigger_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+install(TARGETS ${SAMPIC_TEST_TARGETS} lecroy_test external_trigger_probe RUNTIME DESTINATION bin)

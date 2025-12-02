@@ -10,6 +10,7 @@ PROJECT_ROOT=$(realpath "$SCRIPT_DIR/../../../..")
 VENDOR_LIB_DIR="$PROJECT_ROOT/external/sampic_256ch_lib/lib"
 LPDEVC_LIB_DIR="$PROJECT_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
 declare -a RUNTIME_LIB_PATHS=()
+declare -a MODE_ARGS=()
 
 print_help() {
   cat <<EOF
@@ -18,6 +19,8 @@ Usage: $0 [--pulser | --smoke] [-- <args>]
 Options:
   --pulser        Run the pulser rate test (default)
   --smoke         Run the crate smoke test
+  --deadtime      Run the deadtime scan harness
+  --double-pulse  Run the Lecroy double-pulse deadtime scan
   -h, --help      Show this help message
 
 Arguments after '--' are passed directly to the selected binary.
@@ -32,6 +35,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --smoke)
       MODE="smoke"
+      shift
+      ;;
+    --deadtime)
+      MODE="deadtime"
+      shift
+      ;;
+    --double-pulse)
+      MODE="double_pulse"
       shift
       ;;
     -h|--help)
@@ -52,10 +63,20 @@ done
 
 case "$MODE" in
   pulser)
-    BINARY="$BUILD_DIR/bin/sampic_pulser_rate"
+    BINARY="$BUILD_DIR/bin/sampic_deadtime_scan"
+    MODE_ARGS=(--mode pulser-rate)
     ;;
   smoke)
-    BINARY="$BUILD_DIR/bin/sampic_crate_smoke"
+    BINARY="$BUILD_DIR/bin/sampic_deadtime_scan"
+    MODE_ARGS=(--mode crate-smoke)
+    ;;
+  deadtime)
+    BINARY="$BUILD_DIR/bin/sampic_deadtime_scan"
+    MODE_ARGS=(--mode deadtime)
+    ;;
+  double_pulse)
+    BINARY="$BUILD_DIR/bin/sampic_deadtime_scan"
+    MODE_ARGS=(--mode double-pulse)
     ;;
   *)
     echo "Unknown mode: $MODE" >&2
@@ -85,4 +106,4 @@ if [[ ${#RUNTIME_LIB_PATHS[@]} -gt 0 ]]; then
   fi
 fi
 
-exec "$BINARY" "${POSITIONAL[@]}"
+exec "$BINARY" "${MODE_ARGS[@]}" "${POSITIONAL[@]}"

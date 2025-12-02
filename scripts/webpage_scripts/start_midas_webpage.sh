@@ -8,6 +8,8 @@ while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
   [[ $SOURCE != /* ]] && SOURCE=$DIR/$SOURCE # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
 done
 script_dir=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+repo_root=$( cd -P "$script_dir/../.." >/dev/null 2>&1 && pwd )
+export SAMPIC_DAQ_ROOT="$repo_root"
 
 # Check if MIDASSYS is defined
 if [ -z "$MIDASSYS" ]; then
@@ -45,8 +47,10 @@ while IFS='=' read -r process_name screen_name || [ -n "$process_name" ]; do
     # Remove "_name" from the process name
     process_name_no_suffix="${process_name%_name}"
 
+    cmd=( "./$process_name_no_suffix" "-e" "$MIDAS_EXPT_NAME" )
+
     # Start the respective process in the background using screen
-    screen -d -m -S "$screen_name" "./$process_name_no_suffix" -e "$MIDAS_EXPT_NAME"
+    screen -d -m -S "$screen_name" "${cmd[@]}"
     echo "$process_name_no_suffix running in the background as $screen_name (Experiment $MIDAS_EXPT_NAME)..."
 done < "$screen_names_file"
 

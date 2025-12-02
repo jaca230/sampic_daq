@@ -1,0 +1,2090 @@
+[
+    {
+        "timestamp_utc": "2025-11-12T06:46:24.567961+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 439612,
+            "Events per sec.": 28370.83,
+            "kBytes per sec.": 19930.258
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 1,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 128,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 94,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:46:06 2025",
+            "Start time binary": 1762929966,
+            "Stop time": "Wed Nov 12 07:44:15 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 128,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:46:54.000274+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 319642,
+            "Events per sec.": 22442.9,
+            "kBytes per sec.": 28767.337
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 2,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 128,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 95,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:46:35 2025",
+            "Start time binary": 1762929995,
+            "Stop time": "Wed Nov 12 07:46:24 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 128,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:47:23.394229+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 237144,
+            "Events per sec.": 13708.55,
+            "kBytes per sec.": 31193.063
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 3,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 128,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 96,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:47:05 2025",
+            "Start time binary": 1762930025,
+            "Stop time": "Wed Nov 12 07:46:54 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 128,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:47:52.737679+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 187803,
+            "Events per sec.": 11355.98,
+            "kBytes per sec.": 45798.942
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 4,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 128,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 97,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:47:34 2025",
+            "Start time binary": 1762930054,
+            "Stop time": "Wed Nov 12 07:47:23 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 128,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:48:22.149738+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 132090,
+            "Events per sec.": 7629.55,
+            "kBytes per sec.": 51709.433
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 5,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 128,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 98,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:48:03 2025",
+            "Start time binary": 1762930083,
+            "Stop time": "Wed Nov 12 07:47:52 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 128,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:48:52.158439+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 221924,
+            "Events per sec.": 14361.73,
+            "kBytes per sec.": 54919.592
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 6,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 128,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 99,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:48:33 2025",
+            "Start time binary": 1762930113,
+            "Stop time": "Wed Nov 12 07:48:22 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 128,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:49:22.263480+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 452529,
+            "Events per sec.": 28520.64,
+            "kBytes per sec.": 20087.701
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 7,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 256,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 100,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:49:03 2025",
+            "Start time binary": 1762930143,
+            "Stop time": "Wed Nov 12 07:48:52 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 256,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:49:51.695028+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 393301,
+            "Events per sec.": 23272.52,
+            "kBytes per sec.": 29059.087
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 8,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 256,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 101,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:49:33 2025",
+            "Start time binary": 1762930173,
+            "Stop time": "Wed Nov 12 07:49:22 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 256,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:50:20.988380+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 258337,
+            "Events per sec.": 16222.33,
+            "kBytes per sec.": 37152.966
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 9,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 256,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 102,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:50:02 2025",
+            "Start time binary": 1762930202,
+            "Stop time": "Wed Nov 12 07:49:51 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 256,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:55:25.223689+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 169091,
+            "Events per sec.": 11279.99,
+            "kBytes per sec.": 45123.062
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 10,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 256,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 104,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:55:05 2025",
+            "Start time binary": 1762930505,
+            "Stop time": "Wed Nov 12 07:50:21 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 256,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:55:54.622682+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 120250,
+            "Events per sec.": 7569.3,
+            "kBytes per sec.": 51072.71
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 11,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 256,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 105,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:55:36 2025",
+            "Start time binary": 1762930536,
+            "Stop time": "Wed Nov 12 07:55:25 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 256,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:56:24.406564+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 265651,
+            "Events per sec.": 14711.61,
+            "kBytes per sec.": 56194.766
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 12,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 256,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 106,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:56:06 2025",
+            "Start time binary": 1762930566,
+            "Stop time": "Wed Nov 12 07:55:54 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 256,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T06:56:55.884617+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 478562,
+            "Events per sec.": 28576.81,
+            "kBytes per sec.": 20103.994
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 13,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 512,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 107,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:56:36 2025",
+            "Start time binary": 1762930596,
+            "Stop time": "Wed Nov 12 07:56:24 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 512,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:02:02.946766+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 8496824,
+            "Events per sec.": 28497.4,
+            "kBytes per sec.": 36193.005
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 14,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 512,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 108,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 07:57:07 2025",
+            "Start time binary": 1762930627,
+            "Stop time": "Wed Nov 12 07:56:56 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 512,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:02:36.407973+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 273095,
+            "Events per sec.": 18141.31,
+            "kBytes per sec.": 41215.9
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 15,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 512,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 109,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:02:16 2025",
+            "Start time binary": 1762930936,
+            "Stop time": "Wed Nov 12 08:02:03 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 512,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:05:51.316591+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 204719,
+            "Events per sec.": 11546.34,
+            "kBytes per sec.": 46469.394
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 16,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 512,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 111,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:05:32 2025",
+            "Start time binary": 1762931132,
+            "Stop time": "Wed Nov 12 08:02:36 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 512,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:06:20.781159+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 123748,
+            "Events per sec.": 8153.3,
+            "kBytes per sec.": 54770.149
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 17,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 512,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 112,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:06:02 2025",
+            "Start time binary": 1762931162,
+            "Stop time": "Wed Nov 12 08:05:51 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 512,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:06:50.143766+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 257538,
+            "Events per sec.": 15109.39,
+            "kBytes per sec.": 59268.979
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 18,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 512,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 113,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:06:31 2025",
+            "Start time binary": 1762931191,
+            "Stop time": "Wed Nov 12 08:06:20 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 512,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:07:20.716231+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 499048,
+            "Events per sec.": 29626.3,
+            "kBytes per sec.": 21300.99
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 19,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 1024,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 114,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:07:02 2025",
+            "Start time binary": 1762931222,
+            "Stop time": "Wed Nov 12 08:06:50 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 1024,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:07:50.189022+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 409553,
+            "Events per sec.": 23188.95,
+            "kBytes per sec.": 29414.486
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 20,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 1024,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 115,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:07:31 2025",
+            "Start time binary": 1762931251,
+            "Stop time": "Wed Nov 12 08:07:20 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 1024,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:08:19.565421+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 266086,
+            "Events per sec.": 15874.96,
+            "kBytes per sec.": 37076.665
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 21,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 1024,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 116,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:08:01 2025",
+            "Start time binary": 1762931281,
+            "Stop time": "Wed Nov 12 08:07:50 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 1024,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:08:49.006139+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 89891,
+            "Events per sec.": 5310.04,
+            "kBytes per sec.": 43554.769
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 22,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 1024,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 117,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:08:30 2025",
+            "Start time binary": 1762931310,
+            "Stop time": "Wed Nov 12 08:08:19 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 1024,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:09:18.434670+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 62956,
+            "Events per sec.": 3492.4,
+            "kBytes per sec.": 43500.7
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 23,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 1024,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 118,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:09:00 2025",
+            "Start time binary": 1762931340,
+            "Stop time": "Wed Nov 12 08:08:49 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 1024,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:09:47.888148+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 180191,
+            "Events per sec.": 11269.59,
+            "kBytes per sec.": 44384.227
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 24,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 1024,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 119,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:09:29 2025",
+            "Start time binary": 1762931369,
+            "Stop time": "Wed Nov 12 08:09:18 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 1024,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:10:17.945177+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 494302,
+            "Events per sec.": 29541.67,
+            "kBytes per sec.": 21291.103
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 25,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 2048,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 120,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:09:59 2025",
+            "Start time binary": 1762931399,
+            "Stop time": "Wed Nov 12 08:09:48 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 2048,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:10:47.416504+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 123330,
+            "Events per sec.": 6979.53,
+            "kBytes per sec.": 22421.116
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 26,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 2048,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 121,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:10:29 2025",
+            "Start time binary": 1762931429,
+            "Stop time": "Wed Nov 12 08:10:18 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 2048,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:11:16.885096+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 62152,
+            "Events per sec.": 3989.23,
+            "kBytes per sec.": 22070.975
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 27,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 2048,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 122,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:10:58 2025",
+            "Start time binary": 1762931458,
+            "Stop time": "Wed Nov 12 08:10:47 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 2048,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:11:46.340312+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 42197,
+            "Events per sec.": 2526.74,
+            "kBytes per sec.": 21883.98
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 28,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 2048,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 123,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:11:28 2025",
+            "Start time binary": 1762931488,
+            "Stop time": "Wed Nov 12 08:11:17 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 2048,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:12:16.809900+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 29777,
+            "Events per sec.": 1797.03,
+            "kBytes per sec.": 21774.167
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 29,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 2048,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 124,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:11:57 2025",
+            "Start time binary": 1762931517,
+            "Stop time": "Wed Nov 12 08:11:46 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 2048,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:12:46.335396+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 98865,
+            "Events per sec.": 5686.86,
+            "kBytes per sec.": 22198.149
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 30,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 2048,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 125,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:12:28 2025",
+            "Start time binary": 1762931548,
+            "Stop time": "Wed Nov 12 08:12:16 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 2048,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:13:16.578002+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 112423,
+            "Events per sec.": 6431.71,
+            "kBytes per sec.": 11709.555
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 31,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 126,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:12:58 2025",
+            "Start time binary": 1762931578,
+            "Stop time": "Wed Nov 12 08:12:46 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:15:37.084366+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 53829,
+            "Events per sec.": 3488.4,
+            "kBytes per sec.": 11288.897
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 32,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 128,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:15:18 2025",
+            "Start time binary": 1762931718,
+            "Stop time": "Wed Nov 12 08:13:16 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:16:06.440051+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 34297,
+            "Events per sec.": 2043.97,
+            "kBytes per sec.": 11074.318
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 33,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 129,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:15:48 2025",
+            "Start time binary": 1762931748,
+            "Stop time": "Wed Nov 12 08:15:37 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:16:38.050193+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 20783,
+            "Events per sec.": 1313.49,
+            "kBytes per sec.": 10963.647
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 34,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 130,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:16:17 2025",
+            "Start time binary": 1762931777,
+            "Stop time": "Wed Nov 12 08:16:06 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:17:07.542678+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 16051,
+            "Events per sec.": 941.99,
+            "kBytes per sec.": 10907.927
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 35,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 131,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:16:49 2025",
+            "Start time binary": 1762931809,
+            "Stop time": "Wed Nov 12 08:16:38 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:17:36.991794+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 51146,
+            "Events per sec.": 2890.29,
+            "kBytes per sec.": 11123.753
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 36,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 132,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:17:18 2025",
+            "Start time binary": 1762931838,
+            "Stop time": "Wed Nov 12 08:17:07 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:18:06.751411+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 50162,
+            "Events per sec.": 3271.77,
+            "kBytes per sec.": 5881.191
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 37,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 133,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:17:48 2025",
+            "Start time binary": 1762931868,
+            "Stop time": "Wed Nov 12 08:17:37 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:18:36.203650+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 30646,
+            "Events per sec.": 1811.51,
+            "kBytes per sec.": 5663.424
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 38,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 134,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:18:17 2025",
+            "Start time binary": 1762931897,
+            "Stop time": "Wed Nov 12 08:18:06 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:19:25.434054+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 15682,
+            "Events per sec.": 944.89,
+            "kBytes per sec.": 10911.005
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 35,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 136,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:19:07 2025",
+            "Start time binary": 1762931947,
+            "Stop time": "Wed Nov 12 08:18:36 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:19:54.869426+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 50359,
+            "Events per sec.": 2892.99,
+            "kBytes per sec.": 11126.765
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 36,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 4096,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 137,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:19:36 2025",
+            "Start time binary": 1762931976,
+            "Stop time": "Wed Nov 12 08:19:25 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 4096,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:20:24.335744+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 49750,
+            "Events per sec.": 3189.04,
+            "kBytes per sec.": 5870.368
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 37,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 138,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:20:06 2025",
+            "Start time binary": 1762932006,
+            "Stop time": "Wed Nov 12 08:19:54 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:20:53.788731+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 30406,
+            "Events per sec.": 1777.31,
+            "kBytes per sec.": 5664.338
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 38,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 139,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:20:35 2025",
+            "Start time binary": 1762932035,
+            "Stop time": "Wed Nov 12 08:20:24 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:21:23.143912+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 19169,
+            "Events per sec.": 1061.55,
+            "kBytes per sec.": 5560.322
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 39,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 140,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:21:04 2025",
+            "Start time binary": 1762932064,
+            "Stop time": "Wed Nov 12 08:20:53 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:21:52.582896+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 11207,
+            "Events per sec.": 697.75,
+            "kBytes per sec.": 5499.682
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 40,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 141,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:21:34 2025",
+            "Start time binary": 1762932094,
+            "Stop time": "Wed Nov 12 08:21:23 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:22:21.922722+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 8813,
+            "Events per sec.": 521.52,
+            "kBytes per sec.": 5473.523
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 41,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 142,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:22:03 2025",
+            "Start time binary": 1762932123,
+            "Stop time": "Wed Nov 12 08:21:52 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:22:52.327747+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 25788,
+            "Events per sec.": 1491.32,
+            "kBytes per sec.": 5582.634
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 42,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 8192,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 143,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:22:33 2025",
+            "Start time binary": 1762932153,
+            "Stop time": "Wed Nov 12 08:22:22 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 8192,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:23:21.906150+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 25529,
+            "Events per sec.": 1672.14,
+            "kBytes per sec.": 2957.741
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 43,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 16384,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 144,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:23:03 2025",
+            "Start time binary": 1762932183,
+            "Stop time": "Wed Nov 12 08:22:52 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 16384,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:24:13.574976+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 14955,
+            "Events per sec.": 938.39,
+            "kBytes per sec.": 2853.445
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 44,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 16384,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 146,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:23:55 2025",
+            "Start time binary": 1762932235,
+            "Stop time": "Wed Nov 12 08:23:22 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 16384,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:24:43.044806+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 9722,
+            "Events per sec.": 586.18,
+            "kBytes per sec.": 2796.95
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 45,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 16384,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 147,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:24:24 2025",
+            "Start time binary": 1762932264,
+            "Stop time": "Wed Nov 12 08:24:13 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 16384,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:25:12.496493+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 6968,
+            "Events per sec.": 396.13,
+            "kBytes per sec.": 2773.615
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 46,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 16384,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 148,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:24:54 2025",
+            "Start time binary": 1762932294,
+            "Stop time": "Wed Nov 12 08:24:43 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 16384,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:25:41.899362+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 4737,
+            "Events per sec.": 304.16,
+            "kBytes per sec.": 2762.647
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 47,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 16384,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 149,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:25:23 2025",
+            "Start time binary": 1762932323,
+            "Stop time": "Wed Nov 12 08:25:12 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 16384,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:26:28.469930+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 12000,
+            "Events per sec.": 791.84,
+            "kBytes per sec.": 2818.115
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 48,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 16384,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 151,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:26:08 2025",
+            "Start time binary": 1762932368,
+            "Stop time": "Wed Nov 12 08:25:42 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 16384,
+            "frames_per_block": 31
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:26:58.402025+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 14970,
+            "Events per sec.": 898.09,
+            "kBytes per sec.": 1506.021
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 49,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 32768,
+            "current_frames_per_block": 1
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 152,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:26:40 2025",
+            "Start time binary": 1762932400,
+            "Stop time": "Wed Nov 12 08:26:28 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 32768,
+            "frames_per_block": 1
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:27:45.752674+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 9250,
+            "Events per sec.": 524.76,
+            "kBytes per sec.": 1455.642
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 50,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 32768,
+            "current_frames_per_block": 2
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 154,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:27:27 2025",
+            "Start time binary": 1762932447,
+            "Stop time": "Wed Nov 12 08:26:58 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 32768,
+            "frames_per_block": 2
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:28:15.194222+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 5211,
+            "Events per sec.": 328.14,
+            "kBytes per sec.": 1418.759
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 51,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 32768,
+            "current_frames_per_block": 4
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 155,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:27:56 2025",
+            "Start time binary": 1762932476,
+            "Stop time": "Wed Nov 12 08:27:45 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 32768,
+            "frames_per_block": 4
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:28:44.646061+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 4072,
+            "Events per sec.": 243.45,
+            "kBytes per sec.": 1407.021
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 52,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 32768,
+            "current_frames_per_block": 8
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 156,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:28:26 2025",
+            "Start time binary": 1762932506,
+            "Stop time": "Wed Nov 12 08:28:15 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 32768,
+            "frames_per_block": 8
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:29:13.975156+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 3497,
+            "Events per sec.": 197.18,
+            "kBytes per sec.": 1399.417
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 53,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 32768,
+            "current_frames_per_block": 16
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 157,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:28:55 2025",
+            "Start time binary": 1762932535,
+            "Stop time": "Wed Nov 12 08:28:44 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 32768,
+            "frames_per_block": 16
+        }
+    },
+    {
+        "timestamp_utc": "2025-11-12T07:29:44.535907+00:00",
+        "/Equipment/SAMPIC 00/Statistics": {
+            "Events sent": 0,
+            "Events per sec.": 0,
+            "kBytes per sec.": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Errors": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Errors' not found in ODB\""
+        },
+        "/Equipment/SAMPIC 00/Settings/Collector": {
+            "error": "\"Key '/Equipment/SAMPIC 00/Settings/Collector' not found in ODB\""
+        },
+        "/Sequencer/Helpers": {
+            "sequence_index": 54,
+            "sample_duration_seconds": 15,
+            "current_pulser_period_us": 32768,
+            "current_frames_per_block": 31
+        },
+        "/Runinfo": {
+            "State": 3,
+            "Online Mode": 1,
+            "Run number": 158,
+            "Transition in progress": 0,
+            "Start abort": 0,
+            "Requested transition": 0,
+            "Start time": "Wed Nov 12 08:29:25 2025",
+            "Start time binary": 1762932565,
+            "Stop time": "Wed Nov 12 08:29:14 2025",
+            "Stop time binary": 0
+        },
+        "/Equipment/SAMPIC 00/Settings/Crate": {
+            "pulser_period": 32768,
+            "frames_per_block": 31
+        }
+    }
+]

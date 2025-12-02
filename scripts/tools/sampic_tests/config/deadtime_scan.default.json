@@ -1,0 +1,36 @@
+{
+  "connection": {
+    "ip": "192.168.0.4",
+    "port": 27015,
+    "load_calibration": true,
+    "calibration_dir": "resources/calib",
+    "threshold_volts": 0.1,
+    "pulser_sync": false,
+    "use_external_clock": false
+  },
+  "readout": {
+    "prepare_interval": 100,
+    "max_loops": 10000,
+    "retry_sleep_us": 100
+  },
+  "timing": {
+    "sample_duration_s": 3.0,
+    "samples_per_combo": 5,
+    "cooldown_between_combos_s": 5.0
+  },
+  "start_retry": {
+    "max_attempts": 5,
+    "initial_delay_s": 10.0,
+    "backoff": 2.0
+  },
+  "scan": {
+    "pulser_period_us": [1000, 750, 500, 250, 100, 75, 50, 25, 10],
+    "digitizer_rates_mhz": [6400, 4252, 3200, 2133, 1600],
+    "channel_counts": [1, 2, 4, 8, 16, 32, 64],
+    "board_index": 0
+  },
+  "output": {
+    "results_path": "scripts/tools/sampic_tests/data/deadtime_scan.jsonl"
+  },
+  "notes": "Edit this file to prune the parameter space or tweak sampling timings"
+}

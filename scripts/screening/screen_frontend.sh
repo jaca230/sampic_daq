@@ -103,10 +103,34 @@ INDEX_STR=$(printf "%02d" "$INDEX")
 # --------------------------------------------------------------------------
 # Executable path
 # --------------------------------------------------------------------------
-EXECUTABLE="$BASE_DIR/build/sampic_frontend"
+EXECUTABLE="$BASE_DIR/build/bin/sampic_frontend"
 if [ ! -x "$EXECUTABLE" ]; then
     echo "[ERROR] Executable not found or not executable: $EXECUTABLE"
     exit 1
+fi
+
+# --------------------------------------------------------------------------
+# Ensure vendor libraries are available at runtime (matches scripts/run.sh)
+# --------------------------------------------------------------------------
+VENDOR_LIB_DIR="$BASE_DIR/external/sampic_256ch_lib/lib"
+LPDEVC_LIB_DIR="$BASE_DIR/external/sampic_256ch_lib/lpdevc_install/lib"
+RUNTIME_LIB_PATHS=()
+
+if [ -d "$VENDOR_LIB_DIR" ]; then
+    RUNTIME_LIB_PATHS+=("$VENDOR_LIB_DIR")
+fi
+
+if [ -d "$LPDEVC_LIB_DIR" ]; then
+    RUNTIME_LIB_PATHS+=("$LPDEVC_LIB_DIR")
+fi
+
+if [ ${#RUNTIME_LIB_PATHS[@]} -gt 0 ]; then
+    RUNTIME_LIB_PATH=$(IFS=:; echo "${RUNTIME_LIB_PATHS[*]}")
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH:$LD_LIBRARY_PATH"
+    else
+        export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH"
+    fi
 fi
 
 # --------------------------------------------------------------------------
