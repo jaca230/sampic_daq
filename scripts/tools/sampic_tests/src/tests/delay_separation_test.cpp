@@ -107,6 +107,25 @@ void print_summary(const DelayRunResult& result) {
   }
 }
 
+void print_hits_for_sample(int sample_idx,
+                           const std::vector<sampic::scan::HitRecord>& hits) {
+  std::cout << "    Sample " << (sample_idx + 1) << " captured " << hits.size() << " hits\n";
+  const std::size_t limit = 16;
+  for (std::size_t i = 0; i < hits.size() && i < limit; ++i) {
+    const auto& hit = hits[i];
+    std::cout << "      hit[" << i << "]: board=" << hit.board
+              << " sampic=" << hit.sampic
+              << " channel=" << hit.channel
+              << " amplitude=" << hit.amplitude
+              << " baseline=" << hit.baseline
+              << " tot(ns)=" << hit.tot_ns
+              << " first_cell_ts(ns)=" << hit.first_cell_ts_ns << "\n";
+  }
+  if (hits.size() > limit) {
+    std::cout << "      ... (" << (hits.size() - limit) << " more)\n";
+  }
+}
+
 DelayRunResult run_delay(double delay_ns,
                          int digitizer_rate_mhz,
                          const sampic::double_pulse::DoublePulseConfig& cfg,
@@ -149,8 +168,11 @@ DelayRunResult run_delay(double delay_ns,
     result.delay_ns = delay_ns;
     sampic::lecroy::ManualTriggerGuard trigger_guard(manual_trigger);
     for (int idx = 0; idx < samples_per_delay; ++idx) {
-      auto stats = session.acquire_sample(cfg.readout, cfg.timing.sample_duration_s, nullptr);
+      std::vector<sampic::scan::HitRecord> hits;
+      auto stats = session.acquire_sample(cfg.readout, cfg.timing.sample_duration_s,
+                                          nullptr, true, &hits);
       result.samples.push_back(std::move(stats));
+      print_hits_for_sample(idx, hits);
     }
     session.stop_run();
     result.aggregate = combine(result.samples);

@@ -75,6 +75,9 @@ add_executable(external_trigger_probe
   src/lecroy/lecroy_client.cpp
   src/lecroy/manual_trigger_controller.cpp)
 
+add_executable(sampic_hit_dump
+  src/tests/sampic_hit_dump.cpp)
+
 target_include_directories(sampic_deadtime_scan PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
   ${LPDEVC_INCLUDE_DIR}
@@ -101,6 +104,12 @@ target_include_directories(external_trigger_probe PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+target_include_directories(sampic_hit_dump PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 set(SAMPIC_VENDOR_LIBS
   ${SAMPIC_VENDOR_LIB_DIR}/libsampic256ch.so
   ${LPDEVC_LIB_DIR}/liblpdevC.so
@@ -110,7 +119,8 @@ set(SAMPIC_VENDOR_LIBS
 set(SAMPIC_TEST_TARGETS
   sampic_deadtime_scan
   delay_separation_test
-  external_trigger_probe)
+  external_trigger_probe
+  sampic_hit_dump)
 
 foreach(target ${SAMPIC_TEST_TARGETS})
   target_link_libraries(${target} PRIVATE
@@ -132,4 +142,7 @@ set_target_properties(lecroy_test PROPERTIES
 set_target_properties(external_trigger_probe PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-install(TARGETS ${SAMPIC_TEST_TARGETS} lecroy_test external_trigger_probe RUNTIME DESTINATION bin)
+set_target_properties(sampic_hit_dump PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+install(TARGETS ${SAMPIC_TEST_TARGETS} lecroy_test external_trigger_probe sampic_hit_dump RUNTIME DESTINATION bin)

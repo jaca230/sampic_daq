@@ -44,7 +44,9 @@ class SampicSession {
 
   scan::SampleStats acquire_sample(const ReadoutConfig& readout_cfg,
                                    double duration_s,
-                                   volatile std::sig_atomic_t* stop_flag);
+                                   volatile std::sig_atomic_t* stop_flag,
+                                   bool capture_hits = false,
+                                   std::vector<scan::HitRecord>* hits_out = nullptr);
 
  private:
   void initialise_connection();

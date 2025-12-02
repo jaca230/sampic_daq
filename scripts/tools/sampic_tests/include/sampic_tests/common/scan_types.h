@@ -36,9 +36,20 @@ struct SampleStats {
   void record_error(const std::string& msg);
 };
 
+struct HitRecord {
+  int board = -1;
+  int sampic = -1;
+  int channel = -1;
+  double amplitude = 0.0;
+  double baseline = 0.0;
+  double tot_ns = 0.0;
+  double first_cell_ts_ns = 0.0;
+};
+
 struct SampleResult {
   SampleStats stats;
   bool success = false;
+  std::vector<HitRecord> hits;
 };
 
 struct RunStatus {
@@ -48,4 +59,3 @@ struct RunStatus {
 };
 
 }  // namespace sampic::scan
-

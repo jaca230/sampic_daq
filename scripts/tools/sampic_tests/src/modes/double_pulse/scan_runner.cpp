@@ -50,6 +50,21 @@ nlohmann::json sample_stats_to_json(const SampleResult& sample) {
   j["max_loop_hits"] = sample.stats.max_loop_hits;
   j["hit_timestamp_separation"] = sample.stats.hit_separation.to_json();
   j["errors"] = sample.stats.error_messages;
+  if (!sample.hits.empty()) {
+    nlohmann::json hits = nlohmann::json::array();
+    for (const auto& hit : sample.hits) {
+      hits.push_back({{"board", hit.board},
+                      {"sampic", hit.sampic},
+                      {"channel", hit.channel},
+                      {"amplitude", hit.amplitude},
+                      {"baseline", hit.baseline},
+                      {"tot_ns", hit.tot_ns},
+                      {"first_cell_ts_ns", hit.first_cell_ts_ns}});
+    }
+    j["hits"] = hits;
+  } else {
+    j["hits"] = nlohmann::json::array();
+  }
   return j;
 }
 
@@ -77,10 +92,17 @@ struct ComboAggregate {
 
 SampleResult collect_sample(SampicSession& session,
                             const DoublePulseConfig& cfg,
-                            volatile std::sig_atomic_t* stop_flag) {
+                            volatile std::sig_atomic_t* stop_flag,
+                            bool capture_hits = false) {
   SampleResult result;
   try {
-    result.stats = session.acquire_sample(cfg.readout, cfg.timing.sample_duration_s, stop_flag);
+    if (capture_hits) {
+      result.stats = session.acquire_sample(cfg.readout, cfg.timing.sample_duration_s,
+                                            stop_flag, true, &result.hits);
+    } else {
+      result.stats = session.acquire_sample(cfg.readout, cfg.timing.sample_duration_s,
+                                            stop_flag, false, nullptr);
+    }
     result.success = !(stop_flag && *stop_flag);
   } catch (const std::exception& ex) {
     result.stats.record_error(std::string("Sample failed: ") + ex.what());

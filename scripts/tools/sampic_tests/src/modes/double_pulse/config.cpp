@@ -76,6 +76,7 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
     if (node.contains("calibration_dir")) cfg.connection.calibration_dir = node.at("calibration_dir").get<std::string>();
     if (node.contains("threshold_volts")) cfg.connection.threshold_volts = node.at("threshold_volts").get<double>();
     if (node.contains("use_external_clock")) cfg.connection.use_external_clock = node.at("use_external_clock").get<bool>();
+    if (node.contains("use_external_trigger")) cfg.connection.use_external_trigger = node.at("use_external_trigger").get<bool>();
   }
 
   if (doc.contains("external_trigger")) {

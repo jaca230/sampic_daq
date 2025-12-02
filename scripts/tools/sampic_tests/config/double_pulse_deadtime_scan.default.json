@@ -5,7 +5,8 @@
     "load_calibration": true,
     "calibration_dir": "resources/calib",
     "threshold_volts": 0.1,
-    "use_external_clock": false
+    "use_external_clock": false,
+    "use_external_trigger": false
   },
   "external_trigger": {
     "type": "EXT_SIG",

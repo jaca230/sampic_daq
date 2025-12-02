@@ -1,5 +1,6 @@
 #include "sampic_tests/modes/double_pulse/sampic_session.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -94,10 +95,17 @@ void SampicSession::stop_run() {
 
 scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg,
                                                 double duration_s,
-                                                volatile std::sig_atomic_t* stop_flag) {
+                                                volatile std::sig_atomic_t* stop_flag,
+                                                bool capture_hits,
+                                                std::vector<scan::HitRecord>* hits_out) {
   scan::SampleStats stats;
   EventStruct event{};
   auto last_timestamp_ns = std::optional<double>{};
+  constexpr std::size_t kMaxCapturedHits = 512;
+  std::size_t captured_hits = 0;
+  if (capture_hits && hits_out) {
+    hits_out->clear();
+  }
 
   const auto t_begin = std::chrono::steady_clock::now();
   auto should_stop = [&](const std::chrono::steady_clock::time_point& now) {
@@ -155,7 +163,6 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
       stats.total_bytes += event_bytes;
       ++stats.events;
       stats.total_hits += static_cast<std::size_t>(hits);
-
       for (int i = 0; i < hits; ++i) {
         const double timestamp = event.Hit[i].FirstCellTimeStamp;
         if (last_timestamp_ns.has_value()) {
@@ -165,6 +172,22 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
           }
         }
         last_timestamp_ns = timestamp;
+      }
+
+      if (capture_hits && hits_out && captured_hits < kMaxCapturedHits) {
+        const int to_copy = std::min(hits, MAX_EXPECTED_FRAMES);
+        for (int i = 0; i < to_copy && captured_hits < kMaxCapturedHits; ++i) {
+          scan::HitRecord rec;
+          rec.board = event.Hit[i].FeBoardIndex;
+          rec.sampic = event.Hit[i].SampicIndex;
+          rec.channel = event.Hit[i].Channel;
+          rec.amplitude = event.Hit[i].Amplitude;
+          rec.baseline = event.Hit[i].Baseline;
+          rec.tot_ns = event.Hit[i].TOTValue;
+          rec.first_cell_ts_ns = event.Hit[i].FirstCellTimeStamp;
+          hits_out->push_back(rec);
+          ++captured_hits;
+        }
       }
     }
 
@@ -217,25 +240,33 @@ void SampicSession::configure_channel_defaults() {
   check(SAMPIC256CH_SetChannelMode(&info_, &params_, ALL_FE_BOARDs, ALL_CHANNELs, FALSE),
         "DisableAllChannels");
 
-  check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, ALL_FE_BOARDs,
-                                                ALL_SAMPICs, ALL_CHANNELs,
-                                                SAMPIC_CHANNEL_EXT_TRIGGER_MODE),
-        "SetSampicChannelTriggerMode");
-
-  check(SAMPIC256CH_SetSampicTriggerOption(&info_, &params_, ALL_FE_BOARDs, ALL_SAMPICs,
-                                           SAMPIC_TRIGGER_IS_L1),
-        "SetSampicTriggerOption");
-
-  check(SAMPIC256CH_SetExternalTriggerType(&info_, &params_, trigger_opts_.trigger_type),
-        "SetExternalTriggerType");
-  check(SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_, trigger_opts_.trigger_edge),
-        "SetExternalTriggerEdge");
-  check(SAMPIC256CH_SetExternalTriggerSigLevel(&info_, &params_, trigger_opts_.trigger_level),
-        "SetExternalTriggerSigLevel");
-  check(SAMPIC256CH_SetExternalSyncEdge(&info_, &params_, trigger_opts_.sync_edge),
-        "SetExternalSyncEdge");
-  check(SAMPIC256CH_SetExternalSyncSigLevel(&info_, &params_, trigger_opts_.sync_level),
-        "SetExternalSyncSigLevel");
+  if (conn_opts_.use_external_trigger) {
+    check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, ALL_FE_BOARDs,
+                                                  ALL_SAMPICs, ALL_CHANNELs,
+                                                  SAMPIC_CHANNEL_EXT_TRIGGER_MODE),
+          "SetSampicChannelTriggerMode");
+    check(SAMPIC256CH_SetSampicTriggerOption(&info_, &params_, ALL_FE_BOARDs, ALL_SAMPICs,
+                                             SAMPIC_TRIGGER_IS_L1),
+          "SetSampicTriggerOption");
+    check(SAMPIC256CH_SetExternalTriggerType(&info_, &params_, trigger_opts_.trigger_type),
+          "SetExternalTriggerType");
+    check(SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_, trigger_opts_.trigger_edge),
+          "SetExternalTriggerEdge");
+    check(SAMPIC256CH_SetExternalTriggerSigLevel(&info_, &params_, trigger_opts_.trigger_level),
+          "SetExternalTriggerSigLevel");
+    check(SAMPIC256CH_SetExternalSyncEdge(&info_, &params_, trigger_opts_.sync_edge),
+          "SetExternalSyncEdge");
+    check(SAMPIC256CH_SetExternalSyncSigLevel(&info_, &params_, trigger_opts_.sync_level),
+          "SetExternalSyncSigLevel");
+  } else {
+    check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, ALL_FE_BOARDs,
+                                                  ALL_SAMPICs, ALL_CHANNELs,
+                                                  SAMPIC_CHANNEL_SELF_TRIGGER_MODE),
+          "SetSelfTriggerMode");
+    check(SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_, ALL_FE_BOARDs,
+                                                 ALL_SAMPICs, ALL_CHANNELs, RISING_EDGE),
+          "SetSelfTriggerEdge");
+  }
 
   check(SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_, ALL_FE_BOARDs,
                                               ALL_SAMPICs, ALL_CHANNELs, TRUE),

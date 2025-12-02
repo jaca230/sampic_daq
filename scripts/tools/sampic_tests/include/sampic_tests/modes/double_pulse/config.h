@@ -31,6 +31,7 @@ struct ConnectionConfig {
   std::string calibration_dir = "resources/calib";
   double threshold_volts = 0.1;
   bool use_external_clock = false;
+  bool use_external_trigger = true;
 };
 
 struct ReadoutConfig {

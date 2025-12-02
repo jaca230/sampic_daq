@@ -87,6 +87,21 @@ nlohmann::json sample_stats_to_json(const SampleResult& sample) {
   j["max_loop_hits"] = sample.stats.max_loop_hits;
   j["hit_timestamp_separation"] = sample.stats.hit_separation.to_json();
   j["errors"] = sample.stats.error_messages;
+  if (!sample.hits.empty()) {
+    nlohmann::json hits = nlohmann::json::array();
+    for (const auto& hit : sample.hits) {
+      hits.push_back({{"board", hit.board},
+                      {"sampic", hit.sampic},
+                      {"channel", hit.channel},
+                      {"amplitude", hit.amplitude},
+                      {"baseline", hit.baseline},
+                      {"tot_ns", hit.tot_ns},
+                      {"first_cell_ts_ns", hit.first_cell_ts_ns}});
+    }
+    j["hits"] = hits;
+  } else {
+    j["hits"] = nlohmann::json::array();
+  }
   return j;
 }
 
