@@ -298,6 +298,21 @@ void SampicSession::configure_channel_mask(int board_index,
     check(SAMPIC256CH_SetChannelMode(&info_, &params_, board_index, channel, TRUE),
           "EnableChannel");
   }
+
+  const auto trigger_mode = conn_opts_.use_external_trigger
+                                ? SAMPIC_CHANNEL_EXT_TRIGGER_MODE
+                                : SAMPIC_CHANNEL_SELF_TRIGGER_MODE;
+  check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, board_index,
+                                                ALL_SAMPICs, ALL_CHANNELs, trigger_mode),
+        "SetBoardTriggerMode");
+  if (!conn_opts_.use_external_trigger) {
+    check(SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_, board_index,
+                                                 ALL_SAMPICs, ALL_CHANNELs, RISING_EDGE),
+          "SetBoardSelfTriggerEdge");
+  } else {
+    check(SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_, trigger_opts_.trigger_edge),
+          "SetBoardExternalEdge");
+  }
 }
 
 void SampicSession::check(SAMPIC256CH_ErrCode err, std::string_view what) {

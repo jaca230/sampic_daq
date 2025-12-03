@@ -111,7 +111,7 @@ def _print_readback(device: LecroySocket, channels: Iterable[str]) -> None:
     print(f"  FREQ?       = {_safe_query(device, 'FREQ?')}")
     for channel in channels:
         chan = channel.upper()
-        for field in ("DBL?", "AMP?", "BASE?", "WID?", "DEL?", "OUT?", "OUTB?", "DISA?"):
+        for field in ("DBL?", "AMP?", "BASE?", "WID?", "DEL?", "DISA?"):
             response = _safe_query(device, f"{chan}:{field}")
             print(f"  {chan}:{field:<5} = {response}")
 

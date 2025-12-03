@@ -20,8 +20,9 @@ struct ChannelSet {
 };
 
 struct ParameterCombination {
-  double pulse_separation_ns = 0.0;
+  double lecroy_frequency_hz = 0.0;
   int digitizer_rate_mhz = 0;
+  double pulse_separation_ns = 0.0;
 };
 
 struct ConnectionConfig {
@@ -32,6 +33,15 @@ struct ConnectionConfig {
   double threshold_volts = 0.1;
   bool use_external_clock = false;
   bool use_external_trigger = true;
+};
+
+struct BinarySearchConfig {
+  double min_ns = 10.0;
+  double max_ns = 1.0e6;
+  double start_ns = 1000.0;
+  double tolerance_ns = 50.0;
+  int max_iterations = 20;
+  double ratio_threshold = 1.5;
 };
 
 struct ReadoutConfig {
@@ -54,7 +64,8 @@ struct StartRetryConfig {
 
 struct ScanConfig {
   std::vector<int> digitizer_rates_mhz;
-  std::vector<double> pulse_separation_ns;
+  std::vector<double> lecroy_rates_hz;
+  std::vector<double> legacy_pulse_separation_ns;
   std::vector<int> channels;
   int board_index = 0;
 };
@@ -79,6 +90,7 @@ struct DoublePulseConfig {
   StartRetryConfig start_retry;
   ScanConfig scan;
   sampic::lecroy::LecroyConfig lecroy;
+  BinarySearchConfig search;
   OutputConfig output;
 };
 

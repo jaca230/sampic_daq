@@ -1,0 +1,39 @@
+G:
+  FREQ: 1.0E+01         # 10 Hz repetition
+  TRMD: NORMAL
+  TRSL: POS
+  TRLV: 1.50
+  TRIM: FIFTY
+  TROV: 1.50
+
+A:
+  CHK: 9211
+  AMP: 1.000E+0
+  BASE: 0.000E+0
+  WID: 2.40E-9
+  LEAD: 1.80E-9
+  TRAIL: 1.90E-9
+  DBL: ON
+  DBLD: 1.0E-3        # 1 ms separation
+  DEL: 1.0E-3
+  OUT: ON
+  OUTB: OFF
+  DISA: OFF
+  INV: OFF
+  LOADC: OFF
+  LIM: OFF
+  LVH: 5.0
+  LVL: -5.0
+
+B:
+  CHK: 9212
+  AMP: 0.500E+0
+  BASE: 0.000E+0
+  WID: 1.00E-7
+  LEAD: 1.00E-9
+  TRAIL: 1.00E-9
+  DBL: OFF
+  DEL: 0.0
+  OUT: OFF
+  OUTB: OFF
+  DISA: OFF

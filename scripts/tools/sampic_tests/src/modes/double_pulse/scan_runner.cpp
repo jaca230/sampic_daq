@@ -1,5 +1,7 @@
 #include "sampic_tests/modes/double_pulse/scan_runner.h"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -21,6 +23,41 @@ namespace sampic::double_pulse {
 namespace {
 
 using scan::SampleResult;
+
+std::optional<double> parse_double(const std::string& text) {
+  try {
+    size_t processed = 0;
+    double value = std::stod(text, &processed);
+    if (processed == 0) return std::nullopt;
+    return value;
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+}
+
+double read_frequency_hz(sampic::lecroy::LecroyClient& lecroy, double fallback) {
+  try {
+    const auto resp = lecroy.Query("FREQ?");
+    if (auto parsed = parse_double(resp)) {
+      return *parsed;
+    }
+  } catch (const std::exception&) {
+  }
+  return fallback;
+}
+
+double read_delay_ns(sampic::lecroy::LecroyClient& lecroy,
+                     const std::string& channel,
+                     double fallback_ns) {
+  try {
+    const auto resp = lecroy.Query(channel + ":DEL?");
+    if (auto parsed = parse_double(resp)) {
+      return *parsed * 1e9;
+    }
+  } catch (const std::exception&) {
+  }
+  return fallback_ns;
+}
 
 nlohmann::json sample_stats_to_json(const SampleResult& sample) {
   nlohmann::json j;
@@ -51,44 +88,42 @@ nlohmann::json sample_stats_to_json(const SampleResult& sample) {
   j["hit_timestamp_separation"] = sample.stats.hit_separation.to_json();
   j["errors"] = sample.stats.error_messages;
   if (!sample.hits.empty()) {
-    nlohmann::json hits = nlohmann::json::array();
-    for (const auto& hit : sample.hits) {
-      hits.push_back({{"board", hit.board},
-                      {"sampic", hit.sampic},
-                      {"channel", hit.channel},
-                      {"amplitude", hit.amplitude},
-                      {"baseline", hit.baseline},
-                      {"tot_ns", hit.tot_ns},
-                      {"first_cell_ts_ns", hit.first_cell_ts_ns}});
-    }
-    j["hits"] = hits;
+    j["hit_count"] = sample.hits.size();
   } else {
-    j["hits"] = nlohmann::json::array();
+    j["hit_count"] = 0;
   }
   return j;
 }
 
-struct ComboAggregate {
-  std::size_t events = 0;
-  std::size_t total_hits = 0;
-  std::size_t total_bytes = 0;
-  double total_duration_s = 0.0;
-  std::size_t retries = 0;
-  std::size_t decode_errors = 0;
-  std::size_t max_loop_hits = 0;
-  scan::SeparationAccumulator separation;
-
-  void accumulate(const SampleResult& sample) {
-    events += sample.stats.events;
-    total_hits += sample.stats.total_hits;
-    total_bytes += sample.stats.total_bytes;
-    total_duration_s += sample.stats.duration_s;
-    retries += sample.stats.retries;
-    decode_errors += sample.stats.decode_errors;
-    max_loop_hits += sample.stats.max_loop_hits;
-    separation.merge(sample.stats.hit_separation);
+scan::SampleStats aggregate_stats(const std::vector<SampleResult>& samples) {
+  scan::SampleStats agg;
+  for (const auto& sample : samples) {
+    agg.events += sample.stats.events;
+    agg.total_hits += sample.stats.total_hits;
+    agg.total_bytes += sample.stats.total_bytes;
+    agg.retries += sample.stats.retries;
+    agg.decode_errors += sample.stats.decode_errors;
+    agg.max_loop_hits += sample.stats.max_loop_hits;
+    agg.duration_s += sample.stats.duration_s;
+    agg.hit_separation.merge(sample.stats.hit_separation);
+    for (const auto& err : sample.stats.error_messages) {
+      agg.record_error(err);
+    }
   }
-};
+  return agg;
+}
+
+double estimate_hit_rate_hz(const std::vector<scan::HitRecord>& hits) {
+  if (hits.size() < 2) return 0.0;
+  auto minmax = std::minmax_element(
+      hits.begin(), hits.end(),
+      [](const auto& a, const auto& b) { return a.first_cell_ts_ns < b.first_cell_ts_ns; });
+  const double span_ns = minmax.second->first_cell_ts_ns - minmax.first->first_cell_ts_ns;
+  if (span_ns <= 0.0) return 0.0;
+  const double span_s = span_ns * 1e-9;
+  if (span_s <= 0.0) return 0.0;
+  return static_cast<double>(hits.size() - 1) / span_s;
+}
 
 SampleResult collect_sample(SampicSession& session,
                             const DoublePulseConfig& cfg,
@@ -132,30 +167,34 @@ std::unordered_set<std::string> load_completed(const std::filesystem::path& path
 
 nlohmann::json build_record(const DoublePulseConfig& cfg,
                             const ParameterCombination& combo,
+                            double best_delay_ns,
+                            double hit_rate_hz,
+                            double ratio_vs_freq,
                             const std::vector<SampleResult>& samples,
                             const std::optional<AppliedSettings>& readback,
                             const std::optional<std::string>& readback_error,
                             const scan::RunStatus& run_status,
                             const std::string& status,
                             const std::string& key,
-                            double wall_seconds) {
+                            double wall_seconds,
+                            const nlohmann::json& history) {
   nlohmann::json record;
   record["timestamp"] = common::TimeUtils::Iso8601Now();
   record["status"] = status;
   record["combo_key"] = key;
   record["wall_time_s"] = wall_seconds;
   record["parameters"] = {
-      {"double_pulse_delay_ns", combo.pulse_separation_ns},
+      {"lecroy_frequency_hz", combo.lecroy_frequency_hz},
       {"digitizer_rate_mhz", combo.digitizer_rate_mhz},
+      {"best_delay_ns", best_delay_ns},
       {"channel_ids", cfg.scan.channels},
       {"channel_count", cfg.scan.channels.size()},
       {"channel_label", "manual_selection"},
       {"board_index", cfg.scan.board_index}};
 
-  ComboAggregate agg;
+  const auto agg = aggregate_stats(samples);
   nlohmann::json sample_array = nlohmann::json::array();
   for (const auto& sample : samples) {
-    agg.accumulate(sample);
     sample_array.push_back(sample_stats_to_json(sample));
   }
   record["samples"] = sample_array;
@@ -163,16 +202,16 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
       {"events", agg.events},
       {"total_hits", agg.total_hits},
       {"total_bytes", agg.total_bytes},
-      {"duration_s", agg.total_duration_s},
+      {"duration_s", agg.duration_s},
       {"retries", agg.retries},
       {"decode_errors", agg.decode_errors},
       {"max_loop_hits", agg.max_loop_hits},
-      {"hit_timestamp_separation", agg.separation.to_json()}};
-  if (agg.total_duration_s > 0.0) {
-    record["aggregate"]["events_per_second"] = agg.events / agg.total_duration_s;
+      {"hit_timestamp_separation", agg.hit_separation.to_json()}};
+  if (agg.duration_s > 0.0) {
+    record["aggregate"]["events_per_second"] = agg.events / agg.duration_s;
     record["aggregate"]["data_mb_per_s"] =
         (static_cast<double>(agg.total_bytes) / (1024.0 * 1024.0)) /
-        agg.total_duration_s;
+        agg.duration_s;
   }
   if (agg.events > 0) {
     record["aggregate"]["hits_per_event"] =
@@ -213,12 +252,19 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
       {"backoff", cfg.start_retry.backoff}};
   record["lecroy"] = {
       {"channel", cfg.lecroy.channel.channel},
-      {"frequency_hz", cfg.lecroy.frequency_hz},
+      {"frequency_hz", combo.lecroy_frequency_hz},
       {"amplitude_v", cfg.lecroy.channel.amplitude_v},
       {"baseline_v", cfg.lecroy.channel.baseline_v},
       {"width_ns", cfg.lecroy.channel.width_ns},
       {"double_pulse_enabled", cfg.lecroy.channel.double_pulse_enabled},
       {"manual_trigger", cfg.lecroy.manual_trigger}};
+  record["search"] = {
+      {"best_delay_ns", best_delay_ns},
+      {"hit_rate_hz", hit_rate_hz},
+      {"ratio_vs_frequency", ratio_vs_freq},
+      {"ratio_threshold", cfg.search.ratio_threshold},
+      {"tolerance_ns", cfg.search.tolerance_ns},
+      {"history", history}};
   return record;
 }
 
@@ -287,8 +333,13 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     std::cout << std::noboolalpha;
   };
 
+  const std::size_t estimated_measurements =
+      std::max<std::size_t>(1, combos.size() * config_.search.max_iterations);
+  std::size_t completed_measurements = 0;
+  const auto scan_start = std::chrono::steady_clock::now();
+
   std::size_t combo_index = 0;
-  for (const auto& combo : combos) {
+  for (auto combo : combos) {
     if (stop_requested()) {
       std::cout << "Stop requested. Exiting.\n";
       break;
@@ -301,18 +352,35 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       continue;
     }
 
+    const double target_freq_hz = combo.lecroy_frequency_hz > 0.0
+                                       ? combo.lecroy_frequency_hz
+                                       : config_.lecroy.frequency_hz;
+    lecroy.SetFrequency(target_freq_hz);
+    const double applied_freq_hz = read_frequency_hz(lecroy, target_freq_hz);
+    combo.lecroy_frequency_hz = applied_freq_hz;
+    if (std::abs(applied_freq_hz - target_freq_hz) > std::max(1.0, target_freq_hz) * 0.01) {
+      std::cout << "    Warning: Lecroy frequency readback " << applied_freq_hz
+                << " Hz differs from requested " << target_freq_hz << " Hz\n";
+    }
+
     std::cout << "[run ] (" << combo_index << "/" << combos.size()
-              << ") separation=" << combo.pulse_separation_ns << "ns"
+              << ") freq=" << applied_freq_hz << "Hz"
               << " digitizer=" << combo.digitizer_rate_mhz << "MHz"
               << " channels=" << config_.scan.channels.size() << "\n";
+    std::cout << "    Lecroy frequency readback=" << applied_freq_hz << " Hz\n";
+    const std::string channel_name = config_.lecroy.channel.channel;
 
     const auto combo_start = std::chrono::steady_clock::now();
     bool combo_failed = false;
-    std::vector<SampleResult> samples;
-    samples.reserve(static_cast<std::size_t>(config_.timing.samples_per_combo));
-    scan::RunStatus run_status;
+    bool found_threshold = false;
+    scan::RunStatus best_run_status;
     std::optional<AppliedSettings> readback_settings;
     std::optional<std::string> readback_error;
+    std::vector<SampleResult> best_samples;
+    double best_delay_ns = config_.search.max_ns;
+    double best_hit_rate_hz = 0.0;
+    double best_ratio = 0.0;
+    nlohmann::json history = nlohmann::json::array();
 
     SampicSession* active_session = nullptr;
     const int max_session_attempts = 2;
@@ -320,18 +388,19 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     for (int attempt = 0; attempt < max_session_attempts && !active_session; ++attempt) {
       try {
         auto& sess = ensure_session();
-        lecroy.SetDoublePulseDelay(combo.pulse_separation_ns);
         sess.configure_for_combo(combo, config_.scan.board_index, config_.scan.channels);
         active_session = &sess;
       } catch (const std::exception& ex) {
         config_error = ex.what();
         if (attempt + 1 >= max_session_attempts) {
           combo_failed = true;
+          std::vector<SampleResult> failure_samples;
           SampleResult failure;
           failure.stats.record_error(std::string("Configuration failed: ") + config_error);
           failure.success = false;
-          samples.push_back(failure);
-          report_sample(samples.back(), -1, config_.timing.samples_per_combo);
+          failure_samples.push_back(failure);
+          report_sample(failure_samples.back(), -1, config_.timing.samples_per_combo);
+          best_samples = failure_samples;
         } else {
           std::cerr << "Configuration failed (" << config_error
                     << "). Resetting session...\n";
@@ -351,11 +420,33 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       }
     }
 
-    if (active_session && !combo_failed) {
+    double low = config_.search.min_ns;
+    double high = config_.search.max_ns;
+    double delay_ns = std::clamp(config_.search.start_ns, low, high);
+    int iteration = 0;
+    std::vector<SampleResult> last_samples;
+    scan::RunStatus last_run_status;
+    double last_hit_rate = 0.0;
+    double last_ratio = 0.0;
+
+    while (!combo_failed && !stop_requested() && iteration < config_.search.max_iterations) {
+      ++iteration;
+      lecroy.SetDoublePulseDelay(delay_ns);
+      const double applied_delay_ns = read_delay_ns(lecroy, channel_name, delay_ns);
+      std::cout << "    Requested delay=" << delay_ns << " ns, readback="
+                << applied_delay_ns << " ns\n";
+
+      std::vector<SampleResult> samples;
+      samples.reserve(static_cast<std::size_t>(config_.timing.samples_per_combo));
+      scan::RunStatus run_status;
+      std::vector<sampic::scan::HitRecord> aggregated_hits;
+
       std::vector<std::string> start_errors;
       int start_attempts = 0;
-      if (!active_session->start_run_with_retry(config_.start_retry, start_attempts, start_errors)) {
-        combo_failed = true;
+      bool iteration_failed = false;
+      if (!active_session ||
+          !active_session->start_run_with_retry(config_.start_retry, start_attempts, start_errors)) {
+        iteration_failed = true;
         run_status.run_started = false;
         run_status.start_attempts = start_attempts;
         run_status.start_errors = start_errors;
@@ -363,8 +454,6 @@ int DoublePulseScanRunner::run(bool debug_mode) {
         failure.stats.record_error("Run failed to start after retry budget exhausted.");
         failure.success = false;
         samples.push_back(failure);
-        report_sample(samples.back(), -1, config_.timing.samples_per_combo);
-        session.reset();
       } else {
         run_status.run_started = true;
         run_status.start_attempts = start_attempts;
@@ -372,16 +461,102 @@ int DoublePulseScanRunner::run(bool debug_mode) {
         sampic::lecroy::ManualTriggerGuard trigger_guard(manual_trigger.get());
         for (int sample_idx = 0; sample_idx < config_.timing.samples_per_combo; ++sample_idx) {
           if (stop_requested()) break;
-          auto sample = collect_sample(*active_session, config_, stop_flag_);
+          auto sample = collect_sample(*active_session, config_, stop_flag_, true);
+          aggregated_hits.insert(aggregated_hits.end(), sample.hits.begin(), sample.hits.end());
           samples.push_back(sample);
           if (!sample.success) {
-            combo_failed = true;
+            iteration_failed = true;
           }
           report_sample(samples.back(), sample_idx, config_.timing.samples_per_combo);
           if (stop_requested()) break;
         }
       }
-      active_session->stop_run();
+      if (active_session) {
+        active_session->stop_run();
+      }
+
+      last_samples = samples;
+      last_run_status = run_status;
+
+      const auto agg_stats = aggregate_stats(samples);
+      double hit_rate_hz = estimate_hit_rate_hz(aggregated_hits);
+      if (hit_rate_hz <= 0.0 && agg_stats.duration_s > 0.0) {
+        hit_rate_hz = agg_stats.total_hits / agg_stats.duration_s;
+      }
+      const double ratio = applied_freq_hz > 0.0 ? hit_rate_hz / applied_freq_hz : 0.0;
+      bool double_detected = !iteration_failed && ratio >= config_.search.ratio_threshold;
+
+      last_hit_rate = hit_rate_hz;
+      last_ratio = ratio;
+
+      history.push_back({
+          {"iteration", iteration},
+          {"target_delay_ns", delay_ns},
+          {"applied_delay_ns", applied_delay_ns},
+          {"hit_rate_hz", hit_rate_hz},
+          {"ratio_vs_frequency", ratio},
+          {"double_detected", double_detected},
+          {"frequency_hz", applied_freq_hz},
+          {"events", agg_stats.events},
+          {"total_hits", agg_stats.total_hits},
+          {"duration_s", agg_stats.duration_s},
+          {"errors", agg_stats.error_messages}});
+
+      ++completed_measurements;
+      const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - scan_start).count();
+      const double avg = elapsed / static_cast<double>(completed_measurements);
+      const double remaining =
+          std::max(0.0, (estimated_measurements - completed_measurements) * avg);
+      std::cout << "    [iter " << iteration << "/" << config_.search.max_iterations
+                << "] delay=" << delay_ns << " ns, hits=" << agg_stats.total_hits
+                << " ratio=" << std::fixed << std::setprecision(3) << ratio
+                << (double_detected ? " (double)" : " (single)")
+                << " | progress " << completed_measurements << "/"
+                << estimated_measurements << ", ETA ~"
+                << std::setprecision(1) << remaining / 60.0 << " min\n";
+
+      const auto iteration_record = build_record(
+          config_, combo, applied_delay_ns, hit_rate_hz, ratio, samples, readback_settings,
+          readback_error, run_status, double_detected ? "iteration_double" : "iteration_single",
+          key, std::chrono::duration<double>(std::chrono::steady_clock::now() - combo_start).count(),
+          history);
+      append_record(config_.output.results_path, iteration_record);
+
+      if (double_detected) {
+        found_threshold = true;
+        best_delay_ns = applied_delay_ns;
+        best_samples = samples;
+        best_run_status = run_status;
+        best_hit_rate_hz = hit_rate_hz;
+        best_ratio = ratio;
+        high = delay_ns;
+      } else {
+        low = delay_ns;
+        if (!found_threshold) {
+          best_delay_ns = applied_delay_ns;
+          best_samples = samples;
+          best_run_status = run_status;
+          best_hit_rate_hz = hit_rate_hz;
+          best_ratio = ratio;
+        }
+      }
+
+      if (iteration_failed) {
+        combo_failed = true;
+        break;
+      }
+
+      if (high - low <= config_.search.tolerance_ns) {
+        break;
+      }
+      delay_ns = 0.5 * (low + high);
+    }
+
+    if (!found_threshold && !combo_failed) {
+      best_samples = last_samples;
+      best_run_status = last_run_status;
+      best_hit_rate_hz = last_hit_rate;
+      best_ratio = last_ratio;
     }
 
     if (config_.timing.cooldown_between_combos_s > 0.0 && !stop_requested()) {
@@ -393,9 +568,20 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     const double wall_seconds = std::chrono::duration<double>(combo_end - combo_start).count();
     const std::string status = stop_requested()
                                    ? "aborted"
-                                   : (combo_failed ? "failed" : "complete");
-    const auto record = build_record(config_, combo, samples, readback_settings,
-                                     readback_error, run_status, status, key, wall_seconds);
+                                   : (combo_failed ? "failed"
+                                                  : (found_threshold ? "complete"
+                                                                     : "threshold_not_met"));
+
+    const auto& samples_for_record = best_samples.empty() ? last_samples : best_samples;
+    const auto& run_status_for_record = best_samples.empty() ? last_run_status : best_run_status;
+    const double hit_rate_for_record = best_samples.empty() ? last_hit_rate : best_hit_rate_hz;
+    const double ratio_for_record = best_samples.empty() ? last_ratio : best_ratio;
+
+    combo.pulse_separation_ns = best_delay_ns;
+    const auto record = build_record(config_, combo, best_delay_ns, hit_rate_for_record,
+                                     ratio_for_record, samples_for_record, readback_settings,
+                                     readback_error, run_status_for_record, status, key,
+                                     wall_seconds, history);
     append_record(config_.output.results_path, record);
     if (status == "complete") {
       completed.insert(key);

@@ -31,21 +31,16 @@
     "backoff": 2.0
   },
   "scan": {
-    "digitizer_rates_mhz": [6400, 3200],
-    "double_pulse_delays_ns": [10.0, 20.0, 40.0, 80.0, 160.0],
-    "channels": [
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-      16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-      32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
-      48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
-    ],
+    "digitizer_rates_mhz": [6400, 4252, 3200, 2133, 1600],
+    "lecroy_rates_hz": [10.0, 100.0],
+    "channels": [14],
     "board_index": 0
   },
   "lecroy": {
     "ip": "10.0.1.103",
     "port": 1234,
     "channel": "A",
-    "frequency_hz": 10.0,
+    "frequency_hz": 100.0,
     "amplitude_v": 1.0,
     "baseline_v": 0.0,
     "width_ns": 2.4,
@@ -58,12 +53,20 @@
     "output_inverse": false,
     "double_pulse_enabled": true,
     "initial_delay_ns": 40.0,
-    "manual_trigger": true,
+    "manual_trigger": false,
     "manual_trigger_interval_s": 0.001,
     "settle_delay_s": 0.25
   },
+  "binary_search": {
+    "min_ns": 10.0,
+    "max_ns": 10000.0,
+    "start_ns": 1000.0,
+    "tolerance_ns": 10.0,
+    "max_iterations": 20,
+    "ratio_threshold": 1.5
+  },
   "output": {
-    "results_path": "scripts/tools/sampic_tests/data/double_pulse_deadtime_scan.jsonl"
+    "results_path": "/home/pioneer/jcarlton/projects/midas_sampic/experiments/sampic_daq/scripts/tools/sampic_tests/data/double_pulse_deadtime_scan.jsonl"
   },
   "notes": "Double-pulse deadtime scan driven by the Lecroy 9210. Update the Lecroy block to match cabling and bias settings before running."
 }

@@ -39,6 +39,7 @@ class LecroyClient {
 
   void Configure(const LecroyConfig& config);
   void SetDoublePulseDelay(double delay_ns);
+  void SetFrequency(double frequency_hz);
   void Trigger();
   std::string Query(const std::string& command);
 

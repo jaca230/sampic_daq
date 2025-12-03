@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -53,6 +54,28 @@ void LecroyClient::SetDoublePulseDelay(double delay_ns) {
   }
   if (config_.manual_trigger) {
     Trigger();
+  }
+}
+
+void LecroyClient::SetFrequency(double frequency_hz) {
+  if (frequency_hz <= 0.0) return;
+  EnsureConnected();
+  SendCommand("FREQ " + FormatScientific(frequency_hz));
+  try {
+    const auto response = Query("FREQ?");
+    try {
+      const double applied = std::stod(response);
+      config_.frequency_hz = applied;
+      if (std::abs(applied - frequency_hz) > std::max(1.0, frequency_hz) * 0.01) {
+        std::cerr << "Warning: Lecroy frequency readback=" << applied
+                  << " Hz differs from requested " << frequency_hz << " Hz\n";
+      }
+    } catch (const std::exception&) {
+      config_.frequency_hz = frequency_hz;
+    }
+  } catch (const std::exception& ex) {
+    std::cerr << "Warning: failed to verify Lecroy frequency: " << ex.what() << "\n";
+    config_.frequency_hz = frequency_hz;
   }
 }
 

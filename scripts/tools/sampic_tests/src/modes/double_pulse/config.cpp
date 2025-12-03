@@ -79,6 +79,16 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
     if (node.contains("use_external_trigger")) cfg.connection.use_external_trigger = node.at("use_external_trigger").get<bool>();
   }
 
+  if (doc.contains("binary_search")) {
+    const auto& node = doc.at("binary_search");
+    if (node.contains("min_ns")) cfg.search.min_ns = node.at("min_ns").get<double>();
+    if (node.contains("max_ns")) cfg.search.max_ns = node.at("max_ns").get<double>();
+    if (node.contains("start_ns")) cfg.search.start_ns = node.at("start_ns").get<double>();
+    if (node.contains("tolerance_ns")) cfg.search.tolerance_ns = node.at("tolerance_ns").get<double>();
+    if (node.contains("max_iterations")) cfg.search.max_iterations = node.at("max_iterations").get<int>();
+    if (node.contains("ratio_threshold")) cfg.search.ratio_threshold = node.at("ratio_threshold").get<double>();
+  }
+
   if (doc.contains("external_trigger")) {
     const auto& node = doc.at("external_trigger");
     if (node.contains("type")) cfg.external_trigger.trigger_type =
@@ -120,7 +130,15 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
   const auto& scan_node = doc.at("scan");
   cfg.scan.board_index = scan_node.value("board_index", 0);
   cfg.scan.digitizer_rates_mhz = read_array<int>(scan_node, "digitizer_rates_mhz", true);
-  cfg.scan.pulse_separation_ns = read_array<double>(scan_node, "double_pulse_delays_ns", false);
+  if (scan_node.contains("lecroy_rates_hz")) {
+    cfg.scan.lecroy_rates_hz = read_array<double>(scan_node, "lecroy_rates_hz", false);
+  } else {
+    cfg.scan.lecroy_rates_hz = {cfg.lecroy.frequency_hz};
+  }
+  if (scan_node.contains("double_pulse_delays_ns")) {
+    cfg.scan.legacy_pulse_separation_ns =
+        read_array<double>(scan_node, "double_pulse_delays_ns", false);
+  }
   cfg.scan.channels = read_array<int>(scan_node, "channels", true);
   if (cfg.scan.channels.empty()) {
     throw std::runtime_error("scan.channels must list at least one channel index");
@@ -178,24 +196,40 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
   if (cfg.start_retry.backoff < 1.0) {
     throw std::runtime_error("start_retry.backoff must be >= 1.0");
   }
-  if (cfg.scan.pulse_separation_ns.empty() || cfg.scan.digitizer_rates_mhz.empty()) {
-    throw std::runtime_error("Parameter space arrays must not be empty");
+  if (cfg.scan.lecroy_rates_hz.empty() || cfg.scan.digitizer_rates_mhz.empty()) {
+    throw std::runtime_error("Scan parameter arrays must not be empty");
+  }
+  if (cfg.search.min_ns <= 0.0 || cfg.search.max_ns <= 0.0 ||
+      cfg.search.min_ns >= cfg.search.max_ns) {
+    throw std::runtime_error("binary_search bounds must be positive and min < max");
+  }
+  if (cfg.search.start_ns < cfg.search.min_ns || cfg.search.start_ns > cfg.search.max_ns) {
+    throw std::runtime_error("binary_search.start_ns must lie between min and max");
+  }
+  if (cfg.search.tolerance_ns <= 0.0) {
+    throw std::runtime_error("binary_search.tolerance_ns must be > 0");
+  }
+  if (cfg.search.max_iterations <= 0) {
+    throw std::runtime_error("binary_search.max_iterations must be > 0");
   }
   return cfg;
 }
 
 std::vector<ParameterCombination> build_parameter_space(const ScanConfig& scan) {
   std::vector<ParameterCombination> combos;
-  combos.reserve(scan.pulse_separation_ns.size() * scan.digitizer_rates_mhz.size());
-  for (double separation : scan.pulse_separation_ns) {
-    if (separation <= 0.0) {
-      throw std::runtime_error("Pulse separation must be positive (ns)");
+  combos.reserve(scan.lecroy_rates_hz.size() * scan.digitizer_rates_mhz.size());
+  for (double freq : scan.lecroy_rates_hz) {
+    if (freq <= 0.0) {
+      throw std::runtime_error("Lecroy frequency must be positive (Hz)");
     }
     for (int rate : scan.digitizer_rates_mhz) {
       if (rate <= 0) {
         throw std::runtime_error("Digitizer rate must be positive (MHz)");
       }
-      combos.push_back(ParameterCombination{separation, rate});
+      ParameterCombination combo;
+      combo.lecroy_frequency_hz = freq;
+      combo.digitizer_rate_mhz = rate;
+      combos.push_back(combo);
     }
   }
   return combos;
@@ -203,7 +237,7 @@ std::vector<ParameterCombination> build_parameter_space(const ScanConfig& scan) 
 
 std::string make_combo_key(const ParameterCombination& combo, int board_index) {
   std::ostringstream oss;
-  oss << "sep_ns=" << combo.pulse_separation_ns << ";rate=" << combo.digitizer_rate_mhz
+  oss << "freq_hz=" << combo.lecroy_frequency_hz << ";rate=" << combo.digitizer_rate_mhz
       << ";board=" << board_index;
   return oss.str();
 }
@@ -211,12 +245,12 @@ std::string make_combo_key(const ParameterCombination& combo, int board_index) {
 std::string make_combo_key_from_json(const nlohmann::json& record) {
   if (!record.contains("parameters")) return {};
   const auto& params = record.at("parameters");
-  if (!params.contains("double_pulse_delay_ns") || !params.contains("digitizer_rate_mhz") ||
+  if (!params.contains("lecroy_frequency_hz") || !params.contains("digitizer_rate_mhz") ||
       !params.contains("board_index")) {
     return {};
   }
   ParameterCombination combo;
-  combo.pulse_separation_ns = params.at("double_pulse_delay_ns").get<double>();
+  combo.lecroy_frequency_hz = params.at("lecroy_frequency_hz").get<double>();
   combo.digitizer_rate_mhz = params.at("digitizer_rate_mhz").get<int>();
   const int board = params.at("board_index").get<int>();
   return make_combo_key(combo, board);

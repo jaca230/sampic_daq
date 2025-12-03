@@ -215,10 +215,15 @@ int main(int argc, char** argv) {
                                           ? cfg.timing.samples_per_combo
                                           : 1);
 
+    std::vector<double> separation_candidates = cfg.scan.legacy_pulse_separation_ns;
+    if (separation_candidates.empty()) {
+      separation_candidates = {cfg.search.min_ns, cfg.search.start_ns, cfg.search.max_ns};
+    }
+
     const double short_delay =
-        pick_delay(opts.short_delay_ns, cfg.scan.pulse_separation_ns, true);
+        pick_delay(opts.short_delay_ns, separation_candidates, true);
     const double long_delay =
-        pick_delay(opts.long_delay_ns, cfg.scan.pulse_separation_ns, false);
+        pick_delay(opts.long_delay_ns, separation_candidates, false);
 
     if (short_delay >= long_delay) {
       throw std::runtime_error("Short delay must be smaller than long delay.");
