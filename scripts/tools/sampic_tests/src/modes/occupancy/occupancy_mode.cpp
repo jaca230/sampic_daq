@@ -3,14 +3,13 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <csignal>
-#include <cstdio>
 #include <cstring>
-#include <memory>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -19,17 +18,10 @@
 #include <thread>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 extern "C" {
 #include <SAMPIC_256Ch_lib.h>
 #include <SAMPIC_256Ch_Type.h>
 }
-
-#include "integration/sampic/config/sampic_crate_config.h"
-#include "integration/sampic/config/sampic_crate_configurator.h"
-#include "integration/sampic/config/sampic_controller_config.h"
-#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h"
 
 namespace {
 
@@ -120,8 +112,10 @@ PresenceProbeResult probe_feb_paths(CrateInfoStruct& info) {
 class OccupancySession {
  public:
   explicit OccupancySession(const Options& opts) : opts_(opts) {
-    crate_settings_ = build_settings();
-    initialise_system();
+    open_connection();
+    set_defaults();
+    load_calibration();
+    allocate_event_memory();
   }
 
   ~OccupancySession() {
@@ -133,162 +127,106 @@ class OccupancySession {
     }
   }
 
-  void configure_channels() {
-    SampicCrateConfigurator configurator(info_, params_, crate_settings_);
-    configurator.apply();
-  }
-
   CrateInfoStruct& info() { return info_; }
   CrateParamStruct& params() { return params_; }
   void* event_buffer() { return event_buffer_; }
   ML_Frame* frames() { return ml_frames_; }
-  const Options& options() const { return opts_; }
+
+  void configure_channels() {
+    enabled_boards_ = select_boards();
+    if (enabled_boards_.empty()) {
+      throw std::runtime_error("No FEBs selected for occupancy scan");
+    }
+    check(SAMPIC256CH_SetChannelMode(&info_, &params_, ALL_FE_BOARDs, ALL_CHANNELs, FALSE),
+          "DisableAllChannels");
+    for (int board : enabled_boards_) {
+      check(SAMPIC256CH_SetChannelMode(&info_, &params_, board, ALL_CHANNELs, TRUE),
+            "EnableBoardChannels");
+      check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, board, ALL_SAMPICs,
+                                                    ALL_CHANNELs,
+                                                    SAMPIC_CHANNEL_SELF_TRIGGER_MODE),
+            "SetTriggerMode");
+      check(SAMPIC256CH_SetChannelSelflTriggerEdge(&info_, &params_, board, ALL_SAMPICs,
+                                                   ALL_CHANNELs, RISING_EDGE),
+            "SetTriggerEdge");
+      check(SAMPIC256CH_SetSampicChannelPulseMode(&info_, &params_, board, ALL_SAMPICs,
+                                                  ALL_CHANNELs, TRUE),
+            "SetPulseMode");
+      check(SAMPIC256CH_SetSampicChannelInternalThreshold(
+                &info_, &params_, board, ALL_SAMPICs, ALL_CHANNELs,
+                static_cast<float>(opts_.threshold)),
+            "SetThreshold");
+    }
+  }
 
  private:
-  void initialise_system() {
-    crate_settings_.ip_address = opts_.ip;
-    crate_settings_.port = opts_.port;
-    if (opts_.load_calibration) {
-      if (!opts_.calibration_dir.empty()) {
-        crate_settings_.calibration_directory = opts_.calibration_dir;
-      }
-      SampicControllerConfig controller_cfg;
-      SampicInitSettingsModeDefault init_mode(info_, params_, event_buffer_, ml_frames_,
-                                              crate_settings_, controller_cfg);
-      const int err = init_mode.initialize();
-      if (err != SAMPIC256CH_Success) {
-        throw std::runtime_error("Failed to initialize SAMPIC system (err=" +
-                                 std::to_string(err) + ")");
-      }
-      connected_ = true;
-    } else {
-      initialise_without_calibration();
-    }
-    if (opts_.board_index < 0) {
-      auto probe = probe_feb_paths(info_);
-      if (!opts_.quiet) {
-        std::cout << "Presence probe discovered " << probe.paths.size()
-                  << " FEB path(s); mask=0x" << std::hex
-                  << static_cast<int>(probe.bitmask) << std::dec << "\n";
-        std::cout << "Active FEB paths:";
-        for (int path : probe.paths) std::cout << " " << path;
-        std::cout << "\n";
-      }
-    }
-    validate_board_index();
-    adjust_enabled_boards();
-    if (!opts_.quiet) {
-      std::cout << "Connected to crate. FEBs=" << info_.NbOfFeBoards << "\n";
-    }
-  }
-
-  void validate_board_index() {
-    if (opts_.board_index < 0) return;
-    if (opts_.board_index >= info_.NbOfFeBoards) {
-      std::ostringstream oss;
-      oss << "Board index " << opts_.board_index << " out of range (FEB count "
-          << info_.NbOfFeBoards << ")";
-      throw std::runtime_error(oss.str());
-    }
-  }
-
-  void adjust_enabled_boards() {
-    for (auto& [key, feb] : crate_settings_.front_end_boards) {
-      const int idx = extract_index(key, "feb");
-      bool enable = false;
-      if (opts_.board_index >= 0) {
-        enable = (idx == opts_.board_index);
-      } else {
-        enable = (idx < info_.NbOfFeBoards);
-      }
-      feb.enabled = enable;
-      for (auto& [chip_key, chip] : feb.sampics) {
-        chip.enabled = true;
-        for (auto& [channel_key, channel] : chip.channels) {
-          channel.enabled = enable;
-        }
-      }
-    }
-  }
-
-  SampicSystemSettings build_settings() {
-    SampicSystemSettings settings;
-    settings.external_trigger_type = SOFTWARE;
-    settings.trigger_edge = RISING_EDGE;
-    settings.signal_level = TTL_SIG;
-    settings.sync_edge = RISING_EDGE;
-    settings.sync_level = TTL_SIG;
-
-    for (auto& [key, feb] : settings.front_end_boards) {
-      const int idx = extract_index(key, "feb");
-      bool enable_board = false;
-      if (opts_.board_index >= 0) {
-        enable_board = (idx == opts_.board_index);
-      }
-      feb.enabled = enable_board;
-      for (auto& [chip_key, chip] : feb.sampics) {
-        chip.enabled = true;
-        for (auto& [channel_key, channel] : chip.channels) {
-          channel.enabled = enable_board;
-          channel.trigger_mode = SAMPIC_CHANNEL_SELF_TRIGGER_MODE;
-          channel.internal_threshold = static_cast<float>(opts_.threshold);
-          channel.trigger_edge = RISING_EDGE;
-          channel.pulse_mode = true;
-          channel.enable_for_central_trigger = true;
-        }
-      }
-    }
-    return settings;
-  }
-
-  static int extract_index(const std::string& key, const char* prefix) {
-    const auto pos = key.find(prefix);
-    if (pos == std::string::npos) return 0;
-    const auto digits = key.substr(pos + std::strlen(prefix));
-    return digits.empty() ? 0 : std::stoi(digits);
-  }
-
-  void initialise_without_calibration() {
-    CrateConnectionParamStruct conn{};
-    conn.ConnectionType = crate_settings_.connection_type;
-    conn.ControlBoardControlType = crate_settings_.control_type;
-    std::snprintf(conn.CtrlIpAddress, sizeof(conn.CtrlIpAddress), "%s", opts_.ip.c_str());
-    conn.CtrlPort = opts_.port;
-    auto err = SAMPIC256CH_OpenCrateConnection(conn, &info_);
-    if (err != SAMPIC256CH_Success) {
-      throw std::runtime_error("Failed to open crate connection (err=" + std::to_string(err) +
-                               ")");
-    }
+  void open_connection() {
+    std::memset(&conn_, 0, sizeof(conn_));
+    conn_.ConnectionType = UDP_CONNECTION;
+    conn_.ControlBoardControlType = CTRL_AND_DAQ;
+    std::snprintf(conn_.CtrlIpAddress, sizeof(conn_.CtrlIpAddress), "%s",
+                  opts_.ip.c_str());
+    conn_.CtrlPort = opts_.port;
+    check(SAMPIC256CH_OpenCrateConnection(conn_, &info_), "OpenCrateConnection");
     connected_ = true;
+    auto probe = probe_feb_paths(info_);
+    active_boards_ = probe.paths;
+  }
 
-    err = SAMPIC256CH_CheckCrateFirmwareVersions(&info_);
-    if (err != SAMPIC256CH_Success) {
-      throw std::runtime_error("Failed to read crate firmware versions (err=" +
-                               std::to_string(err) + ")");
-    }
+  void set_defaults() {
+    check(SAMPIC256CH_SetDefaultParameters(&info_, &params_), "SetDefaultParameters");
+  }
 
-    err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
-    if (err != SAMPIC256CH_Success) {
-      throw std::runtime_error("SetDefaultParameters failed (err=" + std::to_string(err) + ")");
+  void load_calibration() {
+    if (!opts_.load_calibration) return;
+    namespace fs = std::filesystem;
+    fs::path dir{opts_.calibration_dir};
+    if (!dir.is_absolute()) {
+      dir = fs::current_path() / dir;
     }
+    std::array<char, MAX_PATHNAME_LENGTH> buffer{};
+    std::snprintf(buffer.data(), buffer.size(), "%s", dir.string().c_str());
+    const auto err = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_, buffer.data());
+    if (err != SAMPIC256CH_Success) {
+      std::cerr << "Warning: calibration load failed (code " << static_cast<int>(err)
+                << ")\n";
+    }
+  }
 
-    err = SAMPIC256CH_AllocateEventMemory(&event_buffer_, &ml_frames_);
-    if (err != SAMPIC256CH_Success) {
-      throw std::runtime_error("Failed to allocate event memory (err=" +
-                               std::to_string(err) + ")");
+  void allocate_event_memory() {
+    check(SAMPIC256CH_AllocateEventMemory(&event_buffer_, &ml_frames_),
+          "AllocateEventMemory");
+  }
+
+  std::vector<int> select_boards() const {
+    if (opts_.board_index >= 0) {
+      auto it = std::find(active_boards_.begin(), active_boards_.end(), opts_.board_index);
+      if (it == active_boards_.end()) {
+        std::ostringstream oss;
+        oss << "Board index " << opts_.board_index << " not present in crate";
+        throw std::runtime_error(oss.str());
+      }
+      return {opts_.board_index};
     }
-    if (!opts_.quiet) {
-      std::cout << "Event memory allocated without loading calibration files.\n";
+    return active_boards_;
+  }
+
+  void check(SAMPIC256CH_ErrCode err, std::string_view what) {
+    if (err != SAMPIC256CH_Success) {
+      throw std::runtime_error(std::string(what) + " failed (code " +
+                               std::to_string(static_cast<int>(err)) + ")");
     }
   }
 
   Options opts_;
+  CrateConnectionParamStruct conn_{};
   CrateInfoStruct info_{};
   CrateParamStruct params_{};
   void* event_buffer_ = nullptr;
   ML_Frame* ml_frames_ = nullptr;
   bool connected_ = false;
-  SampicSystemSettings crate_settings_{};
+  std::vector<int> active_boards_;
+  std::vector<int> enabled_boards_;
 };
 
 AcquisitionSummary run_occupancy(OccupancySession& session,
@@ -333,6 +271,7 @@ AcquisitionSummary run_occupancy(OccupancySession& session,
     if (should_stop(now)) break;
 
     SAMPIC256CH_PrepareEvent(&session.info(), &session.params());
+
     SAMPIC256CH_ErrCode err = SAMPIC256CH_NoFrameRead;
     int nframes = 0;
     int hits = 0;
@@ -502,7 +441,7 @@ ChannelOccupancyOptions ChannelOccupancyMode::parse_args(int argc, char** argv) 
       std::cout << "Channel occupancy mode options:\n"
                 << "  --ip <addr>              Crate IP (default 192.168.0.4)\n"
                 << "  --port <port>            Crate port (default 27015)\n"
-                << "  --board <index>          Front-end board index (default 0)\n"
+                << "  --board <index>          Front-end board index (-1 = all)\n"
                 << "  --events <n>             Stop after N events (default 500)\n"
                 << "  --duration <sec>         Stop after duration seconds (0 = unlimited)\n"
                 << "  --threshold <volts>      Self-trigger threshold (default 0.1)\n"
