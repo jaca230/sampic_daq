@@ -62,6 +62,21 @@ scripts/tools/sampic_tests/build/bin/sampic_deadtime_scan --mode crate-smoke \
 
 The smoke test walks through connection, configuration, memory allocation, run start, and a single read attempt.  Each API call is logged with the corresponding error-code mnemonic so you can quickly identify which step failed.
 
+### Channel occupancy sampler (self trigger)
+
+Use the occupancy mode to grab a quick set of self-triggered events, but configure the crate the same way the MIDAS frontend does (explicit board enables instead of `ALL_FE_BOARDs`). Example:
+
+```bash
+scripts/tools/sampic_tests/scripts/helpers/channel_occupancy_mode.sh \
+  --board 0 --events 200 --json
+```
+
+This runs `sampic_deadtime_scan --mode occupancy`, which disables every FEB, enables the requested board, forces `SAMPIC_CHANNEL_SELF_TRIGGER_MODE` with a 0.1 V threshold, and then reports the hit count plus hits-per-event for each `(FEB, Sampic, Channel)` tuple. Pass `--skip-calibration`, `--calibration-dir /path`, `--duration`, `--threshold`, or `--json` to mirror the DAQ defaults while steering to the FEB that’s actually cabled.
+
+### Board probe (experimental)
+
+`scripts/tools/sampic_tests/scripts/helpers/board_probe.sh --ip 192.168.0.4 --mask 0xFF` pokes the control FPGA’s “front-end presence” register and then issues the same raw bus command used in `SAMPIC256CH_OpenCrateConnection()`. It prints what the library reports (`NbOfFeBoards`) plus any additional FEB paths discovered when we force different bitmasks. Use this to debug why only one board responds: the helper cycles through all four possible paths and shows which ones ack the broadcast.
+
 ### Deadtime scan harness
 
 The `sampic_deadtime_scan` binary automates the 3-parameter scan (pulser period, digitization rate, enabled channel count) needed for the deadtime study. It ingests a JSON configuration file that defines the parameter space, timing of each sample, retry policy, and the log destination. Each parameter combination is logged immediately after it finishes so the scan can be resumed safely.
@@ -113,5 +128,6 @@ Highlights:
 - Before the scan starts, the harness connects to the generator, loads the base config (trigger mode, amplitude, outputs, double pulse toggle), and then rewrites `:<channel>:DEL` prior to each combo. The optional `settle_delay_s` and `manual_trigger` knobs let you pause or fire the generator after each update if you prefer SINGLE/BURST mode on the Lecroy.
 - Each record includes the requested double-pulse spacing (`parameters.double_pulse_delay_ns`) and the static Lecroy configuration block so you can reconstruct the waveform that produced the data. Results land in `scripts/tools/sampic_tests/data/double_pulse_deadtime_scan.jsonl`.
 - Like the pulser scan, the harness retries crate start/stop transitions, logs per-sample stats, and can resume by skipping completed combos. Use `--debug-first` during bring-up to watch every sample/error without running the full grid.
-- Run `scripts/tools/sampic_tests/scripts/lecroy/test.sh --config <json>` to push a configuration into the generator and read back its ID (`*IDN?`) without starting the SAMPIC run. Adding `--delay-ns <value>` lets you spot-check the double-pulse spacing interactively.
+- Run `scripts/tools/sampic_tests/scripts/helpers/lecroy/test.sh --config <json>` to push a configuration into the generator and read back its ID (`*IDN?`) without starting the SAMPIC run. Adding `--delay-ns <value>` lets you spot-check the double-pulse spacing interactively.
+- Need a no-config-file tweak? `scripts/tools/sampic_tests/scripts/helpers/lecroy/quick_set.py --frequency-hz 50 --channel A --width-ns 2.4` applies only the provided parameters and then prints a full readback so you can confirm the settings on the console.
 - `--list-modes` shows the currently built-in modes (`pulser-rate`, `crate-smoke`, `deadtime`, `double-pulse`) if you want to call the binary directly.

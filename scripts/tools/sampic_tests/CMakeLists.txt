@@ -38,6 +38,13 @@ CPMAddPackage(
   VERSION 3.11.2
 )
 
+CPMAddPackage(
+  NAME spdlog
+  GITHUB_REPOSITORY gabime/spdlog
+  VERSION 1.12.0
+  OPTIONS "SPDLOG_INSTALL OFF"
+)
+
 add_executable(sampic_deadtime_scan
   src/app/main.cpp
   src/app/mode_registry.cpp
@@ -52,9 +59,15 @@ add_executable(sampic_deadtime_scan
   src/modes/double_pulse/mode.cpp
   src/modes/double_pulse/scan_runner.cpp
   src/modes/double_pulse/sampic_session.cpp
+  src/modes/occupancy/occupancy_mode.cpp
   src/common/scan_types.cpp
   src/common/time_utils.cpp
-  src/modes/pulser/pulser_mode.cpp)
+  src/modes/pulser/pulser_mode.cpp
+  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_crate_configurator.cpp
+  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_board_configurator.cpp
+  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_chip_configurator.cpp
+  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_channel_configurator.cpp
+  ${PROJECT_ROOT}/src/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.cpp)
 
 add_executable(lecroy_test
   src/tests/lecroy_test.cpp
@@ -75,6 +88,9 @@ add_executable(external_trigger_probe
   src/lecroy/lecroy_client.cpp
   src/lecroy/manual_trigger_controller.cpp)
 
+add_executable(board_probe
+  src/tests/board_probe.cpp)
+
 add_executable(sampic_hit_dump
   src/tests/sampic_hit_dump.cpp)
 
@@ -82,8 +98,10 @@ target_include_directories(sampic_deadtime_scan PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
   ${LPDEVC_INCLUDE_DIR}
   ${nlohmann_json_SOURCE_DIR}/include
+  ${spdlog_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
 
 target_include_directories(lecroy_test PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -110,6 +128,12 @@ target_include_directories(sampic_hit_dump PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+target_include_directories(board_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 set(SAMPIC_VENDOR_LIBS
   ${SAMPIC_VENDOR_LIB_DIR}/libsampic256ch.so
   ${LPDEVC_LIB_DIR}/liblpdevC.so
@@ -120,7 +144,8 @@ set(SAMPIC_TEST_TARGETS
   sampic_deadtime_scan
   delay_separation_test
   external_trigger_probe
-  sampic_hit_dump)
+  sampic_hit_dump
+  board_probe)
 
 foreach(target ${SAMPIC_TEST_TARGETS})
   target_link_libraries(${target} PRIVATE

@@ -10,6 +10,7 @@
 #include "sampic_tests/app/mode_registry.h"
 #include "sampic_tests/modes/crate_smoke/crate_smoke_mode.h"
 #include "sampic_tests/modes/deadtime/mode.h"
+#include "sampic_tests/modes/occupancy/occupancy_mode.h"
 #include "sampic_tests/modes/double_pulse/mode.h"
 #include "sampic_tests/modes/pulser/pulser_mode.h"
 
@@ -33,6 +34,9 @@ void register_modes(sampic::app::ModeRegistry& registry) {
   });
   registry.register_mode([&]() {
     return std::make_unique<sampic::crate_smoke::CrateSmokeMode>(&g_stop_requested);
+  });
+  registry.register_mode([&]() {
+    return std::make_unique<sampic::occupancy::ChannelOccupancyMode>(&g_stop_requested);
   });
 }
 

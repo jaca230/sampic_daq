@@ -35,7 +35,7 @@ struct Options {
   std::string config_path;
   int max_events = 50;
   double max_duration_s = 10.0;
-  bool use_software_trigger = false;
+  bool use_self_trigger = false;
   bool skip_lecroy = false;
 };
 
@@ -55,13 +55,13 @@ Options parse_args(int argc, char** argv) {
       opts.max_events = std::stoi(require_value(arg));
     } else if (arg == "--duration") {
       opts.max_duration_s = std::stod(require_value(arg));
-    } else if (arg == "--software-trigger") {
-      opts.use_software_trigger = true;
+    } else if (arg == "--self-trigger") {
+      opts.use_self_trigger = true;
     } else if (arg == "--skip-lecroy") {
       opts.skip_lecroy = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Usage: external_trigger_probe --config <file> [--events N] "
-                   "[--duration seconds] [--software-trigger] [--skip-lecroy]\n";
+                   "[--duration seconds] [--self-trigger] [--skip-lecroy]\n";
       std::exit(0);
     } else {
       throw std::runtime_error("Unknown option: " + std::string(arg));
@@ -281,9 +281,9 @@ int main(int argc, char** argv) {
   try {
     const auto opts = parse_args(argc, argv);
     auto cfg = sampic::double_pulse::load_double_pulse_config(opts.config_path);
-    if (opts.use_software_trigger) {
+    if (opts.use_self_trigger) {
       cfg.external_trigger.trigger_type = SOFTWARE;
-      std::cout << "Forcing software trigger mode for diagnostics.\n";
+      std::cout << "Forcing self-trigger mode for diagnostics.\n";
     }
     SimpleSession session(cfg.connection, cfg.external_trigger);
     const int rate_mhz =

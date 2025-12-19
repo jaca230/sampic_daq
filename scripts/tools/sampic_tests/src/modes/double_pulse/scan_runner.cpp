@@ -168,8 +168,13 @@ std::unordered_set<std::string> load_completed(const std::filesystem::path& path
 nlohmann::json build_record(const DoublePulseConfig& cfg,
                             const ParameterCombination& combo,
                             double best_delay_ns,
+                            double current_delay_ns,
                             double hit_rate_hz,
+                            double event_rate_hz,
+                            double hit_ratio_vs_freq,
                             double ratio_vs_freq,
+                            double search_min_ns,
+                            double search_max_ns,
                             const std::vector<SampleResult>& samples,
                             const std::optional<AppliedSettings>& readback,
                             const std::optional<std::string>& readback_error,
@@ -187,9 +192,11 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
       {"lecroy_frequency_hz", combo.lecroy_frequency_hz},
       {"digitizer_rate_mhz", combo.digitizer_rate_mhz},
       {"best_delay_ns", best_delay_ns},
+      {"current_delay_ns", current_delay_ns},
+      {"search_min_ns", search_min_ns},
+      {"search_max_ns", search_max_ns},
       {"channel_ids", cfg.scan.channels},
       {"channel_count", cfg.scan.channels.size()},
-      {"channel_label", "manual_selection"},
       {"board_index", cfg.scan.board_index}};
 
   const auto agg = aggregate_stats(samples);
@@ -260,10 +267,15 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
       {"manual_trigger", cfg.lecroy.manual_trigger}};
   record["search"] = {
       {"best_delay_ns", best_delay_ns},
+      {"current_delay_ns", current_delay_ns},
       {"hit_rate_hz", hit_rate_hz},
+      {"event_rate_hz", event_rate_hz},
+      {"hit_ratio_vs_frequency", hit_ratio_vs_freq},
       {"ratio_vs_frequency", ratio_vs_freq},
       {"ratio_threshold", cfg.search.ratio_threshold},
       {"tolerance_ns", cfg.search.tolerance_ns},
+      {"search_min_ns", search_min_ns},
+      {"search_max_ns", search_max_ns},
       {"history", history}};
   return record;
 }
@@ -379,7 +391,9 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     std::vector<SampleResult> best_samples;
     double best_delay_ns = config_.search.max_ns;
     double best_hit_rate_hz = 0.0;
-    double best_ratio = 0.0;
+    double best_event_rate_hz = 0.0;
+    double best_hit_ratio = 0.0;
+    double best_event_ratio = 0.0;
     nlohmann::json history = nlohmann::json::array();
 
     SampicSession* active_session = nullptr;
@@ -427,7 +441,9 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     std::vector<SampleResult> last_samples;
     scan::RunStatus last_run_status;
     double last_hit_rate = 0.0;
-    double last_ratio = 0.0;
+    double last_event_rate = 0.0;
+    double last_hit_ratio = 0.0;
+    double last_event_ratio = 0.0;
 
     while (!combo_failed && !stop_requested() && iteration < config_.search.max_iterations) {
       ++iteration;
@@ -483,24 +499,58 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       if (hit_rate_hz <= 0.0 && agg_stats.duration_s > 0.0) {
         hit_rate_hz = agg_stats.total_hits / agg_stats.duration_s;
       }
-      const double ratio = applied_freq_hz > 0.0 ? hit_rate_hz / applied_freq_hz : 0.0;
+      const double event_rate_hz =
+          (agg_stats.duration_s > 0.0) ? (agg_stats.events / agg_stats.duration_s) : 0.0;
+      const double hit_ratio = applied_freq_hz > 0.0 ? hit_rate_hz / applied_freq_hz : 0.0;
+      const double ratio = applied_freq_hz > 0.0 ? event_rate_hz / applied_freq_hz : 0.0;
       bool double_detected = !iteration_failed && ratio >= config_.search.ratio_threshold;
 
+      double new_low = low;
+      double new_high = high;
+      if (double_detected) {
+        new_high = delay_ns;
+        found_threshold = true;
+        best_delay_ns = applied_delay_ns;
+        best_samples = samples;
+        best_run_status = run_status;
+        best_hit_rate_hz = hit_rate_hz;
+        best_event_rate_hz = event_rate_hz;
+        best_hit_ratio = hit_ratio;
+        best_event_ratio = ratio;
+      } else {
+        new_low = delay_ns;
+        if (!found_threshold) {
+          best_delay_ns = applied_delay_ns;
+          best_samples = samples;
+          best_run_status = run_status;
+          best_hit_rate_hz = hit_rate_hz;
+          best_event_rate_hz = event_rate_hz;
+          best_hit_ratio = hit_ratio;
+          best_event_ratio = ratio;
+        }
+      }
+
       last_hit_rate = hit_rate_hz;
-      last_ratio = ratio;
+      last_event_rate = event_rate_hz;
+      last_hit_ratio = hit_ratio;
+      last_event_ratio = ratio;
 
       history.push_back({
           {"iteration", iteration},
           {"target_delay_ns", delay_ns},
           {"applied_delay_ns", applied_delay_ns},
           {"hit_rate_hz", hit_rate_hz},
+          {"event_rate_hz", event_rate_hz},
+          {"hit_ratio_vs_frequency", hit_ratio},
           {"ratio_vs_frequency", ratio},
           {"double_detected", double_detected},
           {"frequency_hz", applied_freq_hz},
           {"events", agg_stats.events},
           {"total_hits", agg_stats.total_hits},
           {"duration_s", agg_stats.duration_s},
-          {"errors", agg_stats.error_messages}});
+          {"errors", agg_stats.error_messages},
+          {"search_min_ns", new_low},
+          {"search_max_ns", new_high}});
 
       ++completed_measurements;
       const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - scan_start).count();
@@ -515,31 +565,17 @@ int DoublePulseScanRunner::run(bool debug_mode) {
                 << estimated_measurements << ", ETA ~"
                 << std::setprecision(1) << remaining / 60.0 << " min\n";
 
-      const auto iteration_record = build_record(
-          config_, combo, applied_delay_ns, hit_rate_hz, ratio, samples, readback_settings,
-          readback_error, run_status, double_detected ? "iteration_double" : "iteration_single",
-          key, std::chrono::duration<double>(std::chrono::steady_clock::now() - combo_start).count(),
-          history);
+      const auto iteration_record =
+          build_record(config_, combo, best_delay_ns, applied_delay_ns, hit_rate_hz,
+                       event_rate_hz, hit_ratio, ratio, new_low, new_high, samples,
+                       readback_settings, readback_error, run_status,
+                       double_detected ? "iteration_double" : "iteration_single", key,
+                       std::chrono::duration<double>(std::chrono::steady_clock::now() - combo_start)
+                           .count(),
+                       history);
       append_record(config_.output.results_path, iteration_record);
-
-      if (double_detected) {
-        found_threshold = true;
-        best_delay_ns = applied_delay_ns;
-        best_samples = samples;
-        best_run_status = run_status;
-        best_hit_rate_hz = hit_rate_hz;
-        best_ratio = ratio;
-        high = delay_ns;
-      } else {
-        low = delay_ns;
-        if (!found_threshold) {
-          best_delay_ns = applied_delay_ns;
-          best_samples = samples;
-          best_run_status = run_status;
-          best_hit_rate_hz = hit_rate_hz;
-          best_ratio = ratio;
-        }
-      }
+      low = new_low;
+      high = new_high;
 
       if (iteration_failed) {
         combo_failed = true;
@@ -556,7 +592,9 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       best_samples = last_samples;
       best_run_status = last_run_status;
       best_hit_rate_hz = last_hit_rate;
-      best_ratio = last_ratio;
+      best_event_rate_hz = last_event_rate;
+      best_hit_ratio = last_hit_ratio;
+      best_event_ratio = last_event_ratio;
     }
 
     if (config_.timing.cooldown_between_combos_s > 0.0 && !stop_requested()) {
@@ -575,13 +613,19 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     const auto& samples_for_record = best_samples.empty() ? last_samples : best_samples;
     const auto& run_status_for_record = best_samples.empty() ? last_run_status : best_run_status;
     const double hit_rate_for_record = best_samples.empty() ? last_hit_rate : best_hit_rate_hz;
-    const double ratio_for_record = best_samples.empty() ? last_ratio : best_ratio;
+    const double event_rate_for_record =
+        best_samples.empty() ? last_event_rate : best_event_rate_hz;
+    const double hit_ratio_for_record =
+        best_samples.empty() ? last_hit_ratio : best_hit_ratio;
+    const double ratio_for_record =
+        best_samples.empty() ? last_event_ratio : best_event_ratio;
 
     combo.pulse_separation_ns = best_delay_ns;
-    const auto record = build_record(config_, combo, best_delay_ns, hit_rate_for_record,
-                                     ratio_for_record, samples_for_record, readback_settings,
-                                     readback_error, run_status_for_record, status, key,
-                                     wall_seconds, history);
+    const auto record = build_record(config_, combo, best_delay_ns, best_delay_ns,
+                                     hit_rate_for_record, event_rate_for_record,
+                                     hit_ratio_for_record, ratio_for_record, low, high,
+                                     samples_for_record, readback_settings, readback_error,
+                                     run_status_for_record, status, key, wall_seconds, history);
     append_record(config_.output.results_path, record);
     if (status == "complete") {
       completed.insert(key);

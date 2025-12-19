@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PROJECT_DIR=$(realpath "$SCRIPT_DIR/../..")
 BUILD_DIR="$PROJECT_DIR/build"
-PROJECT_ROOT=$(realpath "$PROJECT_DIR/../..")
-VENDOR_LIB_DIR="$PROJECT_ROOT/external/sampic_256ch_lib/lib"
-LPDEVC_LIB_DIR="$PROJECT_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
+REPO_ROOT=$(realpath "$SCRIPT_DIR/../../../../..")
+VENDOR_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lib"
+LPDEVC_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
 BINARY="$BUILD_DIR/bin/external_trigger_probe"
 
 if [[ ! -x "$BINARY" ]]; then

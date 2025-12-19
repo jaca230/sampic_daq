@@ -7,10 +7,10 @@ BUILD_DIR="$PROJECT_DIR/build"
 REPO_ROOT=$(realpath "$SCRIPT_DIR/../../../../..")
 VENDOR_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lib"
 LPDEVC_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
-BINARY="$BUILD_DIR/bin/delay_separation_test"
+BINARY="$BUILD_DIR/bin/board_probe"
 
 if [[ ! -x "$BINARY" ]]; then
-  echo "Delay test binary not found at $BINARY. Run scripts/build.sh first." >&2
+  echo "board_probe binary not found at $BINARY. Run scripts/build.sh first." >&2
   exit 1
 fi
 

@@ -22,7 +22,7 @@ EventStruct g_event{};
 
 std::string g_ip = "192.168.0.4";
 int g_port = 27015;
-bool g_use_software_trigger = false;
+bool g_use_self_trigger = false;
 bool g_skip_calibration = false;
 std::string g_calib_dir = "resources/calib";
 int g_events_to_read = 10;
@@ -32,7 +32,7 @@ void usage(const char* prog) {
   std::cout << "Usage: " << prog << " [options]\n"
             << "  --ip <addr>           Crate IP (default 192.168.0.4)\n"
             << "  --port <port>         Crate port (default 27015)\n"
-            << "  --software-trigger    Use software trigger instead of external\n"
+            << "  --self-trigger        Force SAMPIC self-trigger mode instead of external\n"
             << "  --no-calibration      Skip loading calibration files\n"
             << "  --calibration-dir <d> Calibration directory (default resources/calib)\n"
             << "  --events <n>          Number of events to read (default 10)\n";
@@ -90,13 +90,13 @@ void SetTriggerOptions() {
   check(SAMPIC256CH_SetChannelMode(&g_info, &g_params, ALL_FE_BOARDs, ALL_CHANNELs, TRUE),
         "SetChannelMode");
 
-  const auto mode = g_use_software_trigger ? SAMPIC_CHANNEL_SELF_TRIGGER_MODE
+  const auto mode = g_use_self_trigger ? SAMPIC_CHANNEL_SELF_TRIGGER_MODE
                                            : SAMPIC_CHANNEL_EXT_TRIGGER_MODE;
   check(SAMPIC256CH_SetSampicChannelTriggerMode(&g_info, &g_params, ALL_FE_BOARDs,
                                                 ALL_SAMPICs, ALL_CHANNELs, mode),
         "SetSampicChannelTriggerMode");
 
-  if (!g_use_software_trigger) {
+  if (!g_use_self_trigger) {
     check(SAMPIC256CH_SetSampicTriggerOption(&g_info, &g_params, ALL_FE_BOARDs,
                                              ALL_SAMPICs, SAMPIC_TRIGGER_IS_L1),
           "SetSampicTriggerOption");
@@ -189,8 +189,8 @@ int main(int argc, char** argv) {
         g_ip = require("--ip");
       } else if (arg == "--port") {
         g_port = std::stoi(require("--port"));
-      } else if (arg == "--software-trigger") {
-        g_use_software_trigger = true;
+      } else if (arg == "--self-trigger") {
+        g_use_self_trigger = true;
       } else if (arg == "--no-calibration") {
         g_skip_calibration = true;
       } else if (arg == "--calibration-dir") {
