@@ -59,6 +59,7 @@ add_executable(sampic_deadtime_scan
   src/modes/double_pulse/mode.cpp
   src/modes/double_pulse/scan_runner.cpp
   src/modes/double_pulse/sampic_session.cpp
+  src/modes/calibration/calibration_mode.cpp
   src/modes/occupancy/occupancy_mode.cpp
   src/common/scan_types.cpp
   src/common/time_utils.cpp

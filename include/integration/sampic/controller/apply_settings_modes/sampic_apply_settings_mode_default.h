@@ -9,6 +9,9 @@ public:
     using SampicApplySettingsMode::SampicApplySettingsMode;
 
     void apply() override;
+
+private:
+    void reloadCalibrationIfNeeded();
 };
 
 #endif // SAMPIC_APPLY_SETTINGS_MODE_DEFAULT_H
