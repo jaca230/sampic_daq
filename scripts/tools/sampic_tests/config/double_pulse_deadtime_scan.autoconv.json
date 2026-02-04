@@ -1,0 +1,91 @@
+{
+  "connection": {
+    "ip": "192.168.0.4",
+    "port": 27015,
+    "load_calibration": true,
+    "calibration_dir": "resources/calib",
+    "threshold_volts": 0.1,
+    "use_external_clock": false,
+    "use_external_trigger": false
+  },
+  "external_trigger": {
+    "type": "EXT_SIG",
+    "edge": "RISING",
+    "signal_level": "TTL",
+    "sync_edge": "RISING",
+    "sync_signal_level": "TTL"
+  },
+  "readout": {
+    "prepare_interval": 100,
+    "max_loops": 10000,
+    "retry_sleep_us": 100
+  },
+  "timing": {
+    "sample_duration_s": 3.0,
+    "samples_per_combo": 5,
+    "cooldown_between_combos_s": 0.0
+  },
+  "start_retry": {
+    "max_attempts": 5,
+    "initial_delay_s": 10.0,
+    "backoff": 2.0
+  },
+  "binary_search": {
+    "min_ns": 10.0,
+    "max_ns": 1.0e6,
+    "start_ns": 1000.0,
+    "tolerance_ns": 50.0,
+    "max_iterations": 20,
+    "ratio_threshold": 1.975
+  },
+  "lecroy": {
+    "ip": "10.0.1.103",
+    "port": 1234,
+    "frequency_hz": 100.0,
+    "trigger_mode": "NORMAL",
+    "trigger_slope": "POS",
+    "trigger_level_volts": 1.5,
+    "channels": ["A", "B"],
+    "channel": "A",
+    "amplitude_v": 0.2,
+    "baseline_v": 0.0,
+    "width_ns": 2.4,
+    "lead_ns": 1.8,
+    "trail_ns": 1.9,
+    "output_main": true,
+    "output_inverse": false,
+    "double_pulse_enabled": true,
+    "initial_delay_ns": 40.0,
+    "manual_trigger": false,
+    "manual_trigger_interval_s": 0.01,
+    "settle_delay_s": 0.2
+  },
+  "scan": {
+    "board_index": 0,
+    "digitizer_rates_mhz": [6400],
+    "lecroy_rates_hz": [100.0],
+    "auto_conversion_modes": [true, false],
+    "lecroy_amplitudes_v": [3.0, 3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0],
+    "thresholds_volts": [0.06],
+    "channel_sets": [
+      { "label": "15ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31] },
+      { "label": "14ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30] },
+      { "label": "13ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29] },
+      { "label": "12ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28] },
+      { "label": "11ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27] },
+      { "label": "10ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24, 26] },
+      { "label": "9ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23, 24] },
+      { "label": "8ch", "channels": [16, 17, 18, 19, 20, 21, 22, 23] },
+      { "label": "7ch", "channels": [16, 17, 18, 19, 20, 21, 22] },
+      { "label": "6ch", "channels": [16, 17, 18, 19, 20, 21] },
+      { "label": "5ch", "channels": [16, 17, 18, 19, 20] },
+      { "label": "4ch", "channels": [16, 17, 18, 19] },
+      { "label": "3ch", "channels": [16, 17, 18] },
+      { "label": "2ch", "channels": [16, 17] },
+      { "label": "1ch", "channels": [16] }
+    ]
+  },
+  "output": {
+    "results_path": "data/double_pulse_deadtime_scan.autoconv.jsonl"
+  }
+}

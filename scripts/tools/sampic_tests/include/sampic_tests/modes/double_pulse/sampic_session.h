@@ -33,6 +33,7 @@ class SampicSession {
   void configure_for_combo(const ParameterCombination& combo,
                            int board_index,
                            const std::vector<int>& channels);
+  void set_threshold(int board_index, double threshold_volts);
 
   AppliedSettings readback_settings(int board_index);
 

@@ -8,6 +8,8 @@ REPO_ROOT=$(realpath "$SCRIPT_DIR/../../../../..")
 VENDOR_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lib"
 LPDEVC_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
 BINARY="$BUILD_DIR/bin/sampic_deadtime_scan"
+USE_GDB=0
+PASS_ARGS=()
 
 if [[ ! -x "$BINARY" ]]; then
   echo "Channel occupancy mode binary not found at $BINARY. Run scripts/build.sh first." >&2
@@ -30,4 +32,21 @@ if [[ ${#RUNTIME_LIB_PATHS[@]} -gt 0 ]]; then
   fi
 fi
 
-exec "$BINARY" --mode occupancy "$@"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --gdb)
+      USE_GDB=1
+      shift
+      ;;
+    *)
+      PASS_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ $USE_GDB -eq 1 ]]; then
+  exec gdb --args "$BINARY" --mode occupancy "${PASS_ARGS[@]}"
+else
+  exec "$BINARY" --mode occupancy "${PASS_ARGS[@]}"
+fi

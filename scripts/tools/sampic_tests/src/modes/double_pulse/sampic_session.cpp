@@ -8,11 +8,72 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
 
 namespace sampic::double_pulse {
+
+namespace {
+
+void check_or_throw(SAMPIC256CH_ErrCode err, const std::string& label) {
+  if (err != SAMPIC256CH_Success) {
+    throw std::runtime_error(label + " failed (code " +
+                             std::to_string(static_cast<int>(err)) + ")");
+  }
+}
+
+void probe_all_feb_paths(CrateInfoStruct& info) {
+  std::set<int> unique_paths;
+  uint8_t bitmask = 0;
+  for (int slot = 0; slot < MAX_NB_OF_FE_BOARDS; ++slot) {
+    const uint8_t mask = static_cast<uint8_t>(1u << slot);
+    uint8_t mask_value = mask;
+    auto err = SAMPIC256CH_BusWriteWords(&info, CTRL_ACCESS, CB_CTRL_FPGA, 0, 0,
+                                         ad_control_board_FeBoardPresence,
+                                         &mask_value, 1);
+    check_or_throw(err, "ProbeFeBoardPresenceWrite");
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    err = SAMPIC256CH_BusCommandReadWords(&info, CTRL_ACCESS, FEB_CTRL_FPGA,
+                                          ALL_FE_BOARDs, 0, 0, 1);
+    if (err != SAMPIC256CH_Success) {
+      continue;
+    }
+    char temp_buffer[MAX_BYTES_TO_READ]{};
+    ML_Frame frames[MAX_EXPECTED_FRAMES];
+    int nframes = 0;
+    err = SAMPIC256CH_BusReadExtended(info.ConnectionInfo.CtrlDeviceHandle,
+                                      temp_buffer, frames, MAX_BYTES_TO_READ,
+                                      &nframes);
+    if (err != SAMPIC256CH_Success) {
+      continue;
+    }
+    for (int idx = 0; idx < nframes; ++idx) {
+      const int path = frames[idx].path[0];
+      if (path >= 0 && path < MAX_NB_OF_FE_BOARDS) {
+        unique_paths.insert(path);
+        bitmask |= static_cast<uint8_t>(1u << path);
+      }
+    }
+  }
+  if (unique_paths.empty()) {
+    throw std::runtime_error("Presence probe found no responding FEBs");
+  }
+  uint8_t latched_mask = bitmask;
+  auto err = SAMPIC256CH_BusWriteWords(&info, CTRL_ACCESS, CB_CTRL_FPGA, 0, 0,
+                                       ad_control_board_FeBoardPresence,
+                                       &latched_mask, 1);
+  check_or_throw(err, "ProbeFeBoardPresenceLatch");
+  info.CrateBoardsInfo.ControlBoardInfo.FeBoardsPresence = latched_mask;
+  info.NbOfFeBoards = static_cast<int>(unique_paths.size());
+  int idx = 0;
+  for (int path : unique_paths) {
+    info.FrontEndBoardsPathIndex[idx++] = path;
+  }
+}
+
+}  // namespace
 
 SampicSession::SampicSession(const ConnectionConfig& conn,
                              const ExternalTriggerConfig& trigger)
@@ -37,7 +98,18 @@ void SampicSession::configure_for_combo(const ParameterCombination& combo,
                                         int board_index,
                                         const std::vector<int>& channels) {
   configure_sampling(combo.digitizer_rate_mhz);
+  check(SAMPIC256CH_SetAutoConversionMode(&info_, &params_,
+                                          combo.auto_conversion ? TRUE : FALSE),
+        "SetAutoConversionMode");
+  set_threshold(board_index, combo.threshold_volts);
   configure_channel_mask(board_index, channels);
+}
+
+void SampicSession::set_threshold(int board_index, double threshold_volts) {
+  check(SAMPIC256CH_SetSampicChannelInternalThreshold(
+            &info_, &params_, board_index, ALL_SAMPICs, ALL_CHANNELs,
+            static_cast<float>(threshold_volts)),
+        "SetInternalThreshold");
 }
 
 AppliedSettings SampicSession::readback_settings(int board_index) {
@@ -165,6 +237,7 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
       stats.total_hits += static_cast<std::size_t>(hits);
       for (int i = 0; i < hits; ++i) {
         const double timestamp = event.Hit[i].FirstCellTimeStamp;
+        stats.channel_hit_counts[{event.Hit[i].FeBoardIndex, event.Hit[i].Channel}] += 1;
         if (last_timestamp_ns.has_value()) {
           const double delta = timestamp - *last_timestamp_ns;
           if (delta >= 0) {
@@ -208,6 +281,7 @@ void SampicSession::initialise_connection() {
   conn_.CtrlPort = conn_opts_.port;
   check(SAMPIC256CH_OpenCrateConnection(conn_, &info_), "OpenCrateConnection");
   connected_ = true;
+  probe_all_feb_paths(info_);
   std::cout << "Connected to crate. FEBs=" << info_.NbOfFeBoards << "\n";
 }
 

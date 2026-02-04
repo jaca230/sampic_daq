@@ -7,8 +7,11 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <map>
 #include <optional>
+#include <sstream>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <nlohmann/json.hpp>
@@ -23,6 +26,81 @@ namespace sampic::double_pulse {
 namespace {
 
 using scan::SampleResult;
+
+struct ChannelOccupancyCheck {
+  std::vector<int> expected;
+  std::vector<int> seen;
+  std::vector<int> missing;
+  std::vector<int> unexpected;
+};
+
+ChannelOccupancyCheck check_channel_occupancy(
+    int board_index,
+    const std::vector<int>& expected_channels,
+    const std::map<std::pair<int, int>, std::size_t>& all_counts) {
+  ChannelOccupancyCheck result;
+  result.expected = expected_channels;
+  std::sort(result.expected.begin(), result.expected.end());
+
+  std::unordered_set<int> expected_set(expected_channels.begin(),
+                                       expected_channels.end());
+  std::unordered_map<int, int> counts;
+  for (const auto& entry : all_counts) {
+    const auto& key = entry.first;
+    if (key.first != board_index) continue;
+    counts[key.second] += static_cast<int>(entry.second);
+  }
+
+  for (const auto& entry : counts) {
+    const int channel = entry.first;
+    if (expected_set.count(channel) > 0) {
+      result.seen.push_back(channel);
+    } else {
+      result.unexpected.push_back(channel);
+    }
+  }
+
+  for (int channel : expected_channels) {
+    if (counts.find(channel) == counts.end()) {
+      result.missing.push_back(channel);
+    }
+  }
+
+  std::sort(result.seen.begin(), result.seen.end());
+  std::sort(result.missing.begin(), result.missing.end());
+  std::sort(result.unexpected.begin(), result.unexpected.end());
+  return result;
+}
+
+std::string format_channel_list(const std::vector<int>& channels) {
+  if (channels.empty()) return "<none>";
+  std::ostringstream oss;
+  for (size_t i = 0; i < channels.size(); ++i) {
+    if (i > 0) oss << " ";
+    oss << channels[i];
+  }
+  return oss.str();
+}
+
+std::map<int, int> build_channel_counts(
+    int board_index,
+    const std::map<std::pair<int, int>, std::size_t>& all_counts) {
+  std::map<int, int> board_counts;
+  for (const auto& entry : all_counts) {
+    const auto& key = entry.first;
+    if (key.first != board_index) continue;
+    board_counts[key.second] += static_cast<int>(entry.second);
+  }
+  return board_counts;
+}
+
+nlohmann::json channel_counts_to_json(const std::map<int, int>& counts) {
+  nlohmann::json entries = nlohmann::json::array();
+  for (const auto& entry : counts) {
+    entries.push_back({{"channel", entry.first}, {"hits", entry.second}});
+  }
+  return entries;
+}
 
 std::optional<double> parse_double(const std::string& text) {
   try {
@@ -57,6 +135,11 @@ double read_delay_ns(sampic::lecroy::LecroyClient& lecroy,
   } catch (const std::exception&) {
   }
   return fallback_ns;
+}
+
+std::string primary_lecroy_channel(const sampic::lecroy::LecroyConfig& cfg) {
+  if (!cfg.channels.empty()) return cfg.channels.front();
+  return cfg.channel.channel;
 }
 
 nlohmann::json sample_stats_to_json(const SampleResult& sample) {
@@ -106,6 +189,9 @@ scan::SampleStats aggregate_stats(const std::vector<SampleResult>& samples) {
     agg.max_loop_hits += sample.stats.max_loop_hits;
     agg.duration_s += sample.stats.duration_s;
     agg.hit_separation.merge(sample.stats.hit_separation);
+    for (const auto& entry : sample.stats.channel_hit_counts) {
+      agg.channel_hit_counts[entry.first] += entry.second;
+    }
     for (const auto& err : sample.stats.error_messages) {
       agg.record_error(err);
     }
@@ -171,6 +257,7 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
                             double current_delay_ns,
                             double hit_rate_hz,
                             double event_rate_hz,
+                            double expected_hit_rate_hz,
                             double hit_ratio_vs_freq,
                             double ratio_vs_freq,
                             double search_min_ns,
@@ -191,12 +278,16 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
   record["parameters"] = {
       {"lecroy_frequency_hz", combo.lecroy_frequency_hz},
       {"digitizer_rate_mhz", combo.digitizer_rate_mhz},
+      {"auto_conversion", combo.auto_conversion},
+      {"lecroy_amplitude_v", combo.lecroy_amplitude_v},
+      {"threshold_volts", combo.threshold_volts},
+      {"channel_label", combo.channel_label},
       {"best_delay_ns", best_delay_ns},
       {"current_delay_ns", current_delay_ns},
       {"search_min_ns", search_min_ns},
       {"search_max_ns", search_max_ns},
-      {"channel_ids", cfg.scan.channels},
-      {"channel_count", cfg.scan.channels.size()},
+      {"channel_ids", combo.channels},
+      {"channel_count", combo.channels.size()},
       {"board_index", cfg.scan.board_index}};
 
   const auto agg = aggregate_stats(samples);
@@ -258,9 +349,10 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
       {"initial_delay_s", cfg.start_retry.initial_delay_s},
       {"backoff", cfg.start_retry.backoff}};
   record["lecroy"] = {
-      {"channel", cfg.lecroy.channel.channel},
+      {"channels", cfg.lecroy.channels.empty() ? std::vector<std::string>{cfg.lecroy.channel.channel}
+                                               : cfg.lecroy.channels},
       {"frequency_hz", combo.lecroy_frequency_hz},
-      {"amplitude_v", cfg.lecroy.channel.amplitude_v},
+      {"amplitude_v", combo.lecroy_amplitude_v},
       {"baseline_v", cfg.lecroy.channel.baseline_v},
       {"width_ns", cfg.lecroy.channel.width_ns},
       {"double_pulse_enabled", cfg.lecroy.channel.double_pulse_enabled},
@@ -270,6 +362,7 @@ nlohmann::json build_record(const DoublePulseConfig& cfg,
       {"current_delay_ns", current_delay_ns},
       {"hit_rate_hz", hit_rate_hz},
       {"event_rate_hz", event_rate_hz},
+      {"expected_hit_rate_hz", expected_hit_rate_hz},
       {"hit_ratio_vs_frequency", hit_ratio_vs_freq},
       {"ratio_vs_frequency", ratio_vs_freq},
       {"ratio_threshold", cfg.search.ratio_threshold},
@@ -368,6 +461,9 @@ int DoublePulseScanRunner::run(bool debug_mode) {
                                        ? combo.lecroy_frequency_hz
                                        : config_.lecroy.frequency_hz;
     lecroy.SetFrequency(target_freq_hz);
+    if (combo.lecroy_amplitude_v > 0.0) {
+      lecroy.SetAmplitude(combo.lecroy_amplitude_v);
+    }
     const double applied_freq_hz = read_frequency_hz(lecroy, target_freq_hz);
     combo.lecroy_frequency_hz = applied_freq_hz;
     if (std::abs(applied_freq_hz - target_freq_hz) > std::max(1.0, target_freq_hz) * 0.01) {
@@ -378,9 +474,16 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     std::cout << "[run ] (" << combo_index << "/" << combos.size()
               << ") freq=" << applied_freq_hz << "Hz"
               << " digitizer=" << combo.digitizer_rate_mhz << "MHz"
-              << " channels=" << config_.scan.channels.size() << "\n";
+              << " auto_conv=" << (combo.auto_conversion ? "on" : "off")
+              << " amp=" << combo.lecroy_amplitude_v << "V"
+              << " thr=" << combo.threshold_volts << "V"
+              << " channels=" << combo.channels.size();
+    if (!combo.channel_label.empty()) {
+      std::cout << " (" << combo.channel_label << ")";
+    }
+    std::cout << "\n";
     std::cout << "    Lecroy frequency readback=" << applied_freq_hz << " Hz\n";
-    const std::string channel_name = config_.lecroy.channel.channel;
+    const std::string channel_name = primary_lecroy_channel(config_.lecroy);
 
     const auto combo_start = std::chrono::steady_clock::now();
     bool combo_failed = false;
@@ -394,6 +497,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     double best_event_rate_hz = 0.0;
     double best_hit_ratio = 0.0;
     double best_event_ratio = 0.0;
+    std::map<int, int> best_channel_counts;
     nlohmann::json history = nlohmann::json::array();
 
     SampicSession* active_session = nullptr;
@@ -402,7 +506,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     for (int attempt = 0; attempt < max_session_attempts && !active_session; ++attempt) {
       try {
         auto& sess = ensure_session();
-        sess.configure_for_combo(combo, config_.scan.board_index, config_.scan.channels);
+        sess.configure_for_combo(combo, config_.scan.board_index, combo.channels);
         active_session = &sess;
       } catch (const std::exception& ex) {
         config_error = ex.what();
@@ -444,6 +548,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
     double last_event_rate = 0.0;
     double last_hit_ratio = 0.0;
     double last_event_ratio = 0.0;
+    std::map<int, int> last_channel_counts;
 
     while (!combo_failed && !stop_requested() && iteration < config_.search.max_iterations) {
       ++iteration;
@@ -495,15 +600,37 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       last_run_status = run_status;
 
       const auto agg_stats = aggregate_stats(samples);
-      double hit_rate_hz = estimate_hit_rate_hz(aggregated_hits);
-      if (hit_rate_hz <= 0.0 && agg_stats.duration_s > 0.0) {
-        hit_rate_hz = agg_stats.total_hits / agg_stats.duration_s;
-      }
       const double event_rate_hz =
           (agg_stats.duration_s > 0.0) ? (agg_stats.events / agg_stats.duration_s) : 0.0;
-      const double hit_ratio = applied_freq_hz > 0.0 ? hit_rate_hz / applied_freq_hz : 0.0;
+      const auto occupancy =
+          check_channel_occupancy(config_.scan.board_index, combo.channels,
+                                  agg_stats.channel_hit_counts);
+      const auto channel_counts =
+          build_channel_counts(config_.scan.board_index, agg_stats.channel_hit_counts);
+      std::size_t board_total_hits = 0;
+      for (const auto& entry : channel_counts) {
+        board_total_hits += static_cast<std::size_t>(entry.second);
+      }
+      const double hit_rate_hz =
+          (agg_stats.duration_s > 0.0)
+              ? (static_cast<double>(board_total_hits) / agg_stats.duration_s)
+              : 0.0;
+      const double expected_hit_rate_hz =
+          (applied_freq_hz > 0.0)
+              ? (applied_freq_hz * static_cast<double>(combo.channels.size()))
+              : 0.0;
+      const double hit_ratio =
+          expected_hit_rate_hz > 0.0 ? hit_rate_hz / expected_hit_rate_hz : 0.0;
       const double ratio = applied_freq_hz > 0.0 ? event_rate_hz / applied_freq_hz : 0.0;
-      bool double_detected = !iteration_failed && ratio >= config_.search.ratio_threshold;
+      if (!occupancy.missing.empty() || !occupancy.unexpected.empty()) {
+        std::cout << "    Channel occupancy check (board " << config_.scan.board_index
+                  << "): expected=" << format_channel_list(occupancy.expected)
+                  << " seen=" << format_channel_list(occupancy.seen)
+                  << " missing=" << format_channel_list(occupancy.missing)
+                  << " unexpected=" << format_channel_list(occupancy.unexpected) << "\n";
+      }
+      bool double_detected =
+          !iteration_failed && hit_ratio >= config_.search.ratio_threshold;
 
       double new_low = low;
       double new_high = high;
@@ -517,6 +644,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
         best_event_rate_hz = event_rate_hz;
         best_hit_ratio = hit_ratio;
         best_event_ratio = ratio;
+        best_channel_counts = channel_counts;
       } else {
         new_low = delay_ns;
         if (!found_threshold) {
@@ -527,6 +655,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
           best_event_rate_hz = event_rate_hz;
           best_hit_ratio = hit_ratio;
           best_event_ratio = ratio;
+          best_channel_counts = channel_counts;
         }
       }
 
@@ -534,6 +663,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       last_event_rate = event_rate_hz;
       last_hit_ratio = hit_ratio;
       last_event_ratio = ratio;
+      last_channel_counts = channel_counts;
 
       history.push_back({
           {"iteration", iteration},
@@ -543,8 +673,14 @@ int DoublePulseScanRunner::run(bool debug_mode) {
           {"event_rate_hz", event_rate_hz},
           {"hit_ratio_vs_frequency", hit_ratio},
           {"ratio_vs_frequency", ratio},
+          {"channel_hit_counts", channel_counts_to_json(channel_counts)},
+          {"expected_channels", occupancy.expected},
+          {"seen_channels", occupancy.seen},
+          {"missing_channels", occupancy.missing},
+          {"unexpected_channels", occupancy.unexpected},
           {"double_detected", double_detected},
           {"frequency_hz", applied_freq_hz},
+          {"expected_hit_rate_hz", expected_hit_rate_hz},
           {"events", agg_stats.events},
           {"total_hits", agg_stats.total_hits},
           {"duration_s", agg_stats.duration_s},
@@ -558,17 +694,25 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       const double remaining =
           std::max(0.0, (estimated_measurements - completed_measurements) * avg);
       std::cout << "    [iter " << iteration << "/" << config_.search.max_iterations
-                << "] delay=" << delay_ns << " ns, hits=" << agg_stats.total_hits
-                << " ratio=" << std::fixed << std::setprecision(3) << ratio
+                << "] delay=" << delay_ns << " ns, hits=" << board_total_hits
+                << " hit_ratio=" << std::fixed << std::setprecision(3) << hit_ratio
                 << (double_detected ? " (double)" : " (single)")
                 << " | progress " << completed_measurements << "/"
                 << estimated_measurements << ", ETA ~"
                 << std::setprecision(1) << remaining / 60.0 << " min\n";
+      if (!channel_counts.empty()) {
+        std::cout << "    Channels seen (board " << config_.scan.board_index << "):";
+        for (const auto& entry : channel_counts) {
+          std::cout << " " << entry.first << ":" << entry.second;
+        }
+        std::cout << "\n";
+      }
 
       const auto iteration_record =
           build_record(config_, combo, best_delay_ns, applied_delay_ns, hit_rate_hz,
-                       event_rate_hz, hit_ratio, ratio, new_low, new_high, samples,
-                       readback_settings, readback_error, run_status,
+                       event_rate_hz, expected_hit_rate_hz, hit_ratio, ratio,
+                       new_low, new_high, samples, readback_settings, readback_error,
+                       run_status,
                        double_detected ? "iteration_double" : "iteration_single", key,
                        std::chrono::duration<double>(std::chrono::steady_clock::now() - combo_start)
                            .count(),
@@ -595,6 +739,7 @@ int DoublePulseScanRunner::run(bool debug_mode) {
       best_event_rate_hz = last_event_rate;
       best_hit_ratio = last_hit_ratio;
       best_event_ratio = last_event_ratio;
+      best_channel_counts = last_channel_counts;
     }
 
     if (config_.timing.cooldown_between_combos_s > 0.0 && !stop_requested()) {
@@ -621,17 +766,31 @@ int DoublePulseScanRunner::run(bool debug_mode) {
         best_samples.empty() ? last_event_ratio : best_event_ratio;
 
     combo.pulse_separation_ns = best_delay_ns;
-    const auto record = build_record(config_, combo, best_delay_ns, best_delay_ns,
-                                     hit_rate_for_record, event_rate_for_record,
-                                     hit_ratio_for_record, ratio_for_record, low, high,
-                                     samples_for_record, readback_settings, readback_error,
-                                     run_status_for_record, status, key, wall_seconds, history);
+    const double expected_hit_rate_for_record =
+        (applied_freq_hz > 0.0)
+            ? (applied_freq_hz * static_cast<double>(combo.channels.size()))
+            : 0.0;
+    auto record = build_record(config_, combo, best_delay_ns, best_delay_ns,
+                               hit_rate_for_record, event_rate_for_record,
+                               expected_hit_rate_for_record, hit_ratio_for_record,
+                               ratio_for_record, low, high, samples_for_record,
+                               readback_settings, readback_error,
+                               run_status_for_record, status, key, wall_seconds,
+                               history);
+    record["channel_summary"] = channel_counts_to_json(best_channel_counts);
     append_record(config_.output.results_path, record);
     if (status == "complete") {
       completed.insert(key);
     }
     std::cout << "  \u2192 status: " << status << ", duration=" << std::fixed
               << std::setprecision(1) << wall_seconds << "s\n";
+    if (!best_channel_counts.empty()) {
+      std::cout << "  Channels seen (board " << config_.scan.board_index << "):";
+      for (const auto& entry : best_channel_counts) {
+        std::cout << " " << entry.first << ":" << entry.second;
+      }
+      std::cout << "\n";
+    }
   }
 
   return stop_requested() ? 1 : 0;

@@ -171,7 +171,20 @@ class OccupancySession {
     connected_ = true;
     auto probe = probe_feb_paths(info_);
     active_boards_ = probe.paths;
-  }
+    /*
+    std::cout << "Presence probe discovered " << probe.paths.size()
+              << " FEB path(s); mask=0x" << std::hex << static_cast<int>(probe.bitmask)
+              << std::dec << "\n";
+    if (!probe.paths.empty()) {
+      std::cout << "Active FEB paths:";
+      for (int path : probe.paths) {
+        std::cout << " " << path;
+      }
+      std::cout << "\n";
+    }
+    std::cout << "Connected to crate. FEBs=" << info_.NbOfFeBoards << "\n";
+    */
+   }
 
   void set_defaults() {
     check(SAMPIC256CH_SetDefaultParameters(&info_, &params_), "SetDefaultParameters");
@@ -281,8 +294,12 @@ AcquisitionSummary run_occupancy(OccupancySession& session,
       err = SAMPIC256CH_ReadEventBuffer(&session.info(), 0, session.event_buffer(),
                                         session.frames(), &nframes);
       if (err == SAMPIC256CH_Success) {
-        err = SAMPIC256CH_DecodeEvent(&session.info(), &session.params(),
-                                      session.frames(), &event, nframes, &hits);
+        if (nframes <= 0) {
+          err = SAMPIC256CH_NoFrameRead;
+        } else {
+          err = SAMPIC256CH_DecodeEvent(&session.info(), &session.params(),
+                                        session.frames(), &event, nframes, &hits);
+        }
       }
       if (err == SAMPIC256CH_AcquisitionError || err == SAMPIC256CH_ErrInvalidEvent) {
         throw std::runtime_error("Acquisition error while reading occupancy data");
@@ -332,11 +349,13 @@ void print_summary(const AcquisitionSummary& summary, const Options& opts) {
   std::vector<std::pair<ChannelKey, std::size_t>> entries{summary.counts.begin(),
                                                           summary.counts.end()};
   std::sort(entries.begin(), entries.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+            [](const auto& a, const auto& b) {
+              return a.first < b.first;
+            });
 
   const double divisor =
       static_cast<double>(summary.events_recorded > 0 ? summary.events_recorded : 1);
-  std::cout << "\nChannel hits (sorted by occupancy):\n";
+  std::cout << "\nChannel hits (sorted by FEB/SAMPIC/channel):\n";
   for (const auto& [key, hits] : entries) {
     const double per_event = static_cast<double>(hits) / divisor;
     std::cout << "  FEB " << key.feb << " Sampic " << key.sampic << " Ch " << key.channel
@@ -444,7 +463,7 @@ ChannelOccupancyOptions ChannelOccupancyMode::parse_args(int argc, char** argv) 
                 << "  --board <index>          Front-end board index (-1 = all)\n"
                 << "  --events <n>             Stop after N events (default 500)\n"
                 << "  --duration <sec>         Stop after duration seconds (0 = unlimited)\n"
-                << "  --threshold <volts>      Self-trigger threshold (default 0.1)\n"
+                << "  --threshold <volts>      Self-trigger threshold (default 0.02)\n"
                 << "  --prepare-interval <n>   Re-send prepare after N read loops (default 100)\n"
                 << "  --max-loops <n>          Abort read loop after N retries (default 10000)\n"
                 << "  --retry-us <µs>          Sleep between retries (default 100)\n"

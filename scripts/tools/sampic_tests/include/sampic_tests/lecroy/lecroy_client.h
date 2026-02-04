@@ -25,6 +25,7 @@ struct LecroyConfig {
   std::string trigger_mode = "NORMAL";
   std::string trigger_slope = "POS";
   double trigger_level_volts = 1.5;
+  std::vector<std::string> channels;
   LecroyChannelConfig channel;
   double initial_delay_ns = 40.0;
   bool manual_trigger = false;
@@ -40,6 +41,7 @@ class LecroyClient {
   void Configure(const LecroyConfig& config);
   void SetDoublePulseDelay(double delay_ns);
   void SetFrequency(double frequency_hz);
+  void SetAmplitude(double amplitude_v);
   void Trigger();
   std::string Query(const std::string& command);
 

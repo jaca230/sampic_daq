@@ -23,6 +23,11 @@ struct ParameterCombination {
   double lecroy_frequency_hz = 0.0;
   int digitizer_rate_mhz = 0;
   double pulse_separation_ns = 0.0;
+  bool auto_conversion = true;
+  double lecroy_amplitude_v = 0.0;
+  double threshold_volts = 0.1;
+  std::string channel_label;
+  std::vector<int> channels;
 };
 
 struct ConnectionConfig {
@@ -67,6 +72,10 @@ struct ScanConfig {
   std::vector<double> lecroy_rates_hz;
   std::vector<double> legacy_pulse_separation_ns;
   std::vector<int> channels;
+  std::vector<ChannelSet> channel_sets;
+  std::vector<bool> auto_conversion_modes;
+  std::vector<double> lecroy_amplitudes_v;
+  std::vector<double> thresholds_volts;
   int board_index = 0;
 };
 

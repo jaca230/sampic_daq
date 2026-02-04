@@ -2,7 +2,9 @@
 
 #include <cstddef>
 #include <limits>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -31,6 +33,7 @@ struct SampleStats {
   std::size_t max_loop_hits = 0;
   double duration_s = 0.0;
   SeparationAccumulator hit_separation;
+  std::map<std::pair<int, int>, std::size_t> channel_hit_counts;
   std::vector<std::string> error_messages;
 
   void record_error(const std::string& msg);

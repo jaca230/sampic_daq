@@ -139,16 +139,73 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
     cfg.scan.legacy_pulse_separation_ns =
         read_array<double>(scan_node, "double_pulse_delays_ns", false);
   }
-  cfg.scan.channels = read_array<int>(scan_node, "channels", true);
-  if (cfg.scan.channels.empty()) {
-    throw std::runtime_error("scan.channels must list at least one channel index");
+  if (scan_node.contains("channels")) {
+    cfg.scan.channels = read_array<int>(scan_node, "channels", true);
   }
-  std::set<int> sorted(cfg.scan.channels.begin(), cfg.scan.channels.end());
-  cfg.scan.channels.assign(sorted.begin(), sorted.end());
-  for (int ch : cfg.scan.channels) {
-    if (ch < 0 || ch >= 64) {
-      throw std::runtime_error("Channel index out of range (0-63): " + std::to_string(ch));
+  if (scan_node.contains("channel_sets")) {
+    if (!scan_node.at("channel_sets").is_array()) {
+      throw std::runtime_error("scan.channel_sets must be an array");
     }
+    for (const auto& item : scan_node.at("channel_sets")) {
+      if (!item.contains("channels")) {
+        throw std::runtime_error("channel_sets entry missing channels");
+      }
+      ChannelSet set;
+      set.label = item.value("label", "");
+      set.channels = item.at("channels").get<std::vector<int>>();
+      if (set.channels.empty()) {
+        throw std::runtime_error("channel_sets entry must include at least one channel");
+      }
+      std::set<int> sorted(set.channels.begin(), set.channels.end());
+      set.channels.assign(sorted.begin(), sorted.end());
+      for (int ch : set.channels) {
+        if (ch < 0 || ch >= 64) {
+          throw std::runtime_error("Channel index out of range (0-63): " +
+                                   std::to_string(ch));
+        }
+      }
+      cfg.scan.channel_sets.push_back(std::move(set));
+    }
+  }
+  if (cfg.scan.channel_sets.empty()) {
+    if (cfg.scan.channels.empty()) {
+      throw std::runtime_error("scan.channels or scan.channel_sets must list channels");
+    }
+    ChannelSet set;
+    set.label = "default";
+    std::set<int> sorted(cfg.scan.channels.begin(), cfg.scan.channels.end());
+    set.channels.assign(sorted.begin(), sorted.end());
+    for (int ch : set.channels) {
+      if (ch < 0 || ch >= 64) {
+        throw std::runtime_error("Channel index out of range (0-63): " + std::to_string(ch));
+      }
+    }
+    cfg.scan.channel_sets.push_back(std::move(set));
+  }
+  cfg.scan.channels = cfg.scan.channel_sets.front().channels;
+
+  if (scan_node.contains("auto_conversion_modes")) {
+    cfg.scan.auto_conversion_modes =
+        read_array<bool>(scan_node, "auto_conversion_modes", false);
+  }
+  if (cfg.scan.auto_conversion_modes.empty()) {
+    cfg.scan.auto_conversion_modes = {true};
+  }
+
+  if (scan_node.contains("lecroy_amplitudes_v")) {
+    cfg.scan.lecroy_amplitudes_v =
+        read_array<double>(scan_node, "lecroy_amplitudes_v", false);
+  }
+  if (cfg.scan.lecroy_amplitudes_v.empty()) {
+    cfg.scan.lecroy_amplitudes_v = {cfg.lecroy.channel.amplitude_v};
+  }
+
+  if (scan_node.contains("thresholds_volts")) {
+    cfg.scan.thresholds_volts =
+        read_array<double>(scan_node, "thresholds_volts", false);
+  }
+  if (cfg.scan.thresholds_volts.empty()) {
+    cfg.scan.thresholds_volts = {cfg.connection.threshold_volts};
   }
 
   if (!doc.contains("output") || !doc.at("output").contains("results_path")) {
@@ -170,6 +227,7 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
       cfg.lecroy.manual_trigger_interval_s = node.at("manual_trigger_interval_s").get<double>();
     }
     if (node.contains("settle_delay_s")) cfg.lecroy.settle_delay_s = node.at("settle_delay_s").get<double>();
+    if (node.contains("channels")) cfg.lecroy.channels = node.at("channels").get<std::vector<std::string>>();
     if (node.contains("channel")) cfg.lecroy.channel.channel = node.at("channel").get<std::string>();
     if (node.contains("amplitude_v")) cfg.lecroy.channel.amplitude_v = node.at("amplitude_v").get<double>();
     if (node.contains("baseline_v")) cfg.lecroy.channel.baseline_v = node.at("baseline_v").get<double>();
@@ -199,6 +257,28 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
   if (cfg.scan.lecroy_rates_hz.empty() || cfg.scan.digitizer_rates_mhz.empty()) {
     throw std::runtime_error("Scan parameter arrays must not be empty");
   }
+  if (cfg.scan.auto_conversion_modes.empty()) {
+    throw std::runtime_error("scan.auto_conversion_modes must not be empty");
+  }
+  if (cfg.scan.lecroy_amplitudes_v.empty()) {
+    throw std::runtime_error("scan.lecroy_amplitudes_v must not be empty");
+  }
+  for (double amp : cfg.scan.lecroy_amplitudes_v) {
+    if (amp <= 0.0) {
+      throw std::runtime_error("scan.lecroy_amplitudes_v must be positive");
+    }
+  }
+  if (cfg.scan.thresholds_volts.empty()) {
+    throw std::runtime_error("scan.thresholds_volts must not be empty");
+  }
+  for (double threshold : cfg.scan.thresholds_volts) {
+    if (threshold <= 0.0) {
+      throw std::runtime_error("scan.thresholds_volts must be positive");
+    }
+  }
+  if (cfg.scan.channel_sets.empty()) {
+    throw std::runtime_error("scan.channel_sets must not be empty");
+  }
   if (cfg.search.min_ns <= 0.0 || cfg.search.max_ns <= 0.0 ||
       cfg.search.min_ns >= cfg.search.max_ns) {
     throw std::runtime_error("binary_search bounds must be positive and min < max");
@@ -217,7 +297,11 @@ DoublePulseConfig load_double_pulse_config(const std::string& path) {
 
 std::vector<ParameterCombination> build_parameter_space(const ScanConfig& scan) {
   std::vector<ParameterCombination> combos;
-  combos.reserve(scan.lecroy_rates_hz.size() * scan.digitizer_rates_mhz.size());
+  const std::size_t total =
+      scan.lecroy_rates_hz.size() * scan.digitizer_rates_mhz.size() *
+      scan.auto_conversion_modes.size() * scan.lecroy_amplitudes_v.size() *
+      scan.thresholds_volts.size() * scan.channel_sets.size();
+  combos.reserve(std::max<std::size_t>(1, total));
   for (double freq : scan.lecroy_rates_hz) {
     if (freq <= 0.0) {
       throw std::runtime_error("Lecroy frequency must be positive (Hz)");
@@ -226,10 +310,29 @@ std::vector<ParameterCombination> build_parameter_space(const ScanConfig& scan) 
       if (rate <= 0) {
         throw std::runtime_error("Digitizer rate must be positive (MHz)");
       }
-      ParameterCombination combo;
-      combo.lecroy_frequency_hz = freq;
-      combo.digitizer_rate_mhz = rate;
-      combos.push_back(combo);
+      for (bool auto_conv : scan.auto_conversion_modes) {
+        for (double amplitude : scan.lecroy_amplitudes_v) {
+          if (amplitude <= 0.0) {
+            throw std::runtime_error("Lecroy amplitude must be positive (V)");
+          }
+          for (double threshold : scan.thresholds_volts) {
+            if (threshold <= 0.0) {
+              throw std::runtime_error("Threshold must be positive (V)");
+            }
+            for (const auto& set : scan.channel_sets) {
+              ParameterCombination combo;
+              combo.lecroy_frequency_hz = freq;
+              combo.digitizer_rate_mhz = rate;
+              combo.auto_conversion = auto_conv;
+              combo.lecroy_amplitude_v = amplitude;
+              combo.threshold_volts = threshold;
+              combo.channel_label = set.label;
+              combo.channels = set.channels;
+              combos.push_back(std::move(combo));
+            }
+          }
+        }
+      }
     }
   }
   return combos;
@@ -237,8 +340,18 @@ std::vector<ParameterCombination> build_parameter_space(const ScanConfig& scan) 
 
 std::string make_combo_key(const ParameterCombination& combo, int board_index) {
   std::ostringstream oss;
-  oss << "freq_hz=" << combo.lecroy_frequency_hz << ";rate=" << combo.digitizer_rate_mhz
-      << ";board=" << board_index;
+  oss << "freq_hz=" << combo.lecroy_frequency_hz
+      << ";rate=" << combo.digitizer_rate_mhz
+      << ";auto_conv=" << (combo.auto_conversion ? "on" : "off")
+      << ";amp_v=" << combo.lecroy_amplitude_v
+      << ";thr_v=" << combo.threshold_volts
+      << ";channels=";
+  if (!combo.channel_label.empty()) {
+    oss << combo.channel_label;
+  } else {
+    oss << combo.channels.size();
+  }
+  oss << ";board=" << board_index;
   return oss.str();
 }
 
@@ -246,12 +359,22 @@ std::string make_combo_key_from_json(const nlohmann::json& record) {
   if (!record.contains("parameters")) return {};
   const auto& params = record.at("parameters");
   if (!params.contains("lecroy_frequency_hz") || !params.contains("digitizer_rate_mhz") ||
-      !params.contains("board_index")) {
+      !params.contains("board_index") || !params.contains("auto_conversion") ||
+      !params.contains("lecroy_amplitude_v") || !params.contains("threshold_volts")) {
     return {};
   }
   ParameterCombination combo;
   combo.lecroy_frequency_hz = params.at("lecroy_frequency_hz").get<double>();
   combo.digitizer_rate_mhz = params.at("digitizer_rate_mhz").get<int>();
+  combo.auto_conversion = params.at("auto_conversion").get<bool>();
+  combo.lecroy_amplitude_v = params.at("lecroy_amplitude_v").get<double>();
+  combo.threshold_volts = params.at("threshold_volts").get<double>();
+  if (params.contains("channel_label")) {
+    combo.channel_label = params.at("channel_label").get<std::string>();
+  }
+  if (params.contains("channel_ids")) {
+    combo.channels = params.at("channel_ids").get<std::vector<int>>();
+  }
   const int board = params.at("board_index").get<int>();
   return make_combo_key(combo, board);
 }

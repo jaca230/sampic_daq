@@ -48,7 +48,13 @@ void LecroyClient::Configure(const LecroyConfig& cfg) {
 void LecroyClient::SetDoublePulseDelay(double delay_ns) {
   EnsureConnected();
   const double seconds = delay_ns * 1e-9;
-  SendCommand(config_.channel.channel + ":DEL " + FormatScientific(seconds));
+  if (!config_.channels.empty()) {
+    for (const auto& channel : config_.channels) {
+      SendCommand(channel + ":DEL " + FormatScientific(seconds));
+    }
+  } else {
+    SendCommand(config_.channel.channel + ":DEL " + FormatScientific(seconds));
+  }
   if (config_.settle_delay_s > 0.0) {
     std::this_thread::sleep_for(std::chrono::duration<double>(config_.settle_delay_s));
   }
@@ -76,6 +82,15 @@ void LecroyClient::SetFrequency(double frequency_hz) {
   } catch (const std::exception& ex) {
     std::cerr << "Warning: failed to verify Lecroy frequency: " << ex.what() << "\n";
     config_.frequency_hz = frequency_hz;
+  }
+}
+
+void LecroyClient::SetAmplitude(double amplitude_v) {
+  EnsureConnected();
+  config_.channel.amplitude_v = amplitude_v;
+  ApplyChannelConfig();
+  if (config_.settle_delay_s > 0.0) {
+    std::this_thread::sleep_for(std::chrono::duration<double>(config_.settle_delay_s));
   }
 }
 
@@ -146,16 +161,22 @@ void LecroyClient::SendCommand(const std::string& command) {
 
 void LecroyClient::ApplyChannelConfig() {
   const auto& ch = config_.channel;
-  const std::string prefix = ch.channel + ":";
-  SendCommand(prefix + "AMP " + FormatScientific(ch.amplitude_v));
-  SendCommand(prefix + "BASE " + FormatScientific(ch.baseline_v));
-  SendCommand(prefix + "WID " + FormatScientific(ch.width_ns * 1e-9));
-  SendCommand(prefix + "LEAD " + FormatScientific(ch.lead_ns * 1e-9));
-  SendCommand(prefix + "TRAIL " + FormatScientific(ch.trail_ns * 1e-9));
-  SendCommand(prefix + "OUT " + std::string(ch.output_main ? "ON" : "OFF"));
-  SendCommand(prefix + "OUTB " + std::string(ch.output_inverse ? "ON" : "OFF"));
-  SendCommand(prefix + "DBL " + std::string(ch.double_pulse_enabled ? "ON" : "OFF"));
-  SendCommand(prefix + "DISA OFF");
+  std::vector<std::string> channels = config_.channels;
+  if (channels.empty()) {
+    channels.push_back(ch.channel);
+  }
+  for (const auto& name : channels) {
+    const std::string prefix = name + ":";
+    SendCommand(prefix + "AMP " + FormatScientific(ch.amplitude_v));
+    SendCommand(prefix + "BASE " + FormatScientific(ch.baseline_v));
+    SendCommand(prefix + "WID " + FormatScientific(ch.width_ns * 1e-9));
+    SendCommand(prefix + "LEAD " + FormatScientific(ch.lead_ns * 1e-9));
+    SendCommand(prefix + "TRAIL " + FormatScientific(ch.trail_ns * 1e-9));
+    SendCommand(prefix + "OUT " + std::string(ch.output_main ? "ON" : "OFF"));
+    SendCommand(prefix + "OUTB " + std::string(ch.output_inverse ? "ON" : "OFF"));
+    SendCommand(prefix + "DBL " + std::string(ch.double_pulse_enabled ? "ON" : "OFF"));
+    SendCommand(prefix + "DISA OFF");
+  }
 }
 
 }  // namespace sampic::lecroy
