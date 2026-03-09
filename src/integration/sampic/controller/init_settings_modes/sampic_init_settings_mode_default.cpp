@@ -52,11 +52,29 @@ int SampicInitSettingsModeDefault::initialize() {
         }
     }
 
+    SAMPIC256CH_StopRun(&info_, &params_);
+
     err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
     if (err != SAMPIC256CH_Success) {
-        spdlog::error("InitSettingsModeDefault: Failed to open crate connection (err={})", static_cast<int>(err));
+        if (info_.LastCommErrorInfo.FpgaType == CB_CTRL_FPGA) {
+            spdlog::error("InitSettingsModeDefault: Error {} while accessing CTRL_BOARD_CTRL_FPGA at subadd {}",
+                          static_cast<int>(err),
+                          info_.LastCommErrorInfo.SubAddress);
+        } else if (info_.LastCommErrorInfo.FpgaType == FEB_CTRL_FPGA) {
+            spdlog::error("InitSettingsModeDefault: Error {} while accessing FEB[{}] CTRL_FPGA at subadd {}",
+                          static_cast<int>(err),
+                          info_.LastCommErrorInfo.FeBoardTarget,
+                          info_.LastCommErrorInfo.SubAddress);
+        } else {
+            spdlog::error("InitSettingsModeDefault: Error {} while accessing FEB[{}] FE_FPGA index {} at subadd {}",
+                          static_cast<int>(err),
+                          info_.LastCommErrorInfo.FeBoardTarget,
+                          info_.LastCommErrorInfo.FeFpgaTarget,
+                          info_.LastCommErrorInfo.SubAddress);
+        }
         return err;
     }
+    spdlog::info("InitSettingsModeDefault: All hardware setup parameters loaded.");
 
     err = SAMPIC256CH_LoadAllCalibValuesFromFiles(&info_, &params_,
                                                   const_cast<char*>(settings_.calibration_directory.c_str()));
