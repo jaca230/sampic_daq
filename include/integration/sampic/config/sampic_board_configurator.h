@@ -22,6 +22,7 @@ public:
     void setLevel2TriggerBuild(); // SAMPIC256CH_SetLevel2TriggerBuildOption
     void setLevel2ExtTrigGate(); // SAMPIC256CH_SetLevel2ExtTrigGate
     void setLevel2Coincidence(); // SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate
+    void setLevel2TriggerLogic(); // SAMPIC256CH_SetLevel2TriggerLogic (opt-in)
 
     void applyChips();
 

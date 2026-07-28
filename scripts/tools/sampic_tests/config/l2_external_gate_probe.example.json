@@ -30,8 +30,9 @@
     "retry_sleep_us": 100
   },
   "correlation": {
-    "expected_hit_minus_trigger_ns": 0.0,
-    "tolerance_ns": 100.0
+    "expected_hit_minus_trigger_ns": -470.0,
+    "pre_window_ns": 20.0,
+    "post_window_ns": 20.0
   },
   "comparison": {
     "duration_s": 30.0

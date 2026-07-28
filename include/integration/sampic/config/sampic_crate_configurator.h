@@ -28,6 +28,7 @@ public:
     void setExternalTriggerType();   
     void setExternalTriggerLevel();  
     void setExternalTriggerEdge();   
+    void setExternalTriggerCounterMode();
     void setMinTriggersPerEvent();   
     void setLevel2TriggerBuild();    
     void setLevel3TriggerBuild();    

@@ -54,7 +54,8 @@ struct Config {
   bool detect_external_trigger_id = true;
   unsigned char trigger_records_per_frame = 1;
   double expected_hit_minus_trigger_ns = 0.0;
-  double correlation_tolerance_ns = 100.0;
+  double correlation_pre_window_ns = 20.0;
+  double correlation_post_window_ns = 20.0;
   int max_events = 100;
   double duration_s = 10.0;
   double comparison_duration_s = 5.0;
@@ -171,8 +172,11 @@ Config load_config(const std::string& path) {
   if (const auto& node = doc.value("correlation", nlohmann::json::object()); !node.empty()) {
     cfg.expected_hit_minus_trigger_ns =
         node.value("expected_hit_minus_trigger_ns", cfg.expected_hit_minus_trigger_ns);
-    cfg.correlation_tolerance_ns =
-        node.value("tolerance_ns", cfg.correlation_tolerance_ns);
+    const double legacy_tolerance = node.value("tolerance_ns", -1.0);
+    cfg.correlation_pre_window_ns = node.value(
+        "pre_window_ns", legacy_tolerance >= 0 ? legacy_tolerance : cfg.correlation_pre_window_ns);
+    cfg.correlation_post_window_ns = node.value(
+        "post_window_ns", legacy_tolerance >= 0 ? legacy_tolerance : cfg.correlation_post_window_ns);
   }
   if (const auto& node = doc.value("lecroy", nlohmann::json::object()); !node.empty()) {
     cfg.lecroy_ip = node.value("ip", cfg.lecroy_ip);
@@ -195,8 +199,8 @@ Config load_config(const std::string& path) {
   if (cfg.trigger_records_per_frame == 0 || cfg.trigger_records_per_frame > 127) {
     throw std::runtime_error("external_trigger.records_per_frame must be between 1 and 127");
   }
-  if (cfg.correlation_tolerance_ns <= 0.0) {
-    throw std::runtime_error("correlation.tolerance_ns must be positive");
+  if (cfg.correlation_pre_window_ns < 0.0 || cfg.correlation_post_window_ns < 0.0) {
+    throw std::runtime_error("correlation pre_window_ns and post_window_ns must be non-negative");
   }
   if (cfg.comparison_duration_s <= 0.0) {
     throw std::runtime_error("comparison.duration_s must be positive");
@@ -436,7 +440,8 @@ void print_correlation(const Config& cfg, const std::vector<HitTime>& hits,
     nearest_smallest_delta = std::min(nearest_smallest_delta, delta);
     nearest_largest_delta = std::max(nearest_largest_delta, delta);
     nearest_sum_delta += delta;
-    if (std::abs(delta - cfg.expected_hit_minus_trigger_ns) <= cfg.correlation_tolerance_ns) {
+    if (delta >= cfg.expected_hit_minus_trigger_ns - cfg.correlation_pre_window_ns &&
+        delta <= cfg.expected_hit_minus_trigger_ns + cfg.correlation_post_window_ns) {
       ++matched;
       smallest_delta = std::min(smallest_delta, delta);
       largest_delta = std::max(largest_delta, delta);
@@ -448,8 +453,8 @@ void print_correlation(const Config& cfg, const std::vector<HitTime>& hits,
 
   std::cout << "Correlation: hits=" << hits.size() << " external_triggers=" << trigger_times.size()
             << " matched=" << matched << '/' << hits.size() << " (expected hit-trigger="
-            << cfg.expected_hit_minus_trigger_ns << " ns, tolerance=+/-"
-            << cfg.correlation_tolerance_ns << " ns)\n";
+            << cfg.expected_hit_minus_trigger_ns << " ns, acceptance=[-"
+            << cfg.correlation_pre_window_ns << ", +" << cfg.correlation_post_window_ns << "] ns)\n";
   std::cout << "  nearest hit-trigger delta: mean=" << (nearest_sum_delta / hits.size())
             << " ns, range=[" << nearest_smallest_delta << ", " << nearest_largest_delta
             << "] ns\n";

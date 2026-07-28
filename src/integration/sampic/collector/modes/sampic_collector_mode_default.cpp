@@ -89,7 +89,10 @@ bool SampicCollectorModeDefault::collect()
                          std::chrono::steady_clock::now() - t_start);
     timing.acquisition_retries = nloop > 0 ? static_cast<uint32_t>(nloop - 1) : 0;
 
-    if (errCode == SAMPIC256CH_Success && numberOfHits > 0)
+    // TriggerData is an independent stream. Preserve trigger-only packets so
+    // trigger-referenced frontend modes can emit/diagnose empty accepted gates.
+    if (errCode == SAMPIC256CH_Success &&
+        (numberOfHits > 0 || ev_data->TriggerData.NbOfTriggers > 0))
     {
         auto ev = std::make_unique<SampicEvent>(
             std::move(ev_data), timing, std::chrono::steady_clock::now());

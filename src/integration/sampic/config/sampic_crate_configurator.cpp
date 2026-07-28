@@ -25,6 +25,7 @@ void SampicCrateConfigurator::apply() {
     setExternalTriggerType();
     setExternalTriggerLevel();
     setExternalTriggerEdge();
+    setExternalTriggerCounterMode();
     setMinTriggersPerEvent();
     setLevel3TriggerBuild();
 
@@ -191,6 +192,19 @@ void SampicCrateConfigurator::setExternalTriggerEdge() {
     check(SAMPIC256CH_SetExternalTriggerEdge(&info_, &params_,
                                              settings_.trigger_edge),
           "SetExternalTriggerEdge");
+}
+
+void SampicCrateConfigurator::setExternalTriggerCounterMode() {
+    Boolean counter{};
+    Boolean detect_id{};
+    check(SAMPIC256CH_GetExternalTriggerCounterMode(&params_, &counter, &detect_id),
+          "GetExternalTriggerCounterMode");
+    if (static_cast<bool>(counter) == settings_.enable_external_trigger_counter &&
+        static_cast<bool>(detect_id) == settings_.enable_detect_ext_trigger_id) return;
+    check(SAMPIC256CH_SetExternalTriggerCounterMode(
+              &info_, &params_, settings_.enable_external_trigger_counter ? TRUE : FALSE,
+              settings_.enable_detect_ext_trigger_id ? TRUE : FALSE),
+          "SetExternalTriggerCounterMode");
 }
 
 void SampicCrateConfigurator::setMinTriggersPerEvent() {

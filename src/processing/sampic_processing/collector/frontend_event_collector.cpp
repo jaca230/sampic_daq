@@ -1,5 +1,6 @@
 #include "processing/sampic_processing/collector/frontend_event_collector.h"
 #include "processing/sampic_processing/collector/modes/frontend_collector_mode_default.h"
+#include "processing/sampic_processing/collector/modes/frontend_collector_mode_external_trigger.h"
 #ifdef __linux__
 #include <pthread.h>
 #include <sched.h>
@@ -59,6 +60,10 @@ void FrontendEventCollector::buildMode() {
     switch (cfg_.mode) {
         case FrontendCollectorModeType::DEFAULT:
             mode_ = std::make_unique<FrontendCollectorModeDefault>(
+                sampic_buffer_, *buffer_, cfg_, *diagnostics_);
+            break;
+        case FrontendCollectorModeType::EXTERNAL_TRIGGER:
+            mode_ = std::make_unique<FrontendCollectorModeExternalTrigger>(
                 sampic_buffer_, *buffer_, cfg_, *diagnostics_);
             break;
         default:

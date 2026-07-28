@@ -66,6 +66,20 @@ struct SampicChipConfig {
 
 using SampicChipSettings = std::map<std::string, SampicChipConfig>;
 
+/// ODB-serializable representation of the FEB L2 trigger-logic tree.
+struct SampicLevel2TriggerLogicConfig {
+  int sel_input0 = 0;
+  int sel_input1 = 1;
+  int sel_input2 = 2;
+  int sel_input3 = 3;
+  CombiTriggerLogic_t layer1_trigger_logic0 = LOGIC_OR;
+  CombiTriggerLogic_t layer1_trigger_logic1 = LOGIC_OR;
+  CombiTriggerLogic_t layer1_trigger_logic2 = LOGIC_OR;
+  CombiTriggerLogic_t layer2_trigger_logic0 = LOGIC_OR;
+  CombiTriggerLogic_t layer2_trigger_logic1 = LOGIC_OR;
+  CombiTriggerLogic_t layer3_trigger_logic = LOGIC_OR;
+};
+
 // ==============================
 // Front-End Board (contains chips)
 // ==============================
@@ -76,6 +90,8 @@ struct SampicFrontEndConfig {
   bool level2_trigger_build = false; // Setter: SAMPIC256CH_SetLevel2TriggerBuildOption | Getter: SAMPIC256CH_GetLevel2TriggerBuildOption
   unsigned char level2_ext_trig_gate = 8; // Setter: SAMPIC256CH_SetLevel2ExtTrigGate | Getter: SAMPIC256CH_GetLevel2ExtTrigGate
   bool level2_coincidence_ext_gate = false; // Setter: SAMPIC256CH_SetLevel2CoincidenceModeWithExtTrigGate | Getter: SAMPIC256CH_GetLevel2CoincidenceModeWithExtTrigGate
+  bool override_level2_trigger_logic = false;
+  SampicLevel2TriggerLogicConfig level2_trigger_logic{};
   SampicChipSettings sampics {
     {"sampic0", {}}, {"sampic1", {}}, {"sampic2", {}}, {"sampic3", {}}
   };

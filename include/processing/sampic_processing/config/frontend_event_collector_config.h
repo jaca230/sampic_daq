@@ -7,6 +7,7 @@
 /// Available modes for the frontend event collector.
 enum class FrontendCollectorModeType {
     DEFAULT,
+    EXTERNAL_TRIGGER,
     EXAMPLE
 };
 
@@ -45,6 +46,23 @@ struct FrontendCollectorModeExampleConfig {
     int dummy_param = 0;
 };
 
+/// Time-window event building around decoded external-trigger records.
+struct FrontendCollectorModeExternalTriggerConfig {
+    /// hit_trigger_cell_time - external_trigger_time, in ns.  For the current
+    /// Lecroy/SAMPIC setup this is measured as approximately -470 ns.
+    double hit_time_offset_ns = -470.0;
+    /// Accepted time before the calibrated trigger reference, in ns.
+    double pre_window_ns = 20.0;
+    /// Accepted time after the calibrated trigger reference, in ns.
+    double post_window_ns = 20.0;
+    /// Required to turn FirstCellTimeStamp into the SAMPIC trigger-cell time.
+    double sampling_frequency_mhz = 6400.0;
+    bool emit_triggers_without_hits = true;
+    std::string data_bank_prefix = "AD";
+    std::string event_timing_bank_prefix = "AT";
+    std::string trigger_metadata_bank_prefix = "TG";
+};
+
 /// Diagnostics / instrumentation configuration.
 struct FrontendCollectorDiagnosticsConfig {
     bool enabled = false;                  ///< Enable periodic logging.
@@ -68,6 +86,7 @@ struct FrontendEventCollectorConfig {
 
     // --- Mode configurations ---
     FrontendCollectorModeDefaultConfig default_mode;
+    FrontendCollectorModeExternalTriggerConfig external_trigger_mode;
     FrontendCollectorModeExampleConfig example_mode;
 
     // --- Diagnostics ---

@@ -72,9 +72,11 @@ set(PLAYGROUND_SOURCES
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_event_collector.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_diagnostics.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/frontend_collector_mode_default.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/frontend_collector_mode_external_trigger.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_collector_timing.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_trigger_metadata.cpp"
 )
 
 add_executable(sampic_playground

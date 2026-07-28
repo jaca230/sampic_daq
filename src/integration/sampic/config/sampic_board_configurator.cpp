@@ -22,6 +22,7 @@ void SampicBoardConfigurator::apply() {
 
     setGlobalTrigger();
     setLevel2TriggerBuild();
+    setLevel2TriggerLogic();
     setLevel2ExtTrigGate();
     setLevel2Coincidence();
 
@@ -54,6 +55,24 @@ void SampicBoardConfigurator::setLevel2TriggerBuild() {
 
     check(SAMPIC256CH_SetLevel2TriggerBuildOption(&info_, &params_, desired),
           "SetLevel2TriggerBuildOption");
+}
+
+void SampicBoardConfigurator::setLevel2TriggerLogic() {
+    if (!config_.override_level2_trigger_logic) return;
+    const auto& desired_cfg = config_.level2_trigger_logic;
+    TriggerLogicParamStruct desired{};
+    desired.SelInput0 = desired_cfg.sel_input0;
+    desired.SelInput1 = desired_cfg.sel_input1;
+    desired.SelInput2 = desired_cfg.sel_input2;
+    desired.SelInput3 = desired_cfg.sel_input3;
+    desired.Layer1TriggerLogic0 = desired_cfg.layer1_trigger_logic0;
+    desired.Layer1TriggerLogic1 = desired_cfg.layer1_trigger_logic1;
+    desired.Layer1TriggerLogic2 = desired_cfg.layer1_trigger_logic2;
+    desired.Layer2TriggerLogic0 = desired_cfg.layer2_trigger_logic0;
+    desired.Layer2TriggerLogic1 = desired_cfg.layer2_trigger_logic1;
+    desired.Layer3TriggerLogic = desired_cfg.layer3_trigger_logic;
+    check(SAMPIC256CH_SetLevel2TriggerLogic(&info_, &params_, boardIdx_, desired),
+          "SetLevel2TriggerLogic");
 }
 
 void SampicBoardConfigurator::setLevel2ExtTrigGate() {
