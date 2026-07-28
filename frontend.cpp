@@ -55,6 +55,7 @@ INT         event_buffer_size   = 5 * max_event_size;
 
 static std::thread g_event_writer_thread;
 static std::atomic<bool> g_event_writer_stop{false};
+static std::atomic<bool> g_shutdown_started{false};
 
 // ======================================================================
 // Prototypes
@@ -70,6 +71,8 @@ INT read_sampic_event(char *pevent, INT off);
 INT poll_event(INT source, INT count, BOOL test);
 INT interrupt_configure(INT cmd, INT source, POINTER_T adr);
 static void event_writer_loop();
+static void shutdown_frontend_runtime(const char* reason);
+static void request_fatal_shutdown(const char* reason);
 static INT compose_frontend_event(char* dest,
                                   const std::shared_ptr<FrontendEvent>& fev,
                                   frontend::runtime::Runtime& runtime);
@@ -154,6 +157,7 @@ INT begin_of_run(INT, char *error) {
         std::string err;
         if (!runtime.refreshConfigs(err)) {
             std::snprintf(error, 256, "Failed to refresh configs: %s", err.c_str());
+            request_fatal_shutdown(error);
             return FE_ERR_ODB;
         }
 
@@ -164,6 +168,7 @@ INT begin_of_run(INT, char *error) {
 
         if (runtime.controller->applySettings() != 0) {
             std::strcpy(error, "Failed to apply SAMPIC settings");
+            request_fatal_shutdown(error);
             return FE_ERR_HW;
         }
 
@@ -172,16 +177,21 @@ INT begin_of_run(INT, char *error) {
             runtime.collector->setConfig(cfgs.frontend_collector);
             if (runtime.collector->applySettings() != 0) {
                 std::strcpy(error, "Failed to apply frontend collector settings");
+                request_fatal_shutdown(error);
                 return FE_ERR_HW;
             }
         } else {
-            spdlog::warn("FrontendEventCollector missing during begin_of_run()");
+            std::strcpy(error, "FrontendEventCollector missing during begin_of_run()");
+            request_fatal_shutdown(error);
+            return FE_ERR_HW;
         }
 
         // --- Start everything
         runtime.controller->startCollector();
-        if (runtime.controller->startRun() != 0) {
-            std::strcpy(error, "Failed to start SAMPIC run");
+        const int start_status = runtime.controller->startRun();
+        if (start_status != 0) {
+            std::snprintf(error, 256, "Failed to start SAMPIC run (err=%d)", start_status);
+            request_fatal_shutdown(error);
             return FE_ERR_HW;
         }
 
@@ -195,10 +205,12 @@ INT begin_of_run(INT, char *error) {
     } catch (const std::exception& e) {
         std::snprintf(error, 256, "Exception in begin_of_run: %s", e.what());
         spdlog::error("begin_of_run() exception: {}", e.what());
+        request_fatal_shutdown(error);
         return FE_ERR_HW;
     } catch (...) {
         std::strcpy(error, "Unknown exception in begin_of_run");
         spdlog::error("begin_of_run() unknown exception");
+        request_fatal_shutdown(error);
         return FE_ERR_HW;
     }
 }
@@ -212,10 +224,16 @@ INT end_of_run(INT, char *error) {
             runtime.collector->stop();
         if (runtime.controller) {
             runtime.controller->stopCollector();
-            runtime.controller->stopRun();
+            const int stop_status = runtime.controller->stopRun();
+            if (stop_status != 0) {
+                std::snprintf(error, 256, "Failed to stop SAMPIC run (err=%d)", stop_status);
+                request_fatal_shutdown(error);
+                return FE_ERR_HW;
+            }
         }
     } catch (const std::exception& e) {
         std::snprintf(error, 256, "Error during EOR: %s", e.what());
+        request_fatal_shutdown(error);
         return FE_ERR_HW;
     }
     return SUCCESS;
@@ -227,21 +245,47 @@ INT resume_run(INT, char*) { return SUCCESS; }
 INT frontend_loop()        { return SUCCESS; }
 
 INT frontend_exit() {
-    try {
-        auto& runtime = frontend::runtime::Runtime::instance();
-        if (runtime.collector) runtime.collector->stop();
-        if (runtime.controller) {
-            runtime.controller->stopCollector();
-            runtime.controller->stopRun();
-            runtime.controller->cleanup();
-        }
-    } catch (...) {}
+    shutdown_frontend_runtime("MIDAS frontend exit");
+    return SUCCESS;
+}
+
+static void shutdown_frontend_runtime(const char* reason) {
+    if (g_shutdown_started.exchange(true))
+        return;
+
+    spdlog::info("Shutting down frontend runtime: {}", reason ? reason : "unspecified reason");
     g_event_writer_stop = true;
     stop_readout_threads();
+
+    try {
+        auto& runtime = frontend::runtime::Runtime::instance();
+        if (runtime.collector)
+            runtime.collector->stop();
+        if (runtime.controller)
+            runtime.controller->cleanup();
+    } catch (const std::exception& e) {
+        spdlog::error("Exception while shutting down SAMPIC runtime: {}", e.what());
+    } catch (...) {
+        spdlog::error("Unknown exception while shutting down SAMPIC runtime");
+    }
+
     if (g_event_writer_thread.joinable())
         g_event_writer_thread.join();
     frontend::runtime::Runtime::instance().reset();
-    return SUCCESS;
+}
+
+static void request_fatal_shutdown(const char* reason) {
+    const char* message = reason ? reason : "fatal frontend hardware error";
+    spdlog::critical("Fatal frontend error: {}", message);
+
+    auto& runtime = frontend::runtime::Runtime::instance();
+    OdbUtils::odbSetStatusColor(runtime.frontendIndex, "redLight");
+    OdbUtils::odbSetStatusMessage(runtime.frontendIndex, message);
+    shutdown_frontend_runtime(message);
+
+    // fe_stop is the MIDAS mfe scheduler's documented stop switch. Once this
+    // transition callback returns, mfe calls frontend_exit() and disconnects.
+    fe_stop = 1;
 }
 
 // ======================================================================

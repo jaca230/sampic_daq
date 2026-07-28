@@ -77,6 +77,9 @@ private:
     // State
     bool initialized_{false};
     bool run_started_{false};
+    // StartRun() can fail after writing part of the hardware configuration.
+    // Keep this separately from run_started_ so cleanup still sends StopRun().
+    bool run_start_attempted_{false};
     bool collector_running_{false};
 };
 

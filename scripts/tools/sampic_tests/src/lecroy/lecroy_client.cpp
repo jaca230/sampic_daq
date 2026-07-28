@@ -33,6 +33,25 @@ LecroyClient::~LecroyClient() {
   Disconnect();
 }
 
+void LecroyClient::Connect(const std::string& ip, int port) {
+  if (socket_fd_ >= 0 && (config_.ip != ip || config_.port != port)) {
+    Disconnect();
+  }
+  config_.ip = ip;
+  config_.port = port;
+  EnsureConnected();
+}
+
+void LecroyClient::SetChannelDisabled(const std::string& channel, bool disabled) {
+  EnsureConnected();
+  SendCommand(channel + ":DISA " + (disabled ? "ON" : "OFF"));
+}
+
+bool LecroyClient::IsChannelDisabled(const std::string& channel) {
+  const auto response = Query(channel + ":DISA?");
+  return response == "ON" || response == "1";
+}
+
 void LecroyClient::Configure(const LecroyConfig& cfg) {
   config_ = cfg;
   EnsureConnected();

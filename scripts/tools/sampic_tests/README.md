@@ -131,3 +131,80 @@ Highlights:
 - Run `scripts/tools/sampic_tests/scripts/helpers/lecroy/test.sh --config <json>` to push a configuration into the generator and read back its ID (`*IDN?`) without starting the SAMPIC run. Adding `--delay-ns <value>` lets you spot-check the double-pulse spacing interactively.
 - Need a no-config-file tweak? `scripts/tools/sampic_tests/scripts/helpers/lecroy/quick_set.py --frequency-hz 50 --channel A --width-ns 2.4` applies only the provided parameters and then prints a full readback so you can confirm the settings on the console.
 - `--list-modes` shows the currently built-in modes (`pulser-rate`, `crate-smoke`, `deadtime`, `double-pulse`) if you want to call the binary directly.
+# L2 external-trigger gate probe
+
+`l2_external_gate_probe` is a standalone hardware test, not a MIDAS frontend mode.
+It configures one FEB for self-triggered channel primitives, builds their L2 OR,
+and optionally requires coincidence with the Control Board external-trigger gate.
+It also enables and prints the external-trigger counter stream.
+
+> **Warning**
+>
+> `--apply` changes live crate settings. In particular, enabling L2 construction
+> is crate-wide in the vendor API even though this probe configures one selected
+> FEB. Stop the MIDAS frontend and any other crate client before using it.
+
+Build it with `./scripts/build.sh`, then first validate the configuration without
+touching the crate:
+
+```bash
+./scripts/helpers/l2_external_gate_probe.sh \
+  --config config/l2_external_gate_probe.example.json
+```
+
+Run the gated measurement only when the LPNHE wiring is confirmed (Lecroy module A
+to the selected FEB input; module B, delayed by 50 ns, to the Control Board external
+trigger input):
+
+```bash
+./scripts/helpers/l2_external_gate_probe.sh \
+  --config config/l2_external_gate_probe.example.json --apply
+```
+
+For an ungated baseline using otherwise identical settings, add `--without-gate`.
+Compare accepted hit/event rates and the printed trigger records. The external gate
+is in 10 ns clock periods and the vendor library enforces a minimum of 3 (30 ns).
+
+The probe also retains timestamps through the entire run and prints an end-of-run
+hit-to-external-trigger correlation. `external_trigger.records_per_frame` is set to
+one so the Control Board transmits each counter record promptly rather than its
+default batch of 127. Both timestamp sources are in the same 10 ns domain at the
+example 6.4 GHz sampling rate. `correlation.expected_hit_minus_trigger_ns` is the
+fixed FEB-hit minus Control-Board-trigger offset; begin with zero, inspect the
+reported delta, then set the measured offset and a suitable tolerance. This checks
+the timing association; compare it with the `--without-gate` baseline to establish
+that the gate also rejects non-coincident primitives.
+
+### Gated versus ungated channel-rate comparison
+
+To compare the effect of the gate without changing any other configured setting,
+run:
+
+```bash
+./scripts/helpers/l2_external_gate_probe.sh \
+  --config config/l2_external_gate_probe.example.json --apply --compare
+```
+
+The probe runs the ungated L2 baseline first, then an equal-duration gated run.
+It reports aggregate event/hit/trigger-record rates and a channel table with the
+gated-to-ungated hit-rate ratio. Because the external-trigger record rate can vary
+between phases, it also reports events/hits per trigger record and a per-channel
+trigger-normalized ratio; use that final ratio for the gating conclusion.
+`comparison.duration_s` controls each phase. The crate is left configured in gated
+mode when the comparison completes.
+
+### Lecroy-B output gate-control test
+
+This is the decisive hardware-gate check. It changes only the configured Lecroy
+gate-output channel's `DISA` state (normally B), records gated data with B enabled,
+then gated data with B disabled, and finally ungated data with B still disabled.
+The original B-output state is restored even if a SAMPIC phase fails.
+
+```bash
+./scripts/helpers/l2_external_gate_probe.sh \
+  --config config/l2_external_gate_probe.example.json --apply --b-output-gate-test
+```
+
+Each phase uses `comparison.duration_s`. Expected result: gated+B-disabled falls to
+background, while ungated+B-disabled returns to the self-trigger rate. This mode
+does not alter Lecroy frequency, amplitude, widths, delays, or module-A settings.

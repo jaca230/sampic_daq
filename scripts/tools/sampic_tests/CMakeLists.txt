@@ -89,6 +89,10 @@ add_executable(external_trigger_probe
   src/lecroy/lecroy_client.cpp
   src/lecroy/manual_trigger_controller.cpp)
 
+add_executable(l2_external_gate_probe
+  src/tests/l2_external_gate_probe.cpp
+  src/lecroy/lecroy_client.cpp)
+
 add_executable(double_pulse_smoke
   src/tests/double_pulse_smoke.cpp
   src/modes/double_pulse/config.cpp
@@ -132,6 +136,13 @@ target_include_directories(external_trigger_probe PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+target_include_directories(l2_external_gate_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 target_include_directories(double_pulse_smoke PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
   ${LPDEVC_INCLUDE_DIR}
@@ -161,6 +172,7 @@ set(SAMPIC_TEST_TARGETS
   sampic_deadtime_scan
   delay_separation_test
   external_trigger_probe
+  l2_external_gate_probe
   double_pulse_smoke
   sampic_hit_dump
   board_probe)

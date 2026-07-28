@@ -115,10 +115,14 @@ int SampicController::startRun() {
 
     spdlog::info("Starting SAMPIC run...");
     if (ctrl_cfg_.init_mode == SampicInitSettingsModeType::SIMULATOR) {
+        run_start_attempted_ = true;
         run_started_ = true;
         return 0;
     }
 
+    // The vendor call performs several hardware writes. A later write may
+    // fail after triggers or flow control have already been changed.
+    run_start_attempted_ = true;
     auto err = SAMPIC256CH_StartRun(&info_, &params_, TRUE);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to start run (err={})", static_cast<int>(err));
@@ -129,7 +133,7 @@ int SampicController::startRun() {
 }
 
 int SampicController::stopRun() {
-    if (!run_started_) {
+    if (!run_started_ && !run_start_attempted_) {
         spdlog::debug("stopRun() called but run was not started — skipping");
         return 0;
     }
@@ -137,19 +141,26 @@ int SampicController::stopRun() {
     spdlog::info("Stopping SAMPIC run...");
     if (ctrl_cfg_.init_mode == SampicInitSettingsModeType::SIMULATOR) {
         run_started_ = false;
+        run_start_attempted_ = false;
         return 0;
     }
 
     auto err = SAMPIC256CH_StopRun(&info_, &params_);
+    // Do not retry this automatically after the crate connection is closed.
+    // The attempt has nevertheless completed from this process's perspective.
+    run_started_ = false;
+    run_start_attempted_ = false;
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to stop run (err={})", static_cast<int>(err));
         return err;
     }
-    run_started_ = false;
     return 0;
 }
 
 void SampicController::cleanup() {
+    stopCollector();
+    stopRun();
+
     if (!initialized_) {
         spdlog::debug("cleanup() called but controller not initialized — skipping");
         return;

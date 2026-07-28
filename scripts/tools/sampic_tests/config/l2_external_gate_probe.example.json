@@ -1,0 +1,44 @@
+{
+  "connection": {
+    "ip": "192.168.0.4",
+    "port": 27015,
+    "load_calibration": false,
+    "calibration_dir": "resources/calib"
+  },
+  "acquisition": {
+    "board": 0,
+    "channels": [14],
+    "sampling_mhz": 6400,
+    "threshold_volts": 0.1
+  },
+  "external_trigger": {
+    "edge": "RISING",
+    "signal_level": "TTL",
+    "enable_counter": true,
+    "detect_external_trigger_id": true,
+    "records_per_frame": 1
+  },
+  "l2_gate": {
+    "primitive_gate_clocks": 10,
+    "latency_gate_clocks": 3,
+    "external_gate_clocks": 5
+  },
+  "readout": {
+    "max_events": 100,
+    "duration_s": 10.0,
+    "max_loops": 10000,
+    "retry_sleep_us": 100
+  },
+  "correlation": {
+    "expected_hit_minus_trigger_ns": 0.0,
+    "tolerance_ns": 100.0
+  },
+  "comparison": {
+    "duration_s": 30.0
+  },
+  "lecroy": {
+    "ip": "10.0.1.103",
+    "port": 1234,
+    "gate_channel": "B"
+  }
+}
