@@ -6,11 +6,12 @@
 #include "processing/sampic_processing/collector/modes/frontend_collector_mode.h"
 #include "processing/sampic_processing/collector/frontend_diagnostics.h"
 #include "integration/sampic/collector/sampic_event_buffer.h"
+#include "core/threading/polling_worker.h"
 
-#include <thread>
-#include <atomic>
 #include <memory>
+#include <cstddef>
 #include <spdlog/spdlog.h>
+#include "core/config/config_store.h"
 
 /**
  * @brief Threaded manager that runs a FrontendCollectorMode.
@@ -19,15 +20,19 @@
 class FrontendEventCollector {
 public:
     FrontendEventCollector(SampicEventBuffer& sampic_buffer,
-                           const FrontendEventCollectorConfig& cfg);
+                           const FrontendEventCollectorConfig& cfg,
+                           const ConfigStore& store,
+                           std::string modes_root);
     ~FrontendEventCollector();
 
     void start();
     void stop();
-    bool running() const { return running_; }
+    bool drain(std::size_t max_cycles = 10'000);
+    bool running() const { return worker_.running(); }
 
     void setConfig(const FrontendEventCollectorConfig& cfg);
-    int  applySettings();
+    int  applySettings(const ConfigStore& store);
+    static void initializeOdb(ConfigStore& store, const std::string& modes_root);
 
     const FrontendEventCollectorConfig& config() const { return cfg_; }
     frontend::collector::FrontendDiagnostics& diagnostics() { return *diagnostics_; }
@@ -37,17 +42,16 @@ public:
     const FrontendEventBuffer& buffer() const { return *buffer_; }
 
 private:
-    void run();
-    void buildMode(); ///< internal factory for collector mode
+    void buildMode(const ConfigStore& store);
 
     SampicEventBuffer& sampic_buffer_;
     FrontendEventCollectorConfig cfg_;
+    std::string modes_root_;
     std::unique_ptr<FrontendEventBuffer> buffer_;
     std::unique_ptr<FrontendCollectorMode> mode_;
     std::unique_ptr<frontend::collector::FrontendDiagnostics> diagnostics_;
 
-    std::thread worker_;
-    std::atomic<bool> running_{false};
+    PollingWorker worker_{{"fe_collector", 1, 10}};
 };
 
 #endif // FRONTEND_EVENT_COLLECTOR_H

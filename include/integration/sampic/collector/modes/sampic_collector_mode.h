@@ -2,7 +2,8 @@
 #define SAMPIC_COLLECTOR_MODE_H
 
 #include "integration/sampic/collector/sampic_event_buffer.h"
-#include "integration/sampic/config/sampic_collector_config.h"
+#include "integration/sampic/collector/modes/sampic_collector_mode_context.h"
+#include "core/registry/mode/mode_registry.h"
 
 extern "C" {
 #include <SAMPIC_256Ch_lib.h>
@@ -14,18 +15,12 @@ extern "C" {
  */
 class SampicCollectorMode {
 public:
-    SampicCollectorMode(SampicEventBuffer& buffer,
-                        CrateInfoStruct& info,
-                        CrateParamStruct& params,
-                        void* eventBuffer,
-                        ML_Frame* mlFrames,
-                        const SampicCollectorConfig& cfg)
-        : buffer_(buffer),
-          info_(info),
-          params_(params),
-          eventBuffer_(eventBuffer),
-          mlFrames_(mlFrames),
-          cfg_(cfg) {}
+    explicit SampicCollectorMode(SampicCollectorModeContext& context)
+        : buffer_(context.buffer),
+          info_(context.info),
+          params_(context.params),
+          eventBuffer_(context.event_buffer),
+          mlFrames_(context.frames) {}
 
     virtual ~SampicCollectorMode() = default;
 
@@ -42,7 +37,9 @@ protected:
     CrateParamStruct& params_;
     void* eventBuffer_;
     ML_Frame* mlFrames_;
-    const SampicCollectorConfig& cfg_;
 };
+
+using SampicCollectorModeRegistry =
+    ModeRegistry<SampicCollectorMode, SampicCollectorModeContext>;
 
 #endif // SAMPIC_COLLECTOR_MODE_H

@@ -6,6 +6,8 @@
 #include "processing/sampic_processing/collector/frontend_diagnostics.h"
 #include "processing/sampic_processing/config/frontend_event_collector_config.h"
 #include "integration/sampic/collector/sampic_event_buffer.h"
+#include "core/registry/mode/mode_registry.h"
+#include "processing/sampic_processing/collector/modes/frontend_collector_mode_context.h"
 
 /**
  * @brief Abstract base class for frontend collector modes.
@@ -13,14 +15,11 @@
  */
 class FrontendCollectorMode {
 public:
-    FrontendCollectorMode(SampicEventBuffer& sampic_buffer,
-                          FrontendEventBuffer& frontend_buffer,
-                          const FrontendEventCollectorConfig& cfg,
-                          frontend::collector::FrontendDiagnostics& diagnostics)
-        : sampic_buffer_(sampic_buffer),
-          frontend_buffer_(frontend_buffer),
-          cfg_(cfg),
-          diagnostics_(diagnostics) {}
+    explicit FrontendCollectorMode(FrontendCollectorModeContext& context)
+        : sampic_buffer_(context.input),
+          frontend_buffer_(context.output),
+          diagnostics_config_(std::move(context.diagnostics_config)),
+          diagnostics_(context.diagnostics) {}
 
     virtual ~FrontendCollectorMode() = default;
 
@@ -32,11 +31,21 @@ public:
      */
     virtual bool collect() = 0;
 
+    /**
+     * @brief Finalize mode-local state after the input buffer is drained.
+     *
+     * Modes without pending aggregation state need no special action.
+     */
+    virtual bool flush() { return true; }
+
 protected:
     SampicEventBuffer& sampic_buffer_;
     FrontendEventBuffer& frontend_buffer_;
-    const FrontendEventCollectorConfig& cfg_;
+    FrontendCollectorDiagnosticsConfig diagnostics_config_;
     frontend::collector::FrontendDiagnostics& diagnostics_;
 };
+
+using FrontendCollectorModeRegistry =
+    ModeRegistry<FrontendCollectorMode, FrontendCollectorModeContext>;
 
 #endif // FRONTEND_COLLECTOR_MODE_H

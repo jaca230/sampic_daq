@@ -6,6 +6,8 @@ Dry-run is the default.  Use --apply only after reviewing the printed paths.
 import argparse
 import sys
 
+from midas_client_utils import create_midas_client
+
 ROOT = "/Equipment/SAMPIC {index:02d}/Settings"
 
 
@@ -28,9 +30,12 @@ def main() -> int:
     p.add_argument("--chips", default="all")
     p.add_argument("--channels", default="all")
     p.add_argument("--apply", action="store_true", help="Write ODB (default is dry-run).")
-    p.add_argument("--ext-trigger-type", default="EXT_SIG")
-    p.add_argument("--signal-level", default="TTL_SIG")
-    p.add_argument("--trigger-edge", default="RISING_EDGE")
+    p.add_argument("--ext-trigger-type", type=int, default=4,
+                   help="ExternalTriggerType_t numeric value (EXT_SIG=4).")
+    p.add_argument("--signal-level", type=int, default=0,
+                   help="SignalLevel_t numeric value (TTL_SIG=0).")
+    p.add_argument("--trigger-edge", type=int, default=0,
+                   help="EdgeType_t numeric value (RISING_EDGE=0).")
     p.add_argument("--primitive-gate-length", type=int, default=10)
     p.add_argument("--latency-gate-length", type=int, default=3)
     p.add_argument("--level2-ext-gate", type=int, default=5)
@@ -52,32 +57,35 @@ def main() -> int:
         (f"{root}/Crate/trigger_edge", args.trigger_edge),
         (f"{root}/Crate/primitives_gate_length", args.primitive_gate_length),
         (f"{root}/Crate/latency_gate_length", args.latency_gate_length),
-        (f"{root}/Crate/enable_external_trigger_counter", True),
-        (f"{root}/Crate/enable_detect_ext_trigger_id", True),
-        (f"{root}/Frontend Event Collector/mode", "EXTERNAL_TRIGGER"),
-        (f"{root}/Frontend Event Collector/external_trigger_mode/hit_time_offset_ns", args.hit_time_offset_ns),
-        (f"{root}/Frontend Event Collector/external_trigger_mode/pre_window_ns", args.pre_window_ns),
-        (f"{root}/Frontend Event Collector/external_trigger_mode/post_window_ns", args.post_window_ns),
+        (f"{root}/Crate/level2_trigger_build", True),
+        (f"{root}/Crate/external_trigger_counter/enabled", True),
+        (f"{root}/Crate/external_trigger_counter/detect_trigger_id", True),
+        (f"{root}/Frontend Event Collector/mode", "external_trigger"),
+        (f"{root}/Frontend Event Collector/modes/external_trigger/hit_time_offset_ns", args.hit_time_offset_ns),
+        (f"{root}/Frontend Event Collector/modes/external_trigger/pre_window_ns", args.pre_window_ns),
+        (f"{root}/Frontend Event Collector/modes/external_trigger/post_window_ns", args.post_window_ns),
     ]
     for b in boards:
         base = f"{root}/Crate/front_end_boards/feb{b}"
-        writes += [(f"{base}/global_trigger_option", "FEB_GLOBAL_TRIGGER_IS_L2"), (f"{base}/level2_trigger_build", True),
+        writes += [(f"{base}/global_trigger_option", 0),
                    (f"{base}/level2_coincidence_ext_gate", True),
                    (f"{base}/level2_ext_trig_gate", args.level2_ext_gate),
-                   (f"{base}/override_level2_trigger_logic", True)]
+                   (f"{base}/level2_trigger_logic/apply", True)]
         for c in chips:
             chip = f"{base}/sampics/sampic{c}"
-            writes.append((f"{chip}/trigger_option", "SAMPIC_TRISSER_IS_FEB_GT"))
+            writes.append((f"{chip}/trigger_option", 1))
             for ch in channels:
                 channel = f"{chip}/channels/channel{ch}"
-                writes += [(f"{channel}/trigger_mode", "SAMPIC_CHANNEL_SELF_TRIGGER_MODE"),
+                writes += [(f"{channel}/trigger_mode", 0),
                            (f"{channel}/enable_for_central_trigger", True)]
     if not args.apply:
         for path, value in writes: print(f"[DRY-RUN] {path} <- {value!r}")
         print("No ODB fields changed. Re-run with --apply to write these values.")
         return 0
-    import midas.client
-    client = midas.client.MidasClient("set_l2_external_trigger_mode")
+    try:
+        client = create_midas_client("set_l2_external_trigger_mode")
+    except RuntimeError as error:
+        p.error(str(error))
     try:
         for path, value in writes:
             client.odb_set(path, value)

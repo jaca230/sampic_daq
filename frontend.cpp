@@ -25,10 +25,10 @@
 #include "integration/midas/frontend_odb_paths.h"
 #include "integration/midas/frontend_runtime.h"
 #include "integration/midas/odb/odb_utils.h"
+#include "integration/midas/odb/odb_manager.h"
 #include <spdlog/spdlog.h>
 
 // Project: SAMPIC controller + configs
-#include "integration/sampic/config/sampic_crate_config.h"
 #include "integration/sampic/config/sampic_controller_config.h"
 #include "integration/sampic/config/sampic_collector_config.h"
 #include "integration/sampic/controller/sampic_controller.h"
@@ -128,11 +128,15 @@ INT frontend_init() {
     // Create frontend collector using controller's buffer
     runtime.collector = std::make_unique<FrontendEventCollector>(
         runtime.controller->buffer(),  // direct buffer reference
-        runtime.configs.frontend_collector
+        runtime.configs.frontend_collector,
+        OdbManager{},
+        frontend::odb::make_path(
+            runtime.settingsPath,
+            frontend::odb::Section::FrontendEventCollector) + "/modes"
     );
 
     spdlog::info("FrontendEventCollector created (mode={}, buffer_size={})",
-                 static_cast<int>(runtime.configs.frontend_collector.mode),
+                 runtime.configs.frontend_collector.mode,
                  runtime.configs.frontend_collector.buffer_size);
 
     create_event_rb(0);
@@ -162,11 +166,11 @@ INT begin_of_run(INT, char *error) {
         }
 
         // --- Apply SAMPIC controller configs
-        runtime.controller->setSystemSettings(cfgs.system);
-        runtime.controller->setControllerConfig(cfgs.controller);
+        OdbManager odb;
+        runtime.controller->setControllerConfig(cfgs.controller, odb);
         runtime.controller->setCollectorConfig(cfgs.collector);
 
-        if (runtime.controller->applySettings() != 0) {
+        if (runtime.controller->applySettings(odb) != 0) {
             std::strcpy(error, "Failed to apply SAMPIC settings");
             request_fatal_shutdown(error);
             return FE_ERR_HW;
@@ -175,7 +179,7 @@ INT begin_of_run(INT, char *error) {
         // --- Apply FrontendEventCollector configs (if available)
         if (runtime.collector) {
             runtime.collector->setConfig(cfgs.frontend_collector);
-            if (runtime.collector->applySettings() != 0) {
+            if (runtime.collector->applySettings(odb) != 0) {
                 std::strcpy(error, "Failed to apply frontend collector settings");
                 request_fatal_shutdown(error);
                 return FE_ERR_HW;

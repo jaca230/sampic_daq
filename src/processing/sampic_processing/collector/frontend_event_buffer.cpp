@@ -28,6 +28,17 @@ void FrontendEventBuffer::push(const std::shared_ptr<FrontendEvent>& ev) {
     cv_.notify_all();
 }
 
+void FrontendEventBuffer::pushFront(const std::shared_ptr<FrontendEvent>& ev) {
+    if (!ev) return;
+
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (buffer_.size() >= capacity_) {
+        buffer_.pop_back();
+    }
+    buffer_.emplace_front(ev, ev->timestamp());
+    cv_.notify_all();
+}
+
 // ------------------------------------------------------------------
 // Consumer interface
 // ------------------------------------------------------------------

@@ -1,88 +1,49 @@
 #include "processing/sampic_processing/collector/frontend_event_collector.h"
-#include "processing/sampic_processing/collector/modes/frontend_collector_mode_default.h"
-#include "processing/sampic_processing/collector/modes/frontend_collector_mode_external_trigger.h"
-#ifdef __linux__
-#include <pthread.h>
-#include <sched.h>
-#include <unistd.h>
-#endif
-
-namespace {
-#ifdef __linux__
-void configure_worker_thread(const char* name, int core_hint) {
-    pthread_t handle = pthread_self();
-    if (name) {
-        pthread_setname_np(handle, name);
-    }
-
-    if (core_hint >= 0) {
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        const long core_count = sysconf(_SC_NPROCESSORS_ONLN);
-        if (core_count > 0) {
-            CPU_SET(core_hint % core_count, &cpuset);
-            pthread_setaffinity_np(handle, sizeof(cpu_set_t), &cpuset);
-        }
-    }
-
-    sched_param sch{};
-    sch.sched_priority = 10;
-    if (pthread_setschedparam(handle, SCHED_FIFO, &sch) != 0) {
-        sch.sched_priority = 0;
-        pthread_setschedparam(handle, SCHED_OTHER, &sch);
-    }
-}
-#else
-void configure_worker_thread(const char*, int) {}
-#endif
-} // namespace
-
 FrontendEventCollector::FrontendEventCollector(
     SampicEventBuffer& sampic_buffer,
-    const FrontendEventCollectorConfig& cfg)
+    const FrontendEventCollectorConfig& cfg,
+    const ConfigStore& store,
+    std::string modes_root)
     : sampic_buffer_(sampic_buffer),
-      cfg_(cfg)
+      cfg_(cfg),
+      modes_root_(std::move(modes_root))
 {
     diagnostics_ = std::make_unique<frontend::collector::FrontendDiagnostics>(cfg_.diagnostics);
-    buildMode();
+    buildMode(store);
     spdlog::info("FrontendEventCollector initialized (mode={}, buffer_size={})",
-                 static_cast<int>(cfg_.mode), cfg_.buffer_size);
+                 cfg_.mode, cfg_.buffer_size);
 }
 
 FrontendEventCollector::~FrontendEventCollector() {
     stop();
 }
 
-void FrontendEventCollector::buildMode() {
+void FrontendEventCollector::initializeOdb(ConfigStore& store, const std::string& modes_root) {
+    FrontendCollectorModeRegistry::catalog().initializeOdb(store, modes_root);
+}
+
+void FrontendEventCollector::buildMode(const ConfigStore& store) {
     buffer_ = std::make_unique<FrontendEventBuffer>(cfg_.buffer_size);
     diagnostics_ = std::make_unique<frontend::collector::FrontendDiagnostics>(cfg_.diagnostics);
 
-    switch (cfg_.mode) {
-        case FrontendCollectorModeType::DEFAULT:
-            mode_ = std::make_unique<FrontendCollectorModeDefault>(
-                sampic_buffer_, *buffer_, cfg_, *diagnostics_);
-            break;
-        case FrontendCollectorModeType::EXTERNAL_TRIGGER:
-            mode_ = std::make_unique<FrontendCollectorModeExternalTrigger>(
-                sampic_buffer_, *buffer_, cfg_, *diagnostics_);
-            break;
-        default:
-            throw std::runtime_error("Unsupported FrontendCollectorModeType");
-    }
+    FrontendCollectorModeContext context{
+        sampic_buffer_, *buffer_, cfg_.diagnostics, *diagnostics_};
+    mode_ = FrontendCollectorModeRegistry::catalog().create(
+        cfg_.mode, context, store, modes_root_);
 }
 
 void FrontendEventCollector::setConfig(const FrontendEventCollectorConfig& cfg) {
     cfg_ = cfg;
 }
 
-int FrontendEventCollector::applySettings() {
-    const bool was_running = running_;
+int FrontendEventCollector::applySettings(const ConfigStore& store) {
+    const bool was_running = worker_.running();
     if (was_running) stop();
 
     try {
-        buildMode();
+        buildMode(store);
         spdlog::info("FrontendEventCollector reconfigured (mode={}, buffer_size={})",
-                     static_cast<int>(cfg_.mode), cfg_.buffer_size);
+                     cfg_.mode, cfg_.buffer_size);
 
         if (was_running) start();
         return 0;
@@ -93,31 +54,58 @@ int FrontendEventCollector::applySettings() {
 }
 
 void FrontendEventCollector::start() {
-    if (running_) return;
-    running_ = true;
-    worker_ = std::thread(&FrontendEventCollector::run, this);
+    worker_.start(
+        [this] { return mode_->collect(); },
+        std::chrono::microseconds(cfg_.sleep_time_us),
+        [this] {
+            spdlog::info(
+                "FrontendEventCollector started (mode={})", cfg_.mode);
+        },
+        [] { spdlog::info("FrontendEventCollector stopped"); });
 }
 
 void FrontendEventCollector::stop() {
-    if (running_) {
-        running_ = false;
-        if (worker_.joinable())
-            worker_.join();
-    }
+    worker_.stop();
 }
 
-void FrontendEventCollector::run() {
-    configure_worker_thread("fe_collector", 1);
-    spdlog::info("FrontendEventCollector started (mode={})", static_cast<int>(cfg_.mode));
+bool FrontendEventCollector::drain(std::size_t max_cycles) {
+    stop();
 
-    while (running_) {
-        bool ok = mode_->collect();
-        if (!ok)
-            spdlog::warn("FrontendEventCollector: collect() returned false");
+    std::size_t cycles = 0;
+    while (!sampic_buffer_.empty()) {
+        if (cycles++ >= max_cycles) {
+            spdlog::error(
+                "FrontendEventCollector drain exceeded {} processing cycles "
+                "with {} SAMPIC event(s) remaining",
+                max_cycles, sampic_buffer_.size());
+            return false;
+        }
 
-        if (cfg_.sleep_time_us > 0)
-            std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));
+        const auto before = sampic_buffer_.size();
+        if (!mode_->collect()) {
+            spdlog::error(
+                "FrontendEventCollector mode failed while draining");
+            return false;
+        }
+        const auto after = sampic_buffer_.size();
+        if (after >= before) {
+            spdlog::error(
+                "FrontendEventCollector drain made no progress "
+                "({} SAMPIC event(s) remaining)",
+                after);
+            return false;
+        }
     }
 
-    spdlog::info("FrontendEventCollector stopped");
+    if (!mode_->flush()) {
+        spdlog::error(
+            "FrontendEventCollector mode failed to flush pending state");
+        return false;
+    }
+
+    spdlog::info(
+        "FrontendEventCollector drain complete after {} processing cycle(s); "
+        "{} frontend event(s) ready for MIDAS",
+        cycles, buffer_->size());
+    return true;
 }
