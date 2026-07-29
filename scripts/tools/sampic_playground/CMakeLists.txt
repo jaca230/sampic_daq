@@ -58,21 +58,23 @@ find_package(Threads REQUIRED)
 
 # Collect all necessary sources from parent project
 set(PLAYGROUND_SOURCES
+  "${ROOT_DIR}/src/core/threading/polling_worker.cpp"
+
   # SAMPIC collector sources
   "${ROOT_DIR}/src/integration/sampic/collector/sampic_event.cpp"
   "${ROOT_DIR}/src/integration/sampic/collector/sampic_event_buffer.cpp"
   "${ROOT_DIR}/src/integration/sampic/collector/sampic_collector.cpp"
-  "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator.cpp"
-  "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_default.cpp"
-  "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_example.cpp"
+  "${ROOT_DIR}/src/integration/sampic/collector/modes/simulator/simulator_mode.cpp"
+  "${ROOT_DIR}/src/integration/sampic/collector/modes/default/default_mode.cpp"
+  "${ROOT_DIR}/src/integration/sampic/collector/modes/example/example_mode.cpp"
 
   # Frontend collector sources
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_event.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_event_buffer.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_event_collector.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_diagnostics.cpp"
-  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/frontend_collector_mode_default.cpp"
-  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/frontend_collector_mode_external_trigger.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/default/default_mode.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_mode.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_collector_timing.cpp"

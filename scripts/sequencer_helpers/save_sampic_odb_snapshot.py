@@ -32,8 +32,8 @@ OUTPUT_FILE = SCRIPT_DIR / "rate_data" / "sampic_odb_samples.json"
 
 ODB_PATHS = [
     "/Equipment/SAMPIC 00/Statistics",
-    "/Equipment/SAMPIC 00/Settings/Errors",
-    "/Equipment/SAMPIC 00/Settings/Collector",
+    "/Equipment/SAMPIC 00/Settings/Sampic Controller",
+    "/Equipment/SAMPIC 00/Settings/Sampic Event Collector",
     "/Sequencer/Helpers",
     "/Runinfo",
 ]

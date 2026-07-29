@@ -68,7 +68,7 @@ add_executable(sampic_deadtime_scan
   ${PROJECT_ROOT}/src/integration/sampic/config/sampic_board_configurator.cpp
   ${PROJECT_ROOT}/src/integration/sampic/config/sampic_chip_configurator.cpp
   ${PROJECT_ROOT}/src/integration/sampic/config/sampic_channel_configurator.cpp
-  ${PROJECT_ROOT}/src/integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.cpp)
+  ${PROJECT_ROOT}/src/integration/sampic/controller/init_settings_modes/default/default_mode.cpp)
 
 add_executable(lecroy_test
   src/tests/lecroy_test.cpp

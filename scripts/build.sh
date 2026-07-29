@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 # Resolve absolute paths
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 BASE_DIR=$(realpath "$SCRIPT_DIR/..")

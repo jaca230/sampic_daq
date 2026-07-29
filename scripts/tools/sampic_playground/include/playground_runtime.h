@@ -6,6 +6,9 @@
 #include "fake_midas_logger.h"
 #include "integration/sampic/config/sampic_collector_config.h"
 #include "processing/sampic_processing/config/frontend_event_collector_config.h"
+#include "integration/sampic/collector/modes/simulator/simulator_config.h"
+#include "processing/sampic_processing/collector/modes/default/default_config.h"
+#include "core/config/memory_config_store.h"
 #include <memory>
 #include <chrono>
 
@@ -24,7 +27,9 @@ extern "C" {
 class PlaygroundRuntime {
 public:
     PlaygroundRuntime(const SampicCollectorConfig& sampic_cfg,
-                      const FrontendEventCollectorConfig& frontend_cfg);
+                      const SampicCollectorModeSimulatorConfig& simulator_cfg,
+                      const FrontendEventCollectorConfig& frontend_cfg,
+                      const FrontendCollectorModeDefaultConfig& frontend_mode_cfg);
     ~PlaygroundRuntime();
 
     void start();
@@ -39,6 +44,7 @@ public:
 private:
     SampicCollectorConfig sampic_cfg_;
     FrontendEventCollectorConfig frontend_cfg_;
+    MemoryConfigStore store_;
 
     // Hardware stubs (not used in simulator mode)
     CrateInfoStruct crate_info_{};

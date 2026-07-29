@@ -1,19 +1,30 @@
 #include "playground_runtime.h"
 #include <spdlog/spdlog.h>
 #include <thread>
+#include <rfl/json.hpp>
 
 PlaygroundRuntime::PlaygroundRuntime(const SampicCollectorConfig& sampic_cfg,
-                                     const FrontendEventCollectorConfig& frontend_cfg)
+                                     const SampicCollectorModeSimulatorConfig& simulator_cfg,
+                                     const FrontendEventCollectorConfig& frontend_cfg,
+                                     const FrontendCollectorModeDefaultConfig& frontend_mode_cfg)
     : sampic_cfg_(sampic_cfg),
       frontend_cfg_(frontend_cfg)
 {
+    SampicCollector::initializeOdb(store_, "/sampic/modes");
+    FrontendEventCollector::initializeOdb(store_, "/frontend/modes");
+    store_.writeJson("/sampic/modes/simulator",
+                     ConfigStore::Json::parse(rfl::json::write(simulator_cfg)));
+    store_.writeJson("/frontend/modes/default",
+                     ConfigStore::Json::parse(rfl::json::write(frontend_mode_cfg)));
+
     // Create SAMPIC collector (uses simulator mode)
     sampic_collector_ = std::make_unique<SampicCollector>(
-        sampic_cfg_, crate_info_, crate_params_, nullptr, nullptr);
+        sampic_cfg_, crate_info_, crate_params_, nullptr, nullptr,
+        store_, "/sampic/modes");
 
     // Create Frontend collector
     frontend_collector_ = std::make_unique<FrontendEventCollector>(
-        sampic_collector_->buffer(), frontend_cfg_);
+        sampic_collector_->buffer(), frontend_cfg_, store_, "/frontend/modes");
 
     // Create fake MIDAS logger
     midas_logger_ = std::make_unique<FakeMidasLogger>(

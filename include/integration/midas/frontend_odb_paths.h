@@ -37,4 +37,3 @@ inline std::string make_path(std::string_view base, Section section) {
 }  // namespace frontend::odb
 
 #endif  // FRONTEND_ODB_PATHS_H
-

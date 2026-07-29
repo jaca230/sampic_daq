@@ -1,6 +1,8 @@
 #include "playground_runtime.h"
 #include "integration/sampic/config/sampic_collector_config.h"
 #include "processing/sampic_processing/config/frontend_event_collector_config.h"
+#include "integration/sampic/collector/modes/simulator/simulator_config.h"
+#include "processing/sampic_processing/collector/modes/default/default_config.h"
 
 #include <spdlog/spdlog.h>
 #include <cstdlib>
@@ -29,11 +31,11 @@ int main(int argc, char** argv) try {
     // Configure SAMPIC Simulator
     // ------------------------------------------------------------------
     SampicCollectorConfig sampic_cfg;
-    sampic_cfg.mode = SampicCollectorModeType::SIMULATOR;
+    sampic_cfg.mode = "simulator";
     sampic_cfg.buffer_size = 128;
     sampic_cfg.sleep_time_us = 0;  // No sleep - max speed
 
-    auto& sim = sampic_cfg.simulator_mode;
+    SampicCollectorModeSimulatorConfig sim;
     sim.events_per_cycle = 1;
     sim.hits_per_event = 1;
     sim.waveform_length = 64;
@@ -49,11 +51,11 @@ int main(int argc, char** argv) try {
     // Configure Frontend Collector
     // ------------------------------------------------------------------
     FrontendEventCollectorConfig frontend_cfg;
-    frontend_cfg.mode = FrontendCollectorModeType::DEFAULT;
+    frontend_cfg.mode = "default";
     frontend_cfg.buffer_size = 512;
     frontend_cfg.sleep_time_us = 0;  // No sleep - max speed
 
-    auto& fe = frontend_cfg.default_mode;
+    FrontendCollectorModeDefaultConfig fe;
     fe.time_window_ns = 500.0;
     fe.finalize_after_ms = 1.0;
     fe.wait_timeout_ms = 1000;
@@ -106,7 +108,7 @@ int main(int argc, char** argv) try {
     // ------------------------------------------------------------------
     // Run Benchmark
     // ------------------------------------------------------------------
-    PlaygroundRuntime runtime(sampic_cfg, frontend_cfg);
+    PlaygroundRuntime runtime(sampic_cfg, sim, frontend_cfg, fe);
     runtime.run(std::chrono::seconds(duration_sec));
 
     spdlog::info("Benchmark complete!");

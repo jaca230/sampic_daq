@@ -11,7 +11,7 @@ extern "C" {
 }
 
 // Project configs + components
-#include "integration/sampic/config/sampic_crate_config.h"
+#include "core/config/config_store.h"
 #include "integration/sampic/config/sampic_controller_config.h"
 #include "integration/sampic/config/sampic_collector_config.h"
 #include "integration/sampic/collector/sampic_collector.h"
@@ -21,18 +21,18 @@ extern "C" {
 /// High-level orchestrator for SAMPIC system
 class SampicController {
 public:
-    SampicController(const SampicSystemSettings& sys_cfg,
-                     const SampicControllerConfig& ctrl_cfg,
-                     const SampicCollectorConfig& coll_cfg);
+    SampicController(const SampicControllerConfig& ctrl_cfg,
+                     const SampicCollectorConfig& coll_cfg,
+                     const ConfigStore& store,
+                     std::string init_modes_root,
+                     std::string apply_modes_root,
+                     std::string collector_modes_root,
+                     std::string hardware_root);
 
     ~SampicController();
 
     // ---------------- Config management ----------------
-    void setSystemSettings(const SampicSystemSettings& s);
-    SampicSystemSettings& systemSettings();
-    const SampicSystemSettings& systemSettings() const;
-
-    void setControllerConfig(const SampicControllerConfig& c);
+    void setControllerConfig(const SampicControllerConfig& c, const ConfigStore& store);
     SampicControllerConfig& controllerConfig();
     const SampicControllerConfig& controllerConfig() const;
 
@@ -42,7 +42,7 @@ public:
 
     // ---------------- Lifecycle ----------------
     int initialize();       ///< Initialize hardware (crate connection, params, calib, memory)
-    int applySettings();    ///< Apply settings (trigger options etc.)
+    int applySettings(const ConfigStore& store); ///< Apply settings (trigger options etc.)
     int startRun();         ///< Start acquisition
     int stopRun();          ///< Stop acquisition
     void cleanup();         ///< Free resources, close connection
@@ -54,10 +54,12 @@ public:
     // ---------------- Buffer access ----------------
     SampicEventBuffer& buffer();
     const SampicEventBuffer& buffer() const;
+    static void initializeOdb(ConfigStore& store,
+                              const std::string& init_modes_root,
+                              const std::string& apply_modes_root);
 
 private:
     // Configs
-    SampicSystemSettings   settings_;
     SampicControllerConfig ctrl_cfg_;
     SampicCollectorConfig  coll_cfg_;
 
@@ -73,6 +75,13 @@ private:
     // Init/apply strategies
     std::unique_ptr<SampicInitSettingsMode> init_mode_;
     std::unique_ptr<SampicApplySettingsMode> apply_mode_;
+    std::string init_modes_root_;
+    std::string apply_modes_root_;
+    std::string collector_modes_root_;
+    std::string hardware_root_;
+
+    void buildInitMode(const ConfigStore& store);
+    void buildApplyMode(const ConfigStore& store);
 
     // State
     bool initialized_{false};

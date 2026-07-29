@@ -1,96 +1,51 @@
 #include "integration/sampic/collector/sampic_collector.h"
-#include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
-#include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
-#include "integration/sampic/collector/modes/sampic_collector_mode_simulator.h"
-#ifdef __linux__
-#include <pthread.h>
-#include <sched.h>
-#include <unistd.h>
-#endif
-
-namespace {
-#ifdef __linux__
-void configure_worker_thread(const char* name, int core_hint) {
-    pthread_t handle = pthread_self();
-    if (name) {
-        pthread_setname_np(handle, name);
-    }
-
-    if (core_hint >= 0) {
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        const long core_count = sysconf(_SC_NPROCESSORS_ONLN);
-        if (core_count > 0) {
-            CPU_SET(core_hint % core_count, &cpuset);
-            pthread_setaffinity_np(handle, sizeof(cpu_set_t), &cpuset);
-        }
-    }
-
-    sched_param sch{};
-    sch.sched_priority = 12;
-    if (pthread_setschedparam(handle, SCHED_FIFO, &sch) != 0) {
-        sch.sched_priority = 0;
-        pthread_setschedparam(handle, SCHED_OTHER, &sch);
-    }
-}
-#else
-void configure_worker_thread(const char*, int) {}
-#endif
-} // namespace
-
 SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
                                  CrateInfoStruct& info,
                                  CrateParamStruct& params,
                                  void* eventBuffer,
-                                 ML_Frame* mlFrames)
+                                 ML_Frame* mlFrames,
+                                 const ConfigStore& store,
+                                 std::string modes_root)
     : cfg_(cfg),
       info_(info),
       params_(params),
       eventBuffer_(eventBuffer),
-      mlFrames_(mlFrames)
+      mlFrames_(mlFrames),
+      modes_root_(std::move(modes_root))
 {
-    buildMode();
+    buildMode(store);
     spdlog::info("SAMPIC Collector initialized (mode={}, buffer_size={})",
-                 static_cast<int>(cfg_.mode), cfg_.buffer_size);
+                 cfg_.mode, cfg_.buffer_size);
 }
 
 SampicCollector::~SampicCollector() {
     stop();
 }
 
-void SampicCollector::buildMode() {
+void SampicCollector::initializeOdb(ConfigStore& store, const std::string& modes_root) {
+    SampicCollectorModeRegistry::catalog().initializeOdb(store, modes_root);
+}
+
+void SampicCollector::buildMode(const ConfigStore& store) {
     buffer_ = std::make_unique<SampicEventBuffer>(cfg_.buffer_size);
 
-    switch (cfg_.mode) {
-        case SampicCollectorModeType::DEFAULT:
-            mode_ = std::make_unique<SampicCollectorModeDefault>(
-                *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_);
-            break;
-        case SampicCollectorModeType::EXAMPLE:
-            mode_ = std::make_unique<SampicCollectorModeExample>(
-                *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_);
-            break;
-        case SampicCollectorModeType::SIMULATOR:
-            mode_ = std::make_unique<SampicCollectorModeSimulator>(
-                *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_);
-            break;
-        default:
-            throw std::runtime_error("Unsupported SampicCollectorModeType");
-    }
+    SampicCollectorModeContext context{*buffer_, info_, params_, eventBuffer_, mlFrames_};
+    mode_ = SampicCollectorModeRegistry::catalog().create(
+        cfg_.mode, context, store, modes_root_);
 }
 
 void SampicCollector::setConfig(const SampicCollectorConfig& cfg) {
     cfg_ = cfg;
 }
 
-int SampicCollector::applySettings() {
-    const bool was_running = running_;
+int SampicCollector::applySettings(const ConfigStore& store) {
+    const bool was_running = worker_.running();
     if (was_running) stop();
 
     try {
-        buildMode();
+        buildMode(store);
         spdlog::info("SAMPIC Collector reconfigured (mode={}, buffer_size={})",
-                     static_cast<int>(cfg_.mode), cfg_.buffer_size);
+                     cfg_.mode, cfg_.buffer_size);
 
         if (was_running) start();
         return 0;
@@ -101,31 +56,15 @@ int SampicCollector::applySettings() {
 }
 
 void SampicCollector::start() {
-    if (running_) return;
-    running_ = true;
-    worker_ = std::thread(&SampicCollector::run, this);
+    worker_.start(
+        [this] { return mode_->collect(); },
+        std::chrono::microseconds(cfg_.sleep_time_us),
+        [this] {
+            spdlog::info("SAMPIC Collector started (mode={})", cfg_.mode);
+        },
+        [] { spdlog::info("SAMPIC Collector stopped"); });
 }
 
 void SampicCollector::stop() {
-    if (running_) {
-        running_ = false;
-        if (worker_.joinable())
-            worker_.join();
-    }
-}
-
-void SampicCollector::run() {
-    configure_worker_thread("sampic_collector", 0);
-    spdlog::info("SAMPIC Collector started (mode={})", static_cast<int>(cfg_.mode));
-
-    while (running_) {
-        bool ok = mode_->collect();
-        if (!ok)
-            spdlog::warn("SAMPIC Collector: collect() returned false");
-
-        if (cfg_.sleep_time_us > 0)
-            std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));
-    }
-
-    spdlog::info("SAMPIC Collector stopped");
+    worker_.stop();
 }

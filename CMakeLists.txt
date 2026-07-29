@@ -233,6 +233,10 @@ target_include_directories(sampic_frontend PRIVATE
   ${MIDASSYS_INCLUDE_DIRS}
   ${CPM_HEADER_INCLUDE_DIRS}
 )
+target_compile_definitions(
+  sampic_frontend PRIVATE
+  SAMPIC_DAQ_SOURCE_DIR="${PROJECT_SOURCE_ROOT}"
+)
 
 target_link_libraries(sampic_frontend PRIVATE
   sampic256ch
@@ -249,7 +253,7 @@ endif()
 
 # Aggressive optimizations for hot-path files
 set_source_files_properties(
-  "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator.cpp"
+  "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/modes/simulator/simulator_mode.cpp"
   "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/sampic_event.cpp"
   "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/sampic_event_buffer.cpp"
   PROPERTIES COMPILE_OPTIONS "-O3;-march=native;-mtune=native;-ffast-math;-funroll-loops;-finline-functions"
