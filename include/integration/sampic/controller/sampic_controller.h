@@ -18,6 +18,11 @@ extern "C" {
 #include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode.h"
 #include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode.h"
 
+namespace parport_trigger {
+class TriggerClient;
+class TriggerServer;
+}
+
 /// High-level orchestrator for SAMPIC system
 class SampicController {
 public:
@@ -78,6 +83,13 @@ private:
     bool initialized_{false};
     bool run_started_{false};
     bool collector_running_{false};
+
+    std::shared_ptr<parport_trigger::TriggerClient> trigger_client_;
+    std::unique_ptr<parport_trigger::TriggerServer> trigger_server_;
+
+    bool isSoftwareOnlyInitMode() const;
+    int ensureParportTriggerInfrastructure();
+    void stopParportTriggerInfrastructure();
 };
 
 #endif // SAMPIC_CONTROLLER_H

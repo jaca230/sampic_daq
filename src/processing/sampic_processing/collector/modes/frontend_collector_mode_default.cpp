@@ -41,8 +41,7 @@ bool FrontendCollectorModeDefault::collect()
     // Step 0: Wait for new SampicEvents
     // ---------------------------------------------------------------------
     const auto t_wait_start = std::chrono::steady_clock::now();
-    if (!sampic_buffer_.waitForNew(last_timestamp_, wait_timeout_))
-        return true; // timeout is fine
+    (void)sampic_buffer_.waitForNew(last_timestamp_, wait_timeout_);
     const auto t_wait_end = std::chrono::steady_clock::now();
     const auto wait_us =
         std::chrono::duration_cast<std::chrono::microseconds>(t_wait_end - t_wait_start);
@@ -51,92 +50,92 @@ bool FrontendCollectorModeDefault::collect()
     // Step 1: Retrieve new events
     // ---------------------------------------------------------------------
     auto new_events = sampic_buffer_.getSince(last_timestamp_);
-    if (new_events.empty())
-        return true;
-
-    if (spdlog::should_log(spdlog::level::trace)) {
-        spdlog::trace("FrontendCollector: retrieved {} SampicEvents from buffer", new_events.size());
-    }
-
-    last_timestamp_ = new_events.back()->timestamp();
     const auto now = std::chrono::steady_clock::now();
+    std::chrono::microseconds group_build_us{0};
 
-    // ---------------------------------------------------------------------
-    // Step 2: Group hits by temporal proximity
-    // ---------------------------------------------------------------------
-    const auto t_group_start = std::chrono::steady_clock::now();
+    if (!new_events.empty()) {
+        if (spdlog::should_log(spdlog::level::trace)) {
+            spdlog::trace("FrontendCollector: retrieved {} SampicEvents from buffer", new_events.size());
+        }
 
-    for (const auto& ev : new_events) {
-        if (!ev || !ev->data())
-            continue;
-        const auto parent = ev->data();
+        last_timestamp_ = new_events.back()->timestamp();
 
-        for (int i = 0; i < parent->NbOfHitsInEvent; ++i) {
-            const HitStruct* hit = &parent->Hit[i];
-            bool placed = false;
+        // ---------------------------------------------------------------------
+        // Step 2: Group hits by temporal proximity
+        // ---------------------------------------------------------------------
+        const auto t_group_start = std::chrono::steady_clock::now();
 
-            // Check existing groups for a match
-            for (auto& group : pending_groups_) {
-                if (group.hits.size() == 0)
-                    continue;
+        for (const auto& ev : new_events) {
+            if (!ev || !ev->data())
+                continue;
+            const auto parent = ev->data();
 
-                const double dt_ns =
-                    std::abs(hit->FirstCellTimeStamp - group.hits.front()->FirstCellTimeStamp);
-                if (dt_ns <= time_window_ns_) {
-                    group.hits.emplace_back(hit);
+            for (int i = 0; i < parent->NbOfHitsInEvent; ++i) {
+                const HitStruct* hit = &parent->Hit[i];
+                bool placed = false;
 
-                    if (std::none_of(group.parents.begin(), group.parents.end(),
-                                     [&](const std::shared_ptr<SampicEvent>& p) {
-                                         return p.get() == ev.get();
-                                     })) {
-                        group.parents.emplace_back(ev);
-                    }
+                // Check existing groups for a match
+                for (auto& group : pending_groups_) {
+                    if (group.hits.size() == 0)
+                        continue;
 
-                    group.last_activity = now;
-                    placed = true;
-                    break;
-                }
-            }
+                    const double dt_ns =
+                        std::abs(hit->FirstCellTimeStamp - group.hits.front()->FirstCellTimeStamp);
+                    if (dt_ns <= time_window_ns_) {
+                        group.hits.emplace_back(hit);
 
-            if (!placed) {
-                // Before creating new group, finalize old groups that are now too far away
-                // Any group whose hits are outside the time window from this new hit
-                // can never receive more hits, so finalize immediately
-                auto it = pending_groups_.begin();
-                while (it != pending_groups_.end()) {
-                    if (it->hits.size() > 0) {
-                        const double dt_from_new_hit =
-                            std::abs(hit->FirstCellTimeStamp - it->hits.front()->FirstCellTimeStamp);
-
-                        // If this group is beyond the time window, it's complete
-                        if (dt_from_new_hit > time_window_ns_) {
-                            ready_groups_.emplace_back(std::move(*it));
-                            it = pending_groups_.erase(it);
-                            continue;
-                        } else {
-                            // pending groups are time-ordered; newer groups will be closer in time
-                            break;
+                        if (std::none_of(group.parents.begin(), group.parents.end(),
+                                         [&](const std::shared_ptr<SampicEvent>& p) {
+                                             return p.get() == ev.get();
+                                         })) {
+                            group.parents.emplace_back(ev);
                         }
+
+                        group.last_activity = now;
+                        placed = true;
+                        break;
                     }
-                    ++it;
                 }
 
-                // Now create new group for this hit
-                PendingGroup g;
-                g.created = now;
-                g.last_activity = now;
-                g.parents.reserve(16);
-                g.hits.reserve(256);
-                g.parents.emplace_back(ev);
-                g.hits.emplace_back(hit);
-                pending_groups_.emplace_back(std::move(g));
+                if (!placed) {
+                    // Before creating new group, finalize old groups that are now too far away
+                    // Any group whose hits are outside the time window from this new hit
+                    // can never receive more hits, so finalize immediately
+                    auto it = pending_groups_.begin();
+                    while (it != pending_groups_.end()) {
+                        if (it->hits.size() > 0) {
+                            const double dt_from_new_hit =
+                                std::abs(hit->FirstCellTimeStamp - it->hits.front()->FirstCellTimeStamp);
+
+                            // If this group is beyond the time window, it's complete
+                            if (dt_from_new_hit > time_window_ns_) {
+                                ready_groups_.emplace_back(std::move(*it));
+                                it = pending_groups_.erase(it);
+                                continue;
+                            } else {
+                                // pending groups are time-ordered; newer groups will be closer in time
+                                break;
+                            }
+                        }
+                        ++it;
+                    }
+
+                    // Now create new group for this hit
+                    PendingGroup g;
+                    g.created = now;
+                    g.last_activity = now;
+                    g.parents.reserve(16);
+                    g.hits.reserve(256);
+                    g.parents.emplace_back(ev);
+                    g.hits.emplace_back(hit);
+                    pending_groups_.emplace_back(std::move(g));
+                }
             }
         }
+        const auto t_group_end = std::chrono::steady_clock::now();
+        group_build_us =
+            std::chrono::duration_cast<std::chrono::microseconds>(t_group_end - t_group_start);
     }
-
-    const auto t_group_end = std::chrono::steady_clock::now();
-    const auto group_build_us =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_group_end - t_group_start);
 
     // ---------------------------------------------------------------------
     // Step 3: Finalize groups that timed out (no activity for finalize_after_ms)
@@ -267,7 +266,9 @@ bool FrontendCollectorModeDefault::collect()
         diagnostics_.produced(produced_events, produced_hits, frontend_buffer_.size());
     }
 
-    sampic_buffer_.pruneUpTo(last_timestamp_);
+    if (!new_events.empty()) {
+        sampic_buffer_.pruneUpTo(last_timestamp_);
+    }
 
     return true;
 }

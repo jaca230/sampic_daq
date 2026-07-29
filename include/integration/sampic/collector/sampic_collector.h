@@ -14,6 +14,10 @@ extern "C" {
 #include <SAMPIC_256Ch_lib.h>
 }
 
+namespace parport_trigger {
+class TriggerClient;
+}
+
 /**
  * @brief Threaded collector that runs a chosen SAMPICCollectorMode.
  * The mode performs acquisition and pushes SampicEvent objects into the buffer.
@@ -24,7 +28,8 @@ public:
                     CrateInfoStruct& info,
                     CrateParamStruct& params,
                     void* eventBuffer,
-                    ML_Frame* mlFrames);
+                    ML_Frame* mlFrames,
+                    std::shared_ptr<parport_trigger::TriggerClient> trigger_client = nullptr);
     ~SampicCollector();
 
     void start();
@@ -49,6 +54,7 @@ private:
     CrateParamStruct& params_;
     void* eventBuffer_;
     ML_Frame* mlFrames_;
+    std::shared_ptr<parport_trigger::TriggerClient> trigger_client_;
 
     std::unique_ptr<SampicEventBuffer> buffer_;
     std::unique_ptr<SampicCollectorMode> mode_;

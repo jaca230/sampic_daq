@@ -7,13 +7,15 @@
 enum class SampicInitSettingsModeType {
     DEFAULT,
     EXAMPLE,
-    SIMULATOR
+    SIMULATOR,
+    SIMULATOR_PP_TRIG
 };
 
 enum class SampicApplySettingsModeType {
     DEFAULT,
     EXAMPLE,
-    SIMULATOR
+    SIMULATOR,
+    SIMULATOR_PP_TRIG
 };
 
 /// Configuration for the default initialization mode
@@ -28,6 +30,11 @@ struct SampicInitSettingsModeExampleConfig {
 
 /// Simulator initialization mode configuration (no-op)
 struct SampicInitSettingsModeSimulatorConfig {
+    int dummy_param = 0;
+};
+
+/// Trigger-driven simulator initialization mode configuration
+struct SampicInitSettingsModeSimulatorParportTriggerConfig {
     int dummy_param = 0;
 };
 
@@ -46,6 +53,11 @@ struct SampicApplySettingsModeSimulatorConfig {
     int dummy_param = 0;
 };
 
+/// Trigger-driven simulator apply mode configuration
+struct SampicApplySettingsModeSimulatorParportTriggerConfig {
+    int dummy_param = 0;
+};
+
 /// Top-level controller configuration object
 /// Controls which init/apply modes are used and their parameters.
 struct SampicControllerConfig {
@@ -57,10 +69,12 @@ struct SampicControllerConfig {
     SampicInitSettingsModeDefaultConfig  init_default_mode;
     SampicInitSettingsModeExampleConfig  init_example_mode;
     SampicInitSettingsModeSimulatorConfig init_simulator_mode;
+    SampicInitSettingsModeSimulatorParportTriggerConfig init_simulator_pp_trig_mode;
 
     SampicApplySettingsModeDefaultConfig apply_default_mode;
     SampicApplySettingsModeExampleConfig apply_example_mode;
     SampicApplySettingsModeSimulatorConfig apply_simulator_mode;
+    SampicApplySettingsModeSimulatorParportTriggerConfig apply_simulator_pp_trig_mode;
 };
 
 #endif // SAMPIC_CONTROLLER_CONFIG_H

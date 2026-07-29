@@ -5,6 +5,7 @@ set(CPM_PACKAGE_LIST
   nlohmann_json
   reflect_cpp
   spdlog
+  parport_trigger
 )
 
 # ---------------------- nlohmann_json (header-only) ----------------------
@@ -23,3 +24,8 @@ set(spdlog_REPO "gabime/spdlog")
 set(spdlog_TAG "v1.14.1")
 set(spdlog_TARGET "")  # header-only
 set(spdlog_DOWNLOAD_ONLY YES)
+
+# ---------------------- parport_trigger (shared library) ----------------------
+set(parport_trigger_REPO "jaca230/parport_trigger")
+set(parport_trigger_TAG "main")
+set(parport_trigger_TARGET "parport_trigger::trigger")

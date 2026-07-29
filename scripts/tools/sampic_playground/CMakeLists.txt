@@ -63,6 +63,7 @@ set(PLAYGROUND_SOURCES
   "${ROOT_DIR}/src/integration/sampic/collector/sampic_event_buffer.cpp"
   "${ROOT_DIR}/src/integration/sampic/collector/sampic_collector.cpp"
   "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator.cpp"
+  "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator_parport_trigger.cpp"
   "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_default.cpp"
   "${ROOT_DIR}/src/integration/sampic/collector/modes/sampic_collector_mode_example.cpp"
 

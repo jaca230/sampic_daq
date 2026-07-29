@@ -2,6 +2,10 @@
 #include "integration/sampic/collector/modes/sampic_collector_mode_default.h"
 #include "integration/sampic/collector/modes/sampic_collector_mode_example.h"
 #include "integration/sampic/collector/modes/sampic_collector_mode_simulator.h"
+#include "integration/sampic/collector/modes/sampic_collector_mode_simulator_parport_trigger.h"
+
+#include <stdexcept>
+#include <utility>
 #ifdef __linux__
 #include <pthread.h>
 #include <sched.h>
@@ -42,12 +46,14 @@ SampicCollector::SampicCollector(const SampicCollectorConfig& cfg,
                                  CrateInfoStruct& info,
                                  CrateParamStruct& params,
                                  void* eventBuffer,
-                                 ML_Frame* mlFrames)
+                                 ML_Frame* mlFrames,
+                                 std::shared_ptr<parport_trigger::TriggerClient> trigger_client)
     : cfg_(cfg),
       info_(info),
       params_(params),
       eventBuffer_(eventBuffer),
-      mlFrames_(mlFrames)
+      mlFrames_(mlFrames),
+      trigger_client_(std::move(trigger_client))
 {
     buildMode();
     spdlog::info("SAMPIC Collector initialized (mode={}, buffer_size={})",
@@ -73,6 +79,10 @@ void SampicCollector::buildMode() {
         case SampicCollectorModeType::SIMULATOR:
             mode_ = std::make_unique<SampicCollectorModeSimulator>(
                 *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_);
+            break;
+        case SampicCollectorModeType::SIMULATOR_PP_TRIG:
+            mode_ = std::make_unique<SampicCollectorModeSimulatorParportTrigger>(
+                *buffer_, info_, params_, eventBuffer_, mlFrames_, cfg_, trigger_client_);
             break;
         default:
             throw std::runtime_error("Unsupported SampicCollectorModeType");
@@ -123,7 +133,8 @@ void SampicCollector::run() {
         if (!ok)
             spdlog::warn("SAMPIC Collector: collect() returned false");
 
-        if (cfg_.sleep_time_us > 0)
+        if (cfg_.sleep_time_us > 0 &&
+            cfg_.mode != SampicCollectorModeType::SIMULATOR_PP_TRIG)
             std::this_thread::sleep_for(std::chrono::microseconds(cfg_.sleep_time_us));
     }
 

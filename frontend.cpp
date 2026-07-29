@@ -14,6 +14,7 @@
 #include <string>
 #include <atomic>
 #include <cstdint>
+#include <algorithm>
 #include <unistd.h>
 
 // MIDAS
@@ -22,6 +23,7 @@
 
 // Project: ODB + logging + FE config
 #include "integration/midas/frontend_config.h"
+#include "integration/midas/event_buffer/frontend_event_buffer_flusher.h"
 #include "integration/midas/frontend_odb_paths.h"
 #include "integration/midas/frontend_runtime.h"
 #include "integration/midas/odb/odb_utils.h"
@@ -39,9 +41,6 @@
 #include "processing/sampic_processing/collector/frontend_event_buffer.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_data.h"
 
-int rb_get_wp(int handle, void **p, int millisec);
-int rb_increment_wp(int handle, int size);
-
 // ======================================================================
 // Globals
 // ======================================================================
@@ -55,6 +54,7 @@ INT         event_buffer_size   = 5 * max_event_size;
 
 static std::thread g_event_writer_thread;
 static std::atomic<bool> g_event_writer_stop{false};
+static std::atomic<bool> g_event_writer_pause{false};
 
 // ======================================================================
 // Prototypes
@@ -77,13 +77,13 @@ static INT compose_frontend_event(char* dest,
 // ======================================================================
 // Equipment definition
 // ======================================================================
-BOOL equipment_common_overwrite = TRUE;
+BOOL equipment_common_overwrite = FALSE;
 
 EQUIPMENT equipment[] = {
     {"SAMPIC %02d",
         { 1, 0,
           "SYSTEM",
-          EQ_USER,
+          EQ_USER | EQ_EB,
           0,
           "MIDAS",
           TRUE,
@@ -145,6 +145,7 @@ INT begin_of_run(INT, char *error) {
     try {
         auto& runtime = frontend::runtime::Runtime::instance();
         auto& cfgs = runtime.configs;
+        g_event_writer_pause = false;
 
         if (!runtime.initialized || !runtime.controller) {
             std::strcpy(error, "System not initialized");
@@ -208,14 +209,55 @@ INT begin_of_run(INT, char *error) {
 INT end_of_run(INT, char *error) {
     try {
         auto& runtime = frontend::runtime::Runtime::instance();
+
+        // Pause regular writer thread so end-of-run flush can serialize safely.
+        g_event_writer_pause = true;
+
+        if (runtime.controller) {
+            runtime.controller->stopRun();
+
+            // Allow collector pipeline to finalize trailing groups after run stop.
+            const auto grace_ms = static_cast<int>(
+                runtime.configs.frontend_collector.default_mode.finalize_after_ms +
+                runtime.configs.frontend_collector.default_mode.wait_timeout_ms + 50u);
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::max(50, grace_ms)));
+
+            runtime.controller->stopCollector();
+        }
         if (runtime.collector)
             runtime.collector->stop();
-        if (runtime.controller) {
-            runtime.controller->stopCollector();
-            runtime.controller->stopRun();
+
+        constexpr size_t kMaxEndOfRunFlushEvents = 100000;
+        size_t flushed_events = 0;
+        if (runtime.collector) {
+            integration::midas::FrontendEventBufferFlusher flusher;
+            const INT flush_status = flusher.flush(
+                runtime.collector->buffer(),
+                kMaxEndOfRunFlushEvents,
+                1000,
+                equipment[0].info.event_id,
+                equipment[0].info.trigger_mask,
+                &equipment[0].serial_number,
+                g_event_writer_stop,
+                [&](char* payload, const std::shared_ptr<FrontendEvent>& fev) {
+                    return compose_frontend_event(payload, fev, runtime);
+                },
+                [&](size_t remaining_size) {
+                    runtime.collector->diagnostics().consumed(1, remaining_size);
+                },
+                flushed_events);
+            if (flush_status != SUCCESS) {
+                std::strcpy(error, "Failed to flush remaining frontend events at end-of-run");
+                g_event_writer_pause = false;
+                return flush_status;
+            }
         }
+
+        spdlog::info("end_of_run: flushed {} remaining FrontendEvent(s)", flushed_events);
+        g_event_writer_pause = false;
     } catch (const std::exception& e) {
         std::snprintf(error, 256, "Error during EOR: %s", e.what());
+        g_event_writer_pause = false;
         return FE_ERR_HW;
     }
     return SUCCESS;
@@ -287,12 +329,15 @@ static void event_writer_loop()
 {
     const int thread_index = 0;
     signal_readout_thread_active(thread_index, TRUE);
-
-    const int rbh = get_event_rbh(thread_index);
+    integration::midas::FrontendEventBufferFlusher flusher(thread_index);
 
     while (is_readout_thread_enabled() && !g_event_writer_stop.load()) {
         if (!readout_enabled()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+        if (g_event_writer_pause.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
 
@@ -307,42 +352,19 @@ static void event_writer_loop()
             continue;
         }
 
-        EVENT_HEADER* pevent = nullptr;
-        int status = DB_TIMEOUT;
-
-        while (!g_event_writer_stop.load()) {
-            status = rb_get_wp(rbh, (void**)&pevent, 0);
-            if (status == DB_SUCCESS)
-                break;
-
-            if (status == DB_TIMEOUT) {
-                if (!is_readout_thread_enabled() || g_event_writer_stop.load())
-                    break;
-                std::this_thread::yield();
-                continue;
-            }
-
-            spdlog::error("event_writer_loop: rb_get_wp failed with status={}", status);
-            pevent = nullptr;
-            break;
-        }
-
-        if (!pevent) {
+        if (!flusher.writeOne(
+                fev,
+                equipment[0].info.event_id,
+                equipment[0].info.trigger_mask,
+                &equipment[0].serial_number,
+                g_event_writer_stop,
+                [&](char* payload, const std::shared_ptr<FrontendEvent>& event) {
+                    return compose_frontend_event(payload, event, runtime);
+                },
+                1000)) {
             spdlog::warn("event_writer_loop: dropping FrontendEvent due to ring buffer failure");
             continue;
         }
-
-        bm_compose_event_threadsafe(pevent,
-                                    equipment[0].info.event_id,
-                                    equipment[0].info.trigger_mask,
-                                    0,
-                                    &equipment[0].serial_number);
-
-        auto* payload = reinterpret_cast<char*>(pevent + 1);
-        const int total_size = compose_frontend_event(payload, fev, runtime);
-        pevent->data_size = total_size;
-
-        rb_increment_wp(rbh, sizeof(EVENT_HEADER) + pevent->data_size);
 
         runtime.lastEventTimestamp = fev->timestamp();
         runtime.collector->diagnostics().consumed(1,

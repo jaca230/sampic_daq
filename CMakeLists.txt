@@ -250,6 +250,7 @@ endif()
 # Aggressive optimizations for hot-path files
 set_source_files_properties(
   "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator.cpp"
+  "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/modes/sampic_collector_mode_simulator_parport_trigger.cpp"
   "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/sampic_event.cpp"
   "${PROJECT_SOURCE_ROOT}/src/integration/sampic/collector/sampic_event_buffer.cpp"
   PROPERTIES COMPILE_OPTIONS "-O3;-march=native;-mtune=native;-ffast-math;-funroll-loops;-finline-functions"
