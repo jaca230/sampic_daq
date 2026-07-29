@@ -7,7 +7,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from midas_client_utils import create_midas_client
+ODB_TOOLS_DIRECTORY = Path(__file__).resolve().parent.parent
+if str(ODB_TOOLS_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(ODB_TOOLS_DIRECTORY))
+
+from midas_client_utils import create_midas_client  # noqa: E402
 
 
 def main() -> int:
@@ -36,7 +40,7 @@ def main() -> int:
     try:
         contents = client.odb_get(root)
         output_directory = (
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[3]
             / ".artifacts"
             / "odb_snapshots"
         )

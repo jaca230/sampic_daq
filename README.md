@@ -63,3 +63,29 @@ Hardware descriptors are split by crate/FEB/SAMPIC/channel under
 `src/integration/sampic/settings/descriptors`. Descriptor translation units
 also self-register, so a new descriptor provider can be added without editing
 the controller or a central registry manifest.
+
+### ODB profiles and maintenance tools
+
+Named operational configurations live in `scripts/odb_tools/profiles`.
+Profiles are dry-run by default:
+
+```bash
+./scripts/odb_tools/profiles/apply_profile.py list
+./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger
+./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger --apply
+```
+
+Each profile owns its arguments and documented ODB writes in one Python
+module. The runner discovers profile modules automatically, so adding a
+profile does not require changing a central import list.
+
+Resetting the generated equipment tree is destructive and remains a separate
+maintenance command:
+
+```bash
+./scripts/odb_tools/profiles/reset_sampic_odb.py
+./scripts/odb_tools/profiles/reset_sampic_odb.py --apply
+```
+
+The board, SAMPIC, and channel bulk setters remain universal tools directly
+under `scripts/odb_tools`.
