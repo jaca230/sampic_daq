@@ -63,12 +63,7 @@ add_executable(sampic_deadtime_scan
   src/modes/occupancy/occupancy_mode.cpp
   src/common/scan_types.cpp
   src/common/time_utils.cpp
-  src/modes/pulser/pulser_mode.cpp
-  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_crate_configurator.cpp
-  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_board_configurator.cpp
-  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_chip_configurator.cpp
-  ${PROJECT_ROOT}/src/integration/sampic/config/sampic_channel_configurator.cpp
-  ${PROJECT_ROOT}/src/integration/sampic/controller/init_settings_modes/default/default_mode.cpp)
+  src/modes/pulser/pulser_mode.cpp)
 
 add_executable(lecroy_test
   src/tests/lecroy_test.cpp
@@ -85,9 +80,18 @@ add_executable(delay_separation_test
 
 add_executable(external_trigger_probe
   src/tests/external_trigger_probe.cpp
+  src/batching_scan/batching_scan_config.cpp
   src/modes/double_pulse/config.cpp
   src/lecroy/lecroy_client.cpp
-  src/lecroy/manual_trigger_controller.cpp)
+  src/lecroy/lecroy_output_gate.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  ${PROJECT_ROOT}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_hit_associator.cpp)
+
+# Keep native crash diagnostics useful even in the release tools build. This
+# probe exercises a prebuilt vendor library where ordinary C++ exceptions
+# cannot report segmentation faults.
+target_compile_options(external_trigger_probe PRIVATE -g)
+target_link_options(external_trigger_probe PRIVATE -rdynamic)
 
 add_executable(l2_external_gate_probe
   src/tests/l2_external_gate_probe.cpp
@@ -134,7 +138,8 @@ target_include_directories(external_trigger_probe PRIVATE
   ${LPDEVC_INCLUDE_DIR}
   ${nlohmann_json_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
 
 target_include_directories(l2_external_gate_probe PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}

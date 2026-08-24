@@ -41,6 +41,7 @@ class LecroyClient {
   // Opens only the transport connection. Unlike Configure(), this does not
   // write any generator or channel settings.
   void Connect(const std::string& ip, int port);
+  void Reconnect();
   void SetChannelDisabled(const std::string& channel, bool disabled);
   bool IsChannelDisabled(const std::string& channel);
   void Configure(const LecroyConfig& config);

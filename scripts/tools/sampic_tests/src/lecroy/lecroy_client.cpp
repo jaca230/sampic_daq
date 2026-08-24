@@ -42,6 +42,11 @@ void LecroyClient::Connect(const std::string& ip, int port) {
   EnsureConnected();
 }
 
+void LecroyClient::Reconnect() {
+  Disconnect();
+  EnsureConnected();
+}
+
 void LecroyClient::SetChannelDisabled(const std::string& channel, bool disabled) {
   EnsureConnected();
   SendCommand(channel + ":DISA " + (disabled ? "ON" : "OFF"));
@@ -122,7 +127,7 @@ std::string LecroyClient::Query(const std::string& command) {
   EnsureConnected();
   std::string payload = command;
   if (payload.empty() || payload.back() != '\n') payload.push_back('\n');
-  if (::send(socket_fd_, payload.data(), payload.size(), 0) < 0) {
+  if (::send(socket_fd_, payload.data(), payload.size(), MSG_NOSIGNAL) < 0) {
     throw std::runtime_error("Failed to send query: " + command);
   }
   char buffer[512];
@@ -173,7 +178,7 @@ void LecroyClient::SendCommand(const std::string& command) {
   EnsureConnected();
   std::string payload = command;
   if (payload.empty() || payload.back() != '\n') payload.push_back('\n');
-  if (::send(socket_fd_, payload.data(), payload.size(), 0) < 0) {
+  if (::send(socket_fd_, payload.data(), payload.size(), MSG_NOSIGNAL) < 0) {
     throw std::runtime_error("Failed to send command: " + command);
   }
 }

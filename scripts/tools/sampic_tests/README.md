@@ -175,6 +175,162 @@ reported delta, then set the measured offset and a suitable tolerance. This chec
 the timing association; compare it with the `--without-gate` baseline to establish
 that the gate also rejects non-coincident primitives.
 
+### MIDAS-less external-trigger association diagnostic
+
+`external_trigger_probe` reads vendor `EventStruct` objects directly and passes
+them through the same `ExternalTriggerHitAssociator` used by the production
+frontend collector. It reports raw hits and trigger records, assigned hits,
+hits dropped because no trigger record was present, hits outside the configured
+association window, ambiguous matches, and trigger records with no assigned
+hits. Per-hit output includes the nearest trigger and
+`hit_timestamp - (trigger_timestamp + offset)`.
+
+```bash
+scripts/helpers/trigger_probe.sh \
+  --config config/double_pulse_deadtime_scan.default.json \
+  --events 200 --duration 10 --skip-lecroy \
+  --hit-offset-ns -470 --pre-window-ns 20 --post-window-ns 20 \
+  --all-channels
+```
+
+Add `--summary-only` to suppress per-trigger and per-hit details. This tool owns
+the crate connection and must not run concurrently with the MIDAS frontend.
+Without `--all-channels`, the probe uses the board and channel list from the
+configuration file.
+
+To test hardware-gated self-trigger primitives across the whole crate, keep the
+Control Board external-trigger counter active, put every SAMPIC channel in
+self-trigger mode, build the FEB L2 OR, and require coincidence with the
+external-trigger gate:
+
+```bash
+scripts/helpers/self_trigger_correlation_probe.sh \
+  --events 1000 --duration 10 --summary-only \
+  --hit-offset-ns -470 --pre-window-ns 20 --post-window-ns 20
+```
+
+The wrapper enables all discovered FEBs and channels and applies these default
+hardware windows:
+
+- primitive gate: 10 frontend clocks (100 ns);
+- L2 latency gate: 3 frontend clocks (30 ns);
+- external gate: 5 frontend clocks (50 ns).
+
+Override them with `--primitive-gate-clocks`,
+`--latency-gate-clocks`, and `--external-gate-clocks`. The vendor library uses
+10 ns frontend clocks and requires the external gate to be at least three
+clocks. The test compares the frontend's same-vendor-event association with
+stream-wide timestamp association after the hardware gate has rejected
+non-coincident primitives.
+
+By default, the wrapper controls only Lecroy output B's `DISA` state and does
+not rewrite the configured frequency, amplitude, pulse shape, or delay. Pass
+`--lecroy-rate-hz` to set and read back the frequency while output B is
+inhibited. Output B is forced off while SAMPIC starts, enabled for the requested
+capture, then disabled at the event/duration cutoff. The probe continues
+decoding queued packets until the stream has been quiet for 100 ms before
+calling the vendor `StopRun()`.
+Override the quiet interval and safety timeout with `--drain-quiet-ms` and
+`--drain-timeout-s`.
+
+Use `--frames-per-block` and `--triggers-per-event` to test transport batching.
+The defaults are both one, matching the low-latency frontend configuration.
+Larger values reduce the rate of small records on the receive path; for example,
+`--frames-per-block 8 --triggers-per-event 8` is a useful comparison at 10 kHz.
+The selected values are saved in `metadata.json`. The probe also uses the
+vendor lost-frame and byte counters when the installed `liblpdevC.so` exports
+them; older supplied binaries declare these APIs in the header but do not export
+the symbols, and the metadata reports the counters as unavailable.
+
+The batching grid is defined in
+`config/external_trigger_batching_scan.default.json`. Its default rate grid has
+35 points: 100 Hz and 500 Hz controls, 300 Hz spacing from 1 through 10 kHz,
+and bounding points at 15 and 20 kHz. Every waveform/trigger batching
+combination is repeated twice. From `scripts/tools/sampic_tests`, validate the
+effective grid without connecting to either instrument using:
+
+```bash
+scripts/helpers/external_trigger_batching_scan.sh --dry-run
+```
+
+Run it directly with `scripts/helpers/external_trigger_batching_scan.sh`, or
+select another file with `--config PATH`. The persistent C++ runner owns the
+entire parameter loop and keeps both instrument connections open. It stops the
+SAMPIC run before changing packetization and reconnects the crate only when a
+point failure makes the session suspect. Edit the JSON to change scan or probe
+settings. Each invocation uses a timestamped directory below the configured
+output root unless an exact `--output-dir` is supplied.
+
+Each grid point has its own normal probe export and `run.log`. Before every
+point, the probe inhibits the generator output, programs the requested rate,
+and saves the generator readback in `metadata.json`. Offline association also
+estimates the narrow hit/trigger offset independently for every capture. Add
+`--resume` to continue the newest scan below the configured output root and
+skip completed points after an interruption; combine it with `--output-dir` to
+select a specific scan. The full vendor ranges are 1--31 waveform frames and
+1--127 trigger records. Eight waveform
+frames is marked as the approximate MTU-1500 single-datagram boundary, not
+enforced as a scan limit.
+
+An unsuccessful attempt is retried five times by default, for at most six
+attempts per grid point. Change the `retry` section of the JSON to adjust this.
+An ordinary failed attempt recreates the crate session and refreshes the Lecroy
+TCP connection before retrying. After the retries are exhausted, the point is recorded as `failed`
+and the scan continues. Failures that leave hardware state uncertain--including
+failure to stop the SAMPIC run or safely control the generator output--are
+recorded as `fatal` and abort the scan immediately.
+
+For a long scan, launch the same arguments in a logged screen session:
+
+```bash
+scripts/helpers/screen_external_trigger_batching_scan.sh \
+  --config config/external_trigger_batching_scan.default.json
+```
+
+The launcher prints the screen attach command and log path. Detach with
+`Ctrl-A`, then `D`. While attached, one `Ctrl-C` requests a graceful stop: the
+active grid point continues through capture, Lecroy-output inhibition, queued
+data draining, and `StopRun()`, and the scan exits before starting another
+point. Rerun with `--resume` to continue. The scan prints a projected finish
+time before each point and updates its elapsed time, average point duration,
+and ETA after each completed point.
+
+Open `notebooks/external_trigger_batching_scan.ipynb` for heatmaps of trigger
+capture, populated-trigger fraction, accepted hit rate, decoded throughput,
+association efficiency, and the longest empty-trigger run. When repetitions
+are present, the notebook also reports the mean, standard deviation, and sample
+count at every grid point.
+
+For the independent-stream configuration described in the email chain, call
+`trigger_probe.sh` directly with `--self-trigger-channels --all-channels` and
+omit `--l2-external-gate`.
+
+Every `self_trigger_correlation_probe.sh` run exports structured diagnostic data
+to `data/external_trigger_probe/latest`:
+
+- `metadata.json` records the acquisition and association settings;
+- `hits.csv` contains every hit timestamp, hardware address, nearest trigger,
+  residual, coverage classification, acceptance decision, and packet lag;
+- `triggers.csv` contains the time-sorted counter stream and assigned-hit counts;
+- `packets.csv` summarizes the hit and trigger contents and timestamp ranges of
+  every vendor packet.
+
+Use `--output-dir <path>` to preserve a named run instead of replacing
+`latest`, for example:
+
+```bash
+scripts/helpers/self_trigger_correlation_probe.sh \
+  --events 1000 --duration 10 --summary-only \
+  --hit-offset-ns -562 --pre-window-ns 20 --post-window-ns 20 \
+  --output-dir data/external_trigger_probe/10khz
+```
+
+Open `notebooks/external_trigger_stream_diagnostics.ipynb` in JupyterLab to
+inspect the default `latest` export. Change `RUN_DIR_OVERRIDE` in the first code
+cell to compare a named run. The notebook includes a complete empty/populated
+trigger timeline and a zoom connecting the first 98 hit records to their
+nearest triggers while retaining intervening empty triggers.
+
 ### Gated versus ungated channel-rate comparison
 
 To compare the effect of the gate without changing any other configured setting,

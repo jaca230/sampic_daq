@@ -1,0 +1,40 @@
+{
+  "scan": {
+    "frames_per_block": [31],
+    "triggers_per_event": [127],
+    "lecroy_rates_hz": [5000, 10000, 15000, 20000],
+    "repetitions": 1
+  },
+  "acquisition": {
+    "duration_s": 5,
+    "max_events": 100000,
+    "pipelined_decode": true,
+    "raw_queue_capacity": 128
+  },
+  "correlation": {
+    "hit_offset_ns": -470,
+    "auto_hit_offset": true,
+    "pre_window_ns": 500,
+    "post_window_ns": 500
+  },
+  "l2_gate": {
+    "primitive_gate_clocks": 10,
+    "latency_gate_clocks": 3,
+    "external_gate_clocks": 5
+  },
+  "drain": {
+    "quiet_ms": 100,
+    "timeout_s": 10
+  },
+  "retry": {
+    "max_point_retries": 5,
+    "delay_s": 2
+  },
+  "probe": {
+    "hardware_config": "config/double_pulse_deadtime_scan.default.json"
+  },
+  "output": {
+    "root_directory": "data/external_trigger_batching_scan/pipelined_short_test"
+  },
+  "notes": "Separate receiver and decoder threads with a bounded raw-frame queue."
+}
