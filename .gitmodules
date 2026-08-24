@@ -4,3 +4,4 @@
 [submodule "external/midas_file_unpacker_app"]
 	path = external/midas_file_unpacker_app
 	url = https://github.com/jaca230/midas_file_unpacker_app.git
+	branch = develop
