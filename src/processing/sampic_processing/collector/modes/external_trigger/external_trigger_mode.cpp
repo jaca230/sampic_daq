@@ -6,9 +6,6 @@
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_trigger_metadata.h"
 #include "processing/sampic_processing/collector/frontend_event.h"
 
-#include <algorithm>
-#include <cmath>
-#include <stdexcept>
 #include <spdlog/spdlog.h>
 
 SAMPIC_REGISTER_MODE(
@@ -29,7 +26,12 @@ FrontendCollectorModeExternalTrigger::FrontendCollectorModeExternalTrigger(
     FrontendCollectorModeContext& context,
     FrontendCollectorModeExternalTriggerConfig config)
     : FrontendCollectorMode(context),
-      mode_cfg_(std::move(config)) {
+      mode_cfg_(std::move(config)),
+      associator_(
+          mode_cfg_.hit_time_offset_ns,
+          mode_cfg_.pre_window_ns,
+          mode_cfg_.post_window_ns,
+          mode_cfg_.sampling_frequency_mhz) {
     spdlog::info("External-trigger frontend collector initialized (hit offset={} ns, window=[-{}, +{}] ns)",
                  mode_cfg_.hit_time_offset_ns, mode_cfg_.pre_window_ns, mode_cfg_.post_window_ns);
 }
@@ -39,8 +41,6 @@ bool FrontendCollectorModeExternalTrigger::collect() {
     auto events = sampic_buffer_.getSince(last_timestamp_);
     if (events.empty()) return true;
     last_timestamp_ = events.back()->timestamp();
-    const double sample_period_ns = 1000.0 / mode_cfg_.sampling_frequency_mhz;
-
     for (const auto& parent_ref : events) {
         if (!parent_ref || !parent_ref->data()) continue;
         const EventStruct& parent = *parent_ref->data();
@@ -50,42 +50,15 @@ bool FrontendCollectorModeExternalTrigger::collect() {
             continue;
         }
 
+        auto association = associator_.associate(parent);
         for (int trigger_index = 0; trigger_index < parent.TriggerData.NbOfTriggers; ++trigger_index) {
             const double trigger_time = parent.TriggerData.TriggerTimeStamp[trigger_index];
             const double reference_time = trigger_time + mode_cfg_.hit_time_offset_ns;
-            std::vector<const HitStruct*> assigned_hits;
-            assigned_hits.reserve(parent.NbOfHitsInEvent);
-            uint32_t ambiguous_hits = 0;
-
-            for (int hit_index = 0; hit_index < parent.NbOfHitsInEvent; ++hit_index) {
-                const HitStruct& hit = parent.Hit[hit_index];
-                const double hit_time = hit.FirstCellTimeStamp +
-                    hit.AdvancedParams.FirstTriggerPositionCell * sample_period_ns;
-                const double delta = hit_time - reference_time;
-                if (delta < -mode_cfg_.pre_window_ns || delta > mode_cfg_.post_window_ns) continue;
-
-                int nearest_index = trigger_index;
-                double nearest_distance = std::abs(delta);
-                for (int other = 0; other < parent.TriggerData.NbOfTriggers; ++other) {
-                    const double other_reference = parent.TriggerData.TriggerTimeStamp[other] +
-                                                   mode_cfg_.hit_time_offset_ns;
-                    const double distance = std::abs(hit_time - other_reference);
-                    if (distance < nearest_distance) {
-                        nearest_distance = distance;
-                        nearest_index = other;
-                    }
-                }
-                if (nearest_index != trigger_index) continue;
-                const int matches = std::count_if(
-                    parent.TriggerData.TriggerTimeStamp,
-                    parent.TriggerData.TriggerTimeStamp + parent.TriggerData.NbOfTriggers,
-                    [&](double ts) {
-                        const double d = hit_time - (ts + mode_cfg_.hit_time_offset_ns);
-                        return d >= -mode_cfg_.pre_window_ns && d <= mode_cfg_.post_window_ns;
-                    });
-                if (matches > 1) ++ambiguous_hits;
-                assigned_hits.push_back(&hit);
-            }
+            auto& assigned_hits =
+                association.hits_by_trigger[static_cast<std::size_t>(trigger_index)];
+            const uint32_t ambiguous_hits =
+                association.ambiguous_hits_by_trigger[
+                    static_cast<std::size_t>(trigger_index)];
             if (assigned_hits.empty() && !mode_cfg_.emit_triggers_without_hits) continue;
 
             auto frontend_event = std::make_shared<FrontendEvent>(parent_ref->timestamp());

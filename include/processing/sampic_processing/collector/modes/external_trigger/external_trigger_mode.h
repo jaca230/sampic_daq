@@ -3,6 +3,7 @@
 
 #include "processing/sampic_processing/collector/modes/frontend_collector_mode.h"
 #include "processing/sampic_processing/collector/modes/external_trigger/external_trigger_config.h"
+#include "processing/sampic_processing/collector/modes/external_trigger/external_trigger_hit_associator.h"
 
 /// Builds one FrontendEvent per decoded external trigger using calibrated
 /// timestamp windows; it deliberately does not fall back to hit clustering.
@@ -15,6 +16,7 @@ public:
 
 private:
     FrontendCollectorModeExternalTriggerConfig mode_cfg_;
+    ExternalTriggerHitAssociator associator_;
     std::chrono::steady_clock::time_point last_timestamp_{};
     std::chrono::milliseconds wait_timeout_{1000};
 };
