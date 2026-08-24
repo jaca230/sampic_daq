@@ -11,6 +11,38 @@ git submodule update --init --recursive
 The CMake build links directly against the shared objects provided by the submodule (including the FTDI and lpdev helper libraries). Rebuild the submodule with its Makefile only if you need a newer library version.
 
 Running `scripts/build.sh` will automatically initialize submodules (if needed), configure CMake, and trigger the library build via the upstream Makefile so end users only need this single entry point. To rebuild the driver manually, invoke `make -C external/sampic_256ch_lib clean lib`.
+
+## Development environment
+
+The project uses a local micromamba environment containing ROOT, Python,
+CMake, Ninja, Make, and pkg-config. The environment and package cache remain
+inside the ignored `.venv` directory; no system Conda installation is needed.
+
+Activate it in each new shell:
+
+```bash
+source scripts/setup_env.sh
+```
+
+On first use, the activation script automatically downloads micromamba and
+creates the environment. It also configures MIDAS, its Python package, and
+the in-tree SAMPIC runtime libraries. Paths are derived from the repository
+layout when the MIDAS variables are not already set. For a different machine
+layout, copy `.env.example` to the gitignored `.env` and set `MIDASSYS`,
+`MIDAS_EXPT_NAME`, and `MIDAS_EXPTAB` directly.
+
+To explicitly update, recreate, or inspect the environment operation, use
+`scripts/environment/create_env.sh`.
+
+Verify the active environment with:
+
+```bash
+./scripts/environment/check_env.sh
+```
+
+The previous `scripts/environment_setup` directory and the external
+`~/jcarlton/software/sampic_dev` Python-only venv are obsolete.
+
 ## Registry-driven ODB configuration
 
 The frontend owns a registry-driven tree below

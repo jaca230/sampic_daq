@@ -69,7 +69,18 @@ cd "$BUILD_DIR" || exit 1
 
 # Run CMake and Make
 echo "[build.sh] Running cmake in: $BUILD_DIR"
-cmake "$BASE_DIR"
+HOST_CC="${SAMPIC_HOST_CC:-/usr/bin/cc}"
+HOST_CXX="${SAMPIC_HOST_CXX:-/usr/bin/c++}"
+if [ ! -x "$HOST_CC" ] || [ ! -x "$HOST_CXX" ]; then
+    echo "[build.sh, ERROR] Host compiler not found: CC=$HOST_CC CXX=$HOST_CXX" >&2
+    exit 1
+fi
+echo "[build.sh] Using host toolchain: $HOST_CXX"
+cmake \
+    -S "$BASE_DIR" \
+    -B "$BUILD_DIR" \
+    -DCMAKE_C_COMPILER="$HOST_CC" \
+    -DCMAKE_CXX_COMPILER="$HOST_CXX"
 
 echo "[build.sh] Building with make $JOBS_ARG"
 make $JOBS_ARG
