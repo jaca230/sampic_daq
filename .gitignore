@@ -42,14 +42,17 @@ cmake-build-*/
 **/CTestTestfile.cmake
 **/CPM_modules/
 **/_deps/
+**/.ninja_deps
+**/.ninja_log
+compile_commands.json
 
 # ------------------------------------------------------------------
 # Tool outputs
 # ------------------------------------------------------------------
 scripts/tools/**/build/
 scripts/tools/**/generated/
-scripts/tools/sampic_tests/data/external_trigger_probe/
-scripts/tools/sampic_tests/data/external_trigger_batching_scan/
+scripts/tools/sampic_tests/data/*
+!scripts/tools/sampic_tests/data/README.md
 
 # ------------------------------------------------------------------
 # Python
@@ -82,6 +85,8 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
 *.mo
 
@@ -104,9 +109,12 @@ Thumbs.db
 # Logs and databases
 # ------------------------------------------------------------------
 *.log
+nohup.out
 *.sql
 *.sqlite
 *.data
+/core
+/core.*
 
 # ------------------------------------------------------------------
 # Misc project-specific ignores

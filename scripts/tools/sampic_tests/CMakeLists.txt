@@ -32,6 +32,14 @@ get_filename_component(FTD2XX_LIB_DIR ${FTD2XX_LIB_PATH} DIRECTORY)
 
 find_package(Threads REQUIRED)
 
+# Diagnostic preload shim: request a configurable receive buffer on UDP
+# sockets created inside the closed vendor transport library.
+add_library(sampic_udp_rcvbuf_preload SHARED
+  src/tools/udp_receive_buffer_preload.cpp)
+target_link_libraries(sampic_udp_rcvbuf_preload PRIVATE dl)
+set_target_properties(sampic_udp_rcvbuf_preload PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
 CPMAddPackage(
   NAME nlohmann_json
   GITHUB_REPOSITORY nlohmann/json
@@ -78,14 +86,38 @@ add_executable(delay_separation_test
   src/common/scan_types.cpp
   src/common/time_utils.cpp)
 
+add_executable(double_pulse_timestamp_scan
+  src/tests/double_pulse_timestamp_scan.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
+add_executable(lecroy_routing_probe
+  src/tests/lecroy_routing_probe.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
 add_executable(external_trigger_probe
   src/tests/external_trigger_probe.cpp
+  src/batching_scan/acquisition_scheme.cpp
   src/batching_scan/batching_scan_config.cpp
   src/modes/double_pulse/config.cpp
   src/lecroy/lecroy_client.cpp
   src/lecroy/lecroy_output_gate.cpp
   src/lecroy/manual_trigger_controller.cpp
   ${PROJECT_ROOT}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_hit_associator.cpp)
+
+add_executable(trigger_startup_readiness_test
+  src/tests/trigger_startup_readiness_test.cpp
+  src/modes/double_pulse/config.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp)
 
 # Keep native crash diagnostics useful even in the release tools build. This
 # probe exercises a prebuilt vendor library where ordinary C++ exceptions
@@ -133,11 +165,34 @@ target_include_directories(delay_separation_test PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+target_include_directories(double_pulse_timestamp_scan PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(lecroy_routing_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 target_include_directories(external_trigger_probe PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
   ${LPDEVC_INCLUDE_DIR}
   ${nlohmann_json_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
+target_include_directories(trigger_startup_readiness_test PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tests
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${PROJECT_ROOT}/include)
 
@@ -176,7 +231,10 @@ set(SAMPIC_VENDOR_LIBS
 set(SAMPIC_TEST_TARGETS
   sampic_deadtime_scan
   delay_separation_test
+  double_pulse_timestamp_scan
+  lecroy_routing_probe
   external_trigger_probe
+  trigger_startup_readiness_test
   l2_external_gate_probe
   double_pulse_smoke
   sampic_hit_dump

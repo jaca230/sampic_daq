@@ -1,0 +1,6 @@
+{
+  "receive_buffer_bytes": [0, 1048576, 4194304],
+  "point_scan_config": "config/external_trigger_udp_buffer_point.default.json",
+  "output_root": "/data01/pioneer/midas_sampic/sampic_daq/sampic_tests_data/external_trigger_batching_scan/udp_receive_buffer_scan",
+  "notes": "Zero means inherit the system default without calling setsockopt. Other values request SO_RCVBUF per UDP socket; Linux reports an effective accounting size that is commonly twice the request."
+}

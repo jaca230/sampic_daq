@@ -36,7 +36,16 @@ void LecroyOutputGate::Enable() {
 }
 
 void LecroyOutputGate::Disable() {
-  for (const auto& channel : channels_) {
+  DisableInOrder(channels_);
+}
+
+void LecroyOutputGate::DisableInOrder(
+    const std::vector<std::string>& channel_order) {
+  if (channel_order.empty()) {
+    throw std::invalid_argument(
+        "Lecroy output disable order requires at least one channel");
+  }
+  for (const auto& channel : channel_order) {
     client_.SetChannelDisabled(channel, true);
     if (!client_.IsChannelDisabled(channel)) {
       throw std::runtime_error(

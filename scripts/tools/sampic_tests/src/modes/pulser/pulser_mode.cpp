@@ -1,12 +1,15 @@
 #include "sampic_tests/modes/pulser/pulser_mode.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <csignal>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -46,8 +49,19 @@ class PulserSession {
   PulserSession& operator=(const PulserSession&) = delete;
 
   void configure_pulser() {
-    check(SAMPIC256CH_SetChannelMode(&info_, &params_, ALL_FE_BOARDs, ALL_CHANNELs, TRUE),
+    const Boolean enable_all = opts_.enabled_channels.empty() ? TRUE : FALSE;
+    check(SAMPIC256CH_SetChannelMode(&info_, &params_, ALL_FE_BOARDs, ALL_CHANNELs, enable_all),
           "SetChannelMode");
+
+    for (const auto& [feb, channel] : opts_.enabled_channels) {
+      check(SAMPIC256CH_SetChannelMode(&info_, &params_, feb, channel, TRUE),
+            "SetChannelMode(enable channel)");
+    }
+
+    for (const auto& [feb, channel] : opts_.disabled_channels) {
+      check(SAMPIC256CH_SetChannelMode(&info_, &params_, feb, channel, FALSE),
+            "SetChannelMode(disable channel)");
+    }
 
     check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, ALL_FE_BOARDs, ALL_SAMPICs,
                                                  ALL_CHANNELs, SAMPIC_CHANNEL_SELF_TRIGGER_MODE),
@@ -66,12 +80,67 @@ class PulserSession {
                                                         static_cast<float>(opts_.threshold)),
           "SetSampicChannelInternalThreshold");
 
-    check(SAMPIC256CH_SetPulserMode(&info_, &params_, TRUE, PULSER_SRC_IS_AUTO,
+    check(SAMPIC256CH_SetNbOfFramesPerBlock(&info_, &params_, opts_.frames_per_block),
+          "SetNbOfFramesPerBlock");
+
+    check(SAMPIC256CH_SetPulserMode(&info_, &params_,
+                                    opts_.pulser_enabled ? TRUE : FALSE,
+                                    PULSER_SRC_IS_AUTO,
                                     opts_.pulser_sync),
           "SetPulserMode");
 
+    check(SAMPIC256CH_SetSampicPulserWidth(
+              &info_, &params_, ALL_FE_BOARDs, ALL_SAMPICs,
+              static_cast<unsigned char>(opts_.pulser_width_ticks)),
+          "SetSampicPulserWidth");
+
     check(SAMPIC256CH_SetAutoPulserPeriod(&info_, &params_, opts_.pulser_period_ticks),
           "SetAutoPulserPeriod");
+
+    Boolean enabled = FALSE;
+    Boolean synchronous = FALSE;
+    PulserSourceType_t source = PULSER_SRC_IS_AUTO;
+    int period = 0;
+    int frames_per_block = 0;
+    unsigned char triggers_per_event = 0;
+    check(SAMPIC256CH_GetPulserMode(&params_, &enabled, &source, &synchronous),
+          "GetPulserMode");
+    check(SAMPIC256CH_GetAutoPulserPeriod(&params_, &period),
+          "GetAutoPulserPeriod");
+    check(SAMPIC256CH_GetNbOfFramesPerBlock(&params_, &frames_per_block),
+          "GetNbOfFramesPerBlock");
+    check(SAMPIC256CH_GetMinNbOfTriggersPerEvent(&params_, &triggers_per_event),
+          "GetMinNbOfTriggersPerEvent");
+    std::cout << "Pulser readback: enabled=" << (enabled ? "ON" : "OFF")
+              << ", source=" << (source == PULSER_SRC_IS_AUTO ? "AUTO" : "EXTERNAL")
+              << ", synchronous=" << (synchronous ? "ON" : "OFF")
+              << ", period=" << period << " ticks"
+              << ", requested width=" << opts_.pulser_width_ticks
+              << " ticks (10 ns/tick)\n";
+    std::cout << "Packetization readback: frames/block=" << frames_per_block
+              << ", external triggers/event="
+              << static_cast<int>(triggers_per_event) << '\n';
+    for (int feb = 0; feb < info_.NbOfFeBoards; ++feb) {
+      for (int sampic = 0; sampic < 4; ++sampic) {
+        unsigned char width = 0;
+        check(SAMPIC256CH_GetSampicPulserWidth(&params_, feb, sampic, &width),
+              "GetSampicPulserWidth");
+        std::cout << "  FEB " << feb << " SAMPIC " << sampic
+                  << " width=" << static_cast<int>(width)
+                  << " ticks (" << static_cast<int>(width) * 10 << " ns)\n";
+      }
+    }
+    if (!opts_.disabled_channels.empty()) {
+      std::cout << "Disabled hot channels:";
+      for (const auto& [feb, channel] : opts_.disabled_channels) {
+        std::cout << " FEB" << feb << ":" << channel;
+      }
+      std::cout << '\n';
+    }
+    if (!opts_.enabled_channels.empty()) {
+      std::cout << "Explicit enabled-channel count: "
+                << opts_.enabled_channels.size() << '\n';
+    }
   }
 
   CrateInfoStruct& info() { return info_; }
@@ -134,11 +203,22 @@ class PulserSession {
 };
 
 struct AcquisitionStats {
+  struct ChannelKey {
+    int feb = 0;
+    int sampic = 0;
+    int channel = 0;
+    bool operator<(const ChannelKey& other) const {
+      if (feb != other.feb) return feb < other.feb;
+      if (sampic != other.sampic) return sampic < other.sampic;
+      return channel < other.channel;
+    }
+  };
   size_t events = 0;
   size_t total_hits = 0;
   size_t retries = 0;
   size_t decode_errors = 0;
   size_t total_bytes = 0;
+  std::map<ChannelKey, size_t> channel_counts;
   std::chrono::steady_clock::duration elapsed{};
 };
 
@@ -231,6 +311,11 @@ AcquisitionStats run_pulser_rate_test(PulserSession& session,
       stats.total_bytes += event_bytes;
       ++stats.events;
       stats.total_hits += static_cast<size_t>(hits);
+      for (int i = 0; i < std::min(hits, MAX_EXPECTED_FRAMES); ++i) {
+        const auto& hit = event.Hit[i];
+        ++stats.channel_counts[{hit.FeBoardIndex, hit.SampicIndex,
+                                hit.Channel}];
+      }
       if (!opts.quiet) {
         std::cout << "Event " << stats.events << ": hits=" << hits
                   << " frames=" << nframes
@@ -278,6 +363,29 @@ void print_summary(const AcquisitionStats& stats) {
   }
 }
 
+void write_channel_counts(const AcquisitionStats& stats,
+                          const ModeOptions& opts) {
+  if (opts.channel_counts_csv.empty()) return;
+  std::filesystem::path path{opts.channel_counts_csv};
+  if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
+  std::ofstream output(path);
+  if (!output) {
+    throw std::runtime_error("Unable to open channel-count output: " +
+                             path.string());
+  }
+  const double elapsed = std::chrono::duration<double>(stats.elapsed).count();
+  output << "feb,sampic,channel,hits,hits_per_s,hits_per_event\n";
+  for (const auto& [key, hits] : stats.channel_counts) {
+    output << key.feb << ',' << key.sampic << ',' << key.channel << ','
+           << hits << ',' << std::setprecision(17)
+           << (elapsed > 0.0 ? hits / elapsed : 0.0) << ','
+           << (stats.events > 0
+                   ? static_cast<double>(hits) / stats.events
+                   : 0.0)
+           << '\n';
+  }
+}
+
 }  // namespace
 
 namespace sampic::pulser {
@@ -299,6 +407,7 @@ int PulserRateMode::run(int argc, char** argv) {
   session.configure_pulser();
   const auto stats = run_pulser_rate_test(session, opts, stop_flag_);
   print_summary(stats);
+  write_channel_counts(stats, opts);
   return 0;
 }
 
@@ -321,6 +430,10 @@ PulserRateOptions PulserRateMode::parse_args(int argc, char** argv) {
       opts.pulser_period_ticks = std::stoi(require_value(arg));
     } else if (arg == "--threshold") {
       opts.threshold = std::stod(require_value(arg));
+    } else if (arg == "--pulser-width-ticks") {
+      opts.pulser_width_ticks = std::stoi(require_value(arg));
+    } else if (arg == "--frames-per-block") {
+      opts.frames_per_block = std::stoi(require_value(arg));
     } else if (arg == "--events") {
       opts.events = std::stoi(require_value(arg));
     } else if (arg == "--duration") {
@@ -337,6 +450,28 @@ PulserRateOptions PulserRateMode::parse_args(int argc, char** argv) {
       opts.calibration_dir = require_value(arg);
     } else if (arg == "--sync-pulser") {
       opts.pulser_sync = true;
+    } else if (arg == "--async-pulser") {
+      opts.pulser_sync = false;
+    } else if (arg == "--enable-channel" || arg == "--disable-channel") {
+      const bool enable = arg == "--enable-channel";
+      const std::string value = require_value(arg);
+      const auto separator = value.find(':');
+      if (separator == std::string::npos) {
+        throw std::runtime_error(std::string(arg) + " expects FEB:CHANNEL");
+      }
+      const std::pair<int, int> selected{
+          std::stoi(value.substr(0, separator)),
+          std::stoi(value.substr(separator + 1))};
+      if (selected.first < 0 || selected.first >= 4 ||
+          selected.second < 0 || selected.second >= 64) {
+        throw std::runtime_error(std::string(arg) +
+                                 " requires FEB 0..3 and channel 0..63");
+      }
+      (enable ? opts.enabled_channels : opts.disabled_channels).push_back(selected);
+    } else if (arg == "--pulser-off") {
+      opts.pulser_enabled = false;
+    } else if (arg == "--channel-counts-csv") {
+      opts.channel_counts_csv = require_value(arg);
     } else if (arg == "--quiet") {
       opts.quiet = true;
     } else if (arg == "--help" || arg == "-h") {
@@ -345,6 +480,8 @@ PulserRateOptions PulserRateMode::parse_args(int argc, char** argv) {
                 << "  --port <port>               Control port (default 27015)\n"
                 << "  --period-ticks <n>          Pulser period in clock ticks (default 6400)\n"
                 << "  --threshold <volts>         Internal threshold (default 0.1 V)\n"
+                << "  --pulser-width-ticks <n>    Pulse width in 10 ns ticks (default 2)\n"
+                << "  --frames-per-block <n>      Aggregate 1..31 frames/block (default 31)\n"
                 << "  --events <n>                Stop after N events (0 = unlimited, default 500)\n"
                 << "  --duration <seconds>        Stop after duration (0 = unlimited)\n"
                 << "  --prepare-interval <n>      Re-send prepare every N read loops (default 100)\n"
@@ -352,12 +489,20 @@ PulserRateOptions PulserRateMode::parse_args(int argc, char** argv) {
                 << "  --retry-us <µs>             Sleep between retries (default 100)\n"
                 << "  --no-calibration            Skip loading calibration files\n"
                 << "  --calibration-dir <path>    Calibration directory (default resources/calib)\n"
-                << "  --sync-pulser               Enable synchronous pulser mode\n"
+                << "  --sync-pulser               Enable synchronous pulser mode (default)\n"
+                << "  --async-pulser              Disable synchronous pulser mode\n"
+                << "  --enable-channel F:C        Use an explicit channel mask (repeatable)\n"
+                << "  --disable-channel F:C       Disable channel C on FEB F (repeatable)\n"
+                << "  --pulser-off                Disable internal pulser for a background control\n"
+                << "  --channel-counts-csv <file> Export FEB/SAMPIC/channel occupancy\n"
                 << "  --quiet                     Reduce per-event logging\n";
       std::exit(0);
     } else {
       throw std::runtime_error("Unknown pulser-rate option: " + std::string(arg));
     }
+  }
+  if (opts.frames_per_block < 1 || opts.frames_per_block > 31) {
+    throw std::runtime_error("--frames-per-block must be in [1, 31]");
   }
   return opts;
 }

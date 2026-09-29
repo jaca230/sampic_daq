@@ -1,0 +1,62 @@
+{
+  "scan": {
+    "frames_per_block": [31],
+    "triggers_per_event": [127],
+    "acquisition_schemes": ["l2_external_gate"],
+    "lecroy_rates_hz": [5000],
+    "enabled_channels": [25, 26, 27, 28, 29, 30, 31],
+    "repetitions": 5
+  },
+  "acquisition": {
+    "duration_s": 1,
+    "post_start_settle_s": 1,
+    "startup_waveform_hits": 5000,
+    "max_events": 100000,
+    "pipelined_decode": true,
+    "raw_queue_capacity": 128
+  },
+  "correlation": {
+    "hit_offset_ns": -470,
+    "auto_hit_offset": true,
+    "pre_window_ns": 500,
+    "post_window_ns": 500
+  },
+  "l2_gate": {
+    "primitive_gate_clocks": 10,
+    "latency_gate_clocks": 3,
+    "external_gate_clocks": 5
+  },
+  "drain": {
+    "quiet_ms": 100,
+    "timeout_s": 10
+  },
+  "retry": {
+    "max_point_retries": 5,
+    "delay_s": 2
+  },
+  "probe": {
+    "hardware_config": "config/double_pulse_deadtime_scan.default.json",
+    "lecroy_channel_a_defaults": {
+      "amplitude_v": 4.1,
+      "baseline_v": 0.0,
+      "width_ns": 4.0,
+      "lead_ns": 1.4,
+      "trail_ns": 1.0,
+      "double_pulse_enabled": false,
+      "delay_ns": 0
+    },
+    "lecroy_channel_b_defaults": {
+      "amplitude_v": 4.1,
+      "baseline_v": 0.0,
+      "width_ns": 30.0,
+      "lead_ns": 1.4,
+      "trail_ns": 1.0,
+      "double_pulse_enabled": false,
+      "delay_ns": 0
+    }
+  },
+  "output": {
+    "root_directory": "data/external_trigger_batching_scan/startup_waveform_probe"
+  },
+  "notes": "Five short 5 kHz L2+external-gate captures. Store the first 5000 hit waveforms to inspect pulse shape around inferred startup trigger gaps. A uses a 4 ns pulse for waveform visibility; B retains the robust 30 ns external-trigger pulse."
+}

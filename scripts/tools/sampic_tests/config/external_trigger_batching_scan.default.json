@@ -2,6 +2,7 @@
   "scan": {
     "frames_per_block": [31],
     "triggers_per_event": [127],
+    "acquisition_schemes": ["l2_external_gate", "self_trigger", "external"],
     "lecroy_rates_hz": [5000, 10000, 15000, 20000
     ],
     "repetitions": 1

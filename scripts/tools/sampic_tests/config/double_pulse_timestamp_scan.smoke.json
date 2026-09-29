@@ -1,0 +1,26 @@
+{
+  "hardware_config": "double_pulse_deadtime_scan.default.json",
+  "output_root": "/data01/pioneer/midas_sampic/sampic_daq/sampic_tests_data/double_pulse_timestamp_scan/smoke_test",
+  "rates_hz": [100.0],
+  "sampling_frequencies_mhz": [6400],
+  "separations_us": [10.0],
+  "board_index": 0,
+  "channels": [25, 26, 27, 28, 29, 30, 31],
+  "sampic_threshold_v": 0.10,
+  "lecroy_channel": {
+    "amplitude_v": 1.0,
+    "baseline_v": 0.0,
+    "width_ns": 30.0,
+    "lead_ns": 1.4,
+    "trail_ns": 1.0
+  },
+  "crate_open_retry": {
+    "max_attempts": 6,
+    "initial_delay_s": 2.0,
+    "backoff": 1.5
+  },
+  "repetitions": 1,
+  "acquisition_s": 1.0,
+  "drain_s": 0.1,
+  "max_captured_hits": 10000
+}

@@ -19,6 +19,7 @@ class LecroyOutputGate {
 
   void Enable();
   void Disable();
+  void DisableInOrder(const std::vector<std::string>& channel_order);
 
  private:
   void DisableNoThrow() noexcept;

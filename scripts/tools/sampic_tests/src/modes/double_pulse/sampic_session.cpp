@@ -169,11 +169,11 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
                                                 double duration_s,
                                                 volatile std::sig_atomic_t* stop_flag,
                                                 bool capture_hits,
-                                                std::vector<scan::HitRecord>* hits_out) {
+                                                std::vector<scan::HitRecord>* hits_out,
+                                                std::size_t max_captured_hits) {
   scan::SampleStats stats;
   EventStruct event{};
   auto last_timestamp_ns = std::optional<double>{};
-  constexpr std::size_t kMaxCapturedHits = 512;
   std::size_t captured_hits = 0;
   if (capture_hits && hits_out) {
     hits_out->clear();
@@ -235,6 +235,8 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
       stats.total_bytes += event_bytes;
       ++stats.events;
       stats.total_hits += static_cast<std::size_t>(hits);
+      stats.external_trigger_records += static_cast<std::size_t>(
+          std::max(0, event.TriggerData.NbOfTriggers));
       for (int i = 0; i < hits; ++i) {
         const double timestamp = event.Hit[i].FirstCellTimeStamp;
         stats.channel_hit_counts[{event.Hit[i].FeBoardIndex, event.Hit[i].Channel}] += 1;
@@ -247,9 +249,9 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
         last_timestamp_ns = timestamp;
       }
 
-      if (capture_hits && hits_out && captured_hits < kMaxCapturedHits) {
+      if (capture_hits && hits_out && captured_hits < max_captured_hits) {
         const int to_copy = std::min(hits, MAX_EXPECTED_FRAMES);
-        for (int i = 0; i < to_copy && captured_hits < kMaxCapturedHits; ++i) {
+        for (int i = 0; i < to_copy && captured_hits < max_captured_hits; ++i) {
           scan::HitRecord rec;
           rec.board = event.Hit[i].FeBoardIndex;
           rec.sampic = event.Hit[i].SampicIndex;
@@ -258,6 +260,16 @@ scan::SampleStats SampicSession::acquire_sample(const ReadoutConfig& readout_cfg
           rec.baseline = event.Hit[i].Baseline;
           rec.tot_ns = event.Hit[i].TOTValue;
           rec.first_cell_ts_ns = event.Hit[i].FirstCellTimeStamp;
+          rec.trigger_position_cell =
+              event.Hit[i].AdvancedParams.FirstTriggerPositionCell;
+          rec.adc_corrected = event.Hit[i].ADCCorrected;
+          rec.inl_corrected = event.Hit[i].INLCorrected;
+          rec.residual_pedestal_corrected = event.Hit[i].ResidualPedestalCorrected;
+          const int sample_count = std::clamp(event.Hit[i].DataSize, 0, MAX_NB_OF_SAMPLES);
+          rec.corrected_samples.assign(event.Hit[i].CorrectedDataSamples,
+                                       event.Hit[i].CorrectedDataSamples + sample_count);
+          rec.raw_samples.assign(event.Hit[i].OrderedRawDataSamples,
+                                 event.Hit[i].OrderedRawDataSamples + sample_count);
           hits_out->push_back(rec);
           ++captured_hits;
         }

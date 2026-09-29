@@ -1,0 +1,15 @@
+{
+  "hardware_config": "double_pulse_deadtime_scan.default.json",
+  "output_root": "/data01/pioneer/midas_sampic/sampic_daq/sampic_tests_data/lecroy_routing_probe",
+  "rates_hz": [100.0, 1000.0, 10000.0],
+  "thresholds_v": [0.05, 0.10, 0.20],
+  "a_amplitude_v": 1.0,
+  "phase_duration_s": 2.0,
+  "crate_open_retry": {
+    "max_attempts": 6,
+    "initial_delay_s": 2.0,
+    "backoff": 1.5
+  },
+  "board_index": 0,
+  "channels": [25, 26, 27, 28, 29, 30, 31]
+}

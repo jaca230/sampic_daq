@@ -47,7 +47,8 @@ class SampicSession {
                                    double duration_s,
                                    volatile std::sig_atomic_t* stop_flag,
                                    bool capture_hits = false,
-                                   std::vector<scan::HitRecord>* hits_out = nullptr);
+                                   std::vector<scan::HitRecord>* hits_out = nullptr,
+                                   std::size_t max_captured_hits = 512);
 
  private:
   void initialise_connection();

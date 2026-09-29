@@ -1,0 +1,24 @@
+{
+  "crates": [
+    {
+      "name": "crate_n2",
+      "ip": "192.168.0.14",
+      "port": 27014,
+      "calibration_dir": "/home/pioneer/Crate_PIONEER_N2_LPNHE",
+      "disabled_hot_channels": ["0:16", "0:17", "0:18", "0:20", "0:21", "0:22", "0:23", "3:32", "3:33", "3:35", "3:44", "3:46", "3:47"]
+    },
+    {
+      "name": "crate_n1",
+      "ip": "192.168.0.13",
+      "port": 27013,
+      "calibration_dir": "/home/pioneer/Crate_PIONEER_N1_LPNHE",
+      "disabled_hot_channels": ["0:3", "0:14", "0:15", "3:50", "3:51", "3:52"]
+    }
+  ],
+  "period_ticks": 6250,
+  "pulser_width_ticks": 2,
+  "threshold_v": 0.1,
+  "duration_s": 3,
+  "output_root": "/data01/pioneer/midas_sampic/sampic_daq/sampic_tests_data/internal_pulser_channel_discovery",
+  "notes": "For each crate, compare pulser OFF and ON with previously observed hot channels disabled. Use the vendor-example synchronous AUTO pulser setup and a 20 ns width."
+}

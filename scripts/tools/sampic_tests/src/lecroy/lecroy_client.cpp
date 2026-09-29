@@ -57,7 +57,7 @@ bool LecroyClient::IsChannelDisabled(const std::string& channel) {
   return response == "ON" || response == "1";
 }
 
-void LecroyClient::Configure(const LecroyConfig& cfg) {
+void LecroyClient::Configure(const LecroyConfig& cfg, bool enable_outputs) {
   config_ = cfg;
   EnsureConnected();
   SendCommand("*CLS");
@@ -65,7 +65,7 @@ void LecroyClient::Configure(const LecroyConfig& cfg) {
   SendCommand("TRSL " + config_.trigger_slope);
   SendCommand("TROV " + FormatScientific(config_.trigger_level_volts));
   SendCommand("FREQ " + FormatScientific(config_.frequency_hz));
-  ApplyChannelConfig();
+  ApplyChannelConfig(enable_outputs);
   SetDoublePulseDelay(config_.initial_delay_ns);
 }
 
@@ -116,6 +116,31 @@ void LecroyClient::SetAmplitude(double amplitude_v) {
   if (config_.settle_delay_s > 0.0) {
     std::this_thread::sleep_for(std::chrono::duration<double>(config_.settle_delay_s));
   }
+}
+
+void LecroyClient::SetChannelAmplitude(const std::string& channel,
+                                       double amplitude_v) {
+  if (amplitude_v <= 0.0) {
+    throw std::runtime_error("Lecroy amplitude must be positive");
+  }
+  EnsureConnected();
+  SendCommand(channel + ":AMP " + FormatScientific(amplitude_v));
+}
+
+void LecroyClient::SetChannelPulseParameters(
+    const std::string& channel,
+    const LecroyChannelConfig& parameters,
+    double delay_ns) {
+  EnsureConnected();
+  const std::string prefix = channel + ":";
+  SendCommand(prefix + "AMP " + FormatScientific(parameters.amplitude_v));
+  SendCommand(prefix + "BASE " + FormatScientific(parameters.baseline_v));
+  SendCommand(prefix + "WID " + FormatScientific(parameters.width_ns * 1e-9));
+  SendCommand(prefix + "LEAD " + FormatScientific(parameters.lead_ns * 1e-9));
+  SendCommand(prefix + "TRAIL " + FormatScientific(parameters.trail_ns * 1e-9));
+  SendCommand(prefix + "DBL " +
+              std::string(parameters.double_pulse_enabled ? "ON" : "OFF"));
+  SendCommand(prefix + "DEL " + FormatScientific(delay_ns * 1e-9));
 }
 
 void LecroyClient::Trigger() {
@@ -183,7 +208,7 @@ void LecroyClient::SendCommand(const std::string& command) {
   }
 }
 
-void LecroyClient::ApplyChannelConfig() {
+void LecroyClient::ApplyChannelConfig(bool enable_outputs) {
   const auto& ch = config_.channel;
   std::vector<std::string> channels = config_.channels;
   if (channels.empty()) {
@@ -199,7 +224,7 @@ void LecroyClient::ApplyChannelConfig() {
     SendCommand(prefix + "OUT " + std::string(ch.output_main ? "ON" : "OFF"));
     SendCommand(prefix + "OUTB " + std::string(ch.output_inverse ? "ON" : "OFF"));
     SendCommand(prefix + "DBL " + std::string(ch.double_pulse_enabled ? "ON" : "OFF"));
-    SendCommand(prefix + "DISA OFF");
+    SendCommand(prefix + "DISA " + std::string(enable_outputs ? "OFF" : "ON"));
   }
 }
 

@@ -243,11 +243,15 @@ them; older supplied binaries declare these APIs in the header but do not export
 the symbols, and the metadata reports the counters as unavailable.
 
 The batching grid is defined in
-`config/external_trigger_batching_scan.default.json`. Its default rate grid has
-35 points: 100 Hz and 500 Hz controls, 300 Hz spacing from 1 through 10 kHz,
-and bounding points at 15 and 20 kHz. Every waveform/trigger batching
-combination is repeated twice. From `scripts/tools/sampic_tests`, validate the
-effective grid without connecting to either instrument using:
+`config/external_trigger_batching_scan.default.json`. The `acquisition_schemes`
+dimension accepts `l2_external_gate`, `self_trigger`, and `external`. The first uses channel
+self-trigger primitives followed by L2/external-gate coincidence; the latter
+disables L2 building and gate coincidence while leaving the external-trigger
+counter enabled for offline comparison. The additional `external` scheme puts
+every enabled channel in external-trigger mode, disables L2/gate coincidence,
+and reads every channel on each external trigger. All schemes use the same
+generator, channel, rate, and packetization grid. From `scripts/tools/sampic_tests`,
+validate the effective grid without connecting to either instrument using:
 
 ```bash
 scripts/helpers/external_trigger_batching_scan.sh --dry-run
@@ -262,8 +266,11 @@ settings. Each invocation uses a timestamped directory below the configured
 output root unless an exact `--output-dir` is supplied.
 
 Each grid point has its own normal probe export and `run.log`. Before every
-point, the probe inhibits the generator output, programs the requested rate,
-and saves the generator readback in `metadata.json`. Offline association also
+point, the persistent batching runner inhibits both Lecroy A (analog test
+pulse) and B (external gate), programs the requested rate, then re-enables both
+for the active capture. At cutoff it inhibits both outputs before draining, so
+plain self-trigger runs cannot continue acquiring A pulses during the drain.
+The generator readback is saved in `metadata.json`. Offline association also
 estimates the narrow hit/trigger offset independently for every capture. Add
 `--resume` to continue the newest scan below the configured output root and
 skip completed points after an interruption; combine it with `--output-dir` to
@@ -287,6 +294,17 @@ scripts/helpers/screen_external_trigger_batching_scan.sh \
   --config config/external_trigger_batching_scan.default.json
 ```
 
+For a short hardware validation of the dedicated receiver lifecycle, use the
+three-point, seven-channel smoke configuration:
+
+```bash
+scripts/helpers/external_trigger_batching_scan.sh \
+  --config config/external_trigger_dedicated_receiver_smoke.json
+```
+
+It captures two seconds at 1 kHz for each acquisition scheme, does not retry a
+failed point, and writes beneath `data/external_trigger_batching_scan/dedicated_receiver_smoke`.
+
 The launcher prints the screen attach command and log path. Detach with
 `Ctrl-A`, then `D`. While attached, one `Ctrl-C` requests a graceful stop: the
 active grid point continues through capture, Lecroy-output inhibition, queued
@@ -295,11 +313,17 @@ point. Rerun with `--resume` to continue. The scan prints a projected finish
 time before each point and updates its elapsed time, average point duration,
 and ETA after each completed point.
 
+For a compact, hardware-focused map suitable for review with the SAMPIC team,
+see [`SAMPIC_ACQUISITION_PROCEDURE.md`](SAMPIC_ACQUISITION_PROCEDURE.md). It
+identifies where vendor settings are applied, where runs start/read/stop, and
+the exact per-point sequence without the scan/reporting machinery.
+
 Open `notebooks/external_trigger_batching_scan.ipynb` for heatmaps of trigger
 capture, populated-trigger fraction, accepted hit rate, decoded throughput,
 association efficiency, and the longest empty-trigger run. When repetitions
 are present, the notebook also reports the mean, standard deviation, and sample
-count at every grid point.
+count at every grid point. Results are grouped by acquisition scheme so gated
+and plain-self-trigger captures are never averaged together.
 
 For the independent-stream configuration described in the email chain, call
 `trigger_probe.sh` directly with `--self-trigger-channels --all-channels` and
@@ -330,6 +354,38 @@ inspect the default `latest` export. Change `RUN_DIR_OVERRIDE` in the first code
 cell to compare a named run. The notebook includes a complete empty/populated
 trigger timeline and a zoom connecting the first 98 hit records to their
 nearest triggers while retaining intervening empty triggers.
+
+### Self-trigger double-pulse timestamp scan
+
+This scan checks whether decoded self-trigger hit timestamps reproduce a known
+Lecroy double-pulse delay. The default short scan uses 100 Hz and separations
+from 5 through 500 us. Each point exports every active and drain-phase hit to
+CSV plus one row in `summary.csv` containing the measured short-interval median,
+spread, and measured/requested ratio.
+
+The hardware sequence for every point is: inhibit Lecroy output, program rate
+and separation, apply self-trigger SAMPIC settings, start the SAMPIC run, enable
+Lecroy output, acquire, inhibit output, drain, then stop the run.
+
+Build and inspect the scan without contacting hardware:
+
+```bash
+cmake --build scripts/tools/sampic_tests/build \
+  --target double_pulse_timestamp_scan -j2
+scripts/tools/sampic_tests/scripts/helpers/double_pulse_timestamp_scan.sh --dry-run
+```
+
+Run the short scan:
+
+```bash
+scripts/tools/sampic_tests/scripts/helpers/double_pulse_timestamp_scan.sh
+```
+
+Edit `config/double_pulse_timestamp_scan.default.json` to change rates,
+separations, repetitions, acquisition duration, or output location. The linked
+hardware configuration supplies the crate endpoint, calibration directory,
+threshold, sampling frequency, selected self-trigger channels, and Lecroy pulse
+shape.
 
 ### Gated versus ungated channel-rate comparison
 

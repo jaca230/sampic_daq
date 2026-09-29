@@ -2,7 +2,13 @@
   "scan": {
     "frames_per_block": [31],
     "triggers_per_event": [127],
-    "lecroy_rates_hz": [5000, 10000, 15000, 20000],
+    "acquisition_schemes": ["l2_external_gate", "self_trigger", "external"],
+    "lecroy_rates_hz": [
+        500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000,
+        5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000,
+        10500, 11000, 11500, 12000, 12500, 13000, 13500, 14000, 14500, 15000,
+        15500, 16000, 16500, 17000, 17500, 18000, 18500, 19000, 19500, 20000
+    ],
     "repetitions": 1
   },
   "acquisition": {
@@ -34,7 +40,7 @@
     "hardware_config": "config/double_pulse_deadtime_scan.default.json"
   },
   "output": {
-    "root_directory": "data/external_trigger_batching_scan/pipelined_short_test"
+    "root_directory": "data/external_trigger_batching_scan/pipelined_short_test_3"
   },
-  "notes": "Separate receiver and decoder threads with a bounded raw-frame queue."
+  "notes": "Separate receiver and decoder threads with a bounded raw-frame queue. Lecroy A and B are both inhibited before startup and drain."
 }

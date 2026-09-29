@@ -1,9 +1,9 @@
 {
   "connection": {
-    "ip": "192.168.0.4",
-    "port": 27015,
+    "ip": "192.168.0.14",
+    "port": 27014,
     "load_calibration": true,
-    "calibration_dir": "resources/calib",
+    "calibration_dir": "/home/pioneer/Crate_PIONEER_N2_LPNHE",
     "threshold_volts": 0.1,
     "use_external_clock": false,
     "use_external_trigger": false

@@ -26,6 +26,7 @@ struct SeparationAccumulator {
 struct SampleStats {
   std::size_t events = 0;
   std::size_t total_hits = 0;
+  std::size_t external_trigger_records = 0;
   std::size_t total_bytes = 0;
   std::size_t retries = 0;
   std::size_t decode_errors = 0;
@@ -47,6 +48,12 @@ struct HitRecord {
   double baseline = 0.0;
   double tot_ns = 0.0;
   double first_cell_ts_ns = 0.0;
+  int trigger_position_cell = 0;
+  bool adc_corrected = false;
+  bool inl_corrected = false;
+  bool residual_pedestal_corrected = false;
+  std::vector<float> corrected_samples;
+  std::vector<unsigned short> raw_samples;
 };
 
 struct SampleResult {

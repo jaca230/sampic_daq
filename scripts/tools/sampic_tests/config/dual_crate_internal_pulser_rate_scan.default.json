@@ -1,0 +1,38 @@
+{
+  "crates": [
+    {
+      "name": "crate_n2",
+      "ip": "192.168.0.14",
+      "port": 27014,
+      "calibration_dir": "/home/pioneer/Crate_PIONEER_N2_LPNHE"
+    },
+    {
+      "name": "crate_n1",
+      "ip": "192.168.0.13",
+      "port": 27013,
+      "calibration_dir": "/home/pioneer/Crate_PIONEER_N1_LPNHE"
+    }
+  ],
+  "common_channel_count": 7,
+  "common_excluded_channels": ["0:3", "0:14", "0:15", "0:16", "0:17", "0:18", "0:20", "0:21", "0:22", "0:23", "3:32", "3:33", "3:35", "3:44", "3:46", "3:47", "3:50", "3:51", "3:52"],
+  "pulser_points": [
+    {"nominal_rate_hz": 250, "period_ticks": 8000},
+    {"nominal_rate_hz": 500, "period_ticks": 4000},
+    {"nominal_rate_hz": 1000, "period_ticks": 2000},
+    {"nominal_rate_hz": 2000, "period_ticks": 1000},
+    {"nominal_rate_hz": 4000, "period_ticks": 500},
+    {"nominal_rate_hz": 6000, "period_ticks": 334},
+    {"nominal_rate_hz": 8000, "period_ticks": 250},
+    {"nominal_rate_hz": 10000, "period_ticks": 200},
+    {"nominal_rate_hz": 15000, "period_ticks": 134},
+    {"nominal_rate_hz": 20000, "period_ticks": 100}
+  ],
+  "pulser_width_ticks": 2,
+  "frames_per_block": 31,
+  "threshold_v": 0.1,
+  "duration_s": 2,
+  "max_point_attempts": 3,
+  "retry_delay_s": 1,
+  "output_root": "/data01/pioneer/midas_sampic/sampic_daq/sampic_tests_data/dual_crate_internal_pulser_rate_scan",
+  "notes": "At each internal-pulser period, run N2 alone, N1 alone, then both crates concurrently in separate processes. Enable the same seven FEB/channel identities outside the union of hot channels observed on either crate, matching the multiplicity of earlier studies. For operational analysis use the empirically validated rate conversion rate_hz = 2e6 / period_ticks. Period ticks must be even because odd values reproducibly produce zero pulses. Use synchronous AUTO pulser mode, 20 ns width, and 31 frames per block. Leave external-trigger records/event at its default because this is a self-trigger scan. Retry transport/setup failures and zero-hit captures."
+}

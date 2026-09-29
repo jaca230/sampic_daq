@@ -44,9 +44,13 @@ class LecroyClient {
   void Reconnect();
   void SetChannelDisabled(const std::string& channel, bool disabled);
   bool IsChannelDisabled(const std::string& channel);
-  void Configure(const LecroyConfig& config);
+  void Configure(const LecroyConfig& config, bool enable_outputs = true);
   void SetDoublePulseDelay(double delay_ns);
   void SetFrequency(double frequency_hz);
+  void SetChannelAmplitude(const std::string& channel, double amplitude_v);
+  void SetChannelPulseParameters(const std::string& channel,
+                                 const LecroyChannelConfig& parameters,
+                                 double delay_ns);
   void SetAmplitude(double amplitude_v);
   void Trigger();
   std::string Query(const std::string& command);
@@ -55,7 +59,7 @@ class LecroyClient {
   void EnsureConnected();
   void Disconnect();
   void SendCommand(const std::string& command);
-  void ApplyChannelConfig();
+  void ApplyChannelConfig(bool enable_outputs = true);
 
   LecroyConfig config_{};
   int socket_fd_ = -1;

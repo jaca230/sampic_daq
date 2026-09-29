@@ -1,0 +1,28 @@
+{
+  "crates": [
+    {
+      "name": "crate_n2",
+      "ip": "192.168.0.14",
+      "port": 27014,
+      "calibration_dir": "/home/pioneer/Crate_PIONEER_N2_LPNHE"
+    },
+    {
+      "name": "crate_n1",
+      "ip": "192.168.0.13",
+      "port": 27013,
+      "calibration_dir": "/home/pioneer/Crate_PIONEER_N1_LPNHE"
+    }
+  ],
+  "internal_pulser": {
+    "period_ticks": 6400,
+    "threshold_v": 0.1,
+    "duration_s": 3
+  },
+  "external_trigger": {
+    "lecroy_rate_hz": 100,
+    "duration_s": 2,
+    "enabled_channels": [25]
+  },
+  "output_root": "/data01/pioneer/midas_sampic/sampic_daq/sampic_tests_data/dual_crate_capability_probe",
+  "notes": "Phase 1 runs independent internal-pulser acquisitions concurrently. Phase 2 tests Lecroy external-trigger reception sequentially to prevent generator-control races."
+}
