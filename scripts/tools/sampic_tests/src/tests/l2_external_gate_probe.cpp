@@ -46,7 +46,7 @@ struct Config {
   int sampling_mhz = 6400;
   float threshold_volts = 0.1F;
   bool load_calibration = false;
-  std::string calibration_dir = "resources/calib";
+  std::string calibration_dir = "resources/calib/Crate_PIONEER_N1_LPNHE";
   unsigned char primitive_gate_clocks = 10;
   unsigned char latency_gate_clocks = 3;
   unsigned char external_gate_clocks = 5;

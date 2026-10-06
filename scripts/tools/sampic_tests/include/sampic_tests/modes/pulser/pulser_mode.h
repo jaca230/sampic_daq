@@ -13,7 +13,7 @@ struct PulserRateOptions {
   std::string ip = "192.168.0.4";
   int port = 27015;
   bool load_calibration = true;
-  std::string calibration_dir = "resources/calib";
+  std::string calibration_dir = "resources/calib/Crate_PIONEER_N1_LPNHE";
   bool pulser_sync = true;
   bool pulser_enabled = true;
   int pulser_period_ticks = 6400;

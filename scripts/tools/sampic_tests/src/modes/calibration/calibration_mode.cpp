@@ -440,7 +440,7 @@ CalibrationCheckOptions CalibrationMode::parse_args(int argc, char** argv) {
                 << "  --prepare-interval <n>   Re-send prepare after N loops\n"
                 << "  --max-loops <n>          Retry limit while reading frames\n"
                 << "  --retry-us <µs>          Sleep between retries (default 100)\n"
-                << "  --calibration-dir <dir>  Calibration directory (default resources/calib)\n"
+                << "  --calibration-dir <dir>  Calibration directory (default repository N1)\n"
                 << "  --no-calibration         Skip loading calibration files\n"
                 << "  --quiet                  Suppress ancillary output\n";
       std::exit(0);

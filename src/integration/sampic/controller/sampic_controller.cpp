@@ -154,15 +154,17 @@ void SampicController::cleanup() {
 // ---------------- Collector ----------------
 void SampicController::startCollector() {
     if (collector_ && !collector_running_) {
-        collector_->start();
+        collector_->start([this] { return stopRun(); });
         collector_running_ = true;
     }
 }
-void SampicController::stopCollector() {
+int SampicController::stopCollector() {
     if (collector_ && collector_running_) {
-        collector_->stop();
+        const int result = collector_->stop();
         collector_running_ = false;
+        return result;
     }
+    return 0;
 }
 
 // ---------------- Buffer access ----------------

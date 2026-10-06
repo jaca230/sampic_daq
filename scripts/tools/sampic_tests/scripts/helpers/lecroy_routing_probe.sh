@@ -13,7 +13,7 @@ if [[ ! -x "$BINARY" ]]; then
   exit 1
 fi
 
-RUNTIME_LIB_PATH="$REPO_ROOT/external/sampic_256ch_lib/lib:$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
+RUNTIME_LIB_PATH="$REPO_ROOT/build/lib:$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
 export LD_LIBRARY_PATH="$RUNTIME_LIB_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 has_config=false

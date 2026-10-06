@@ -84,7 +84,7 @@ EQUIPMENT equipment[] = {
           100,
           0,
           0,
-          TRUE,
+          FALSE,
           "", "", "", },
         nullptr
     },
@@ -181,13 +181,13 @@ INT begin_of_run(INT, char *error) {
 
         // --- Start everything
         start_event_writer();
-        runtime.controller->startCollector();
         const int start_status = runtime.controller->startRun();
         if (start_status != 0) {
             std::snprintf(error, 256, "Failed to start SAMPIC run (err=%d)", start_status);
             request_fatal_shutdown(error);
             return FE_ERR_HW;
         }
+        runtime.controller->startCollector();
 
         if (runtime.collector)
             runtime.collector->start();
@@ -221,10 +221,10 @@ INT end_of_run(INT, char *error) {
 
         int stop_status = 0;
         if (runtime.controller) {
-            // Stop capture first while the SAMPIC collector is still able to
-            // finish its current vendor-library read, then join that worker.
-            stop_status = runtime.controller->stopRun();
-            runtime.controller->stopCollector();
+            // The collector thread owns vendor acquisition calls. Request its
+            // shutdown and wait: after finishing its current read/decode, that
+            // same thread calls SAMPIC256CH_StopRun() before it exits.
+            stop_status = runtime.controller->stopCollector();
         }
 
         if (runtime.collector && !runtime.collector->drain()) {

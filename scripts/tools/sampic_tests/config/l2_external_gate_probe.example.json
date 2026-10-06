@@ -3,7 +3,7 @@
     "ip": "192.168.0.4",
     "port": 27015,
     "load_calibration": false,
-    "calibration_dir": "resources/calib"
+    "calibration_dir": "resources/calib/Crate_PIONEER_N1_LPNHE"
   },
   "acquisition": {
     "board": 0,

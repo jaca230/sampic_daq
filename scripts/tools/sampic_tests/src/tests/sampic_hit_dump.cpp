@@ -24,7 +24,7 @@ std::string g_ip = "192.168.0.4";
 int g_port = 27015;
 bool g_use_self_trigger = false;
 bool g_skip_calibration = false;
-std::string g_calib_dir = "resources/calib";
+std::string g_calib_dir = "resources/calib/Crate_PIONEER_N1_LPNHE";
 int g_events_to_read = 10;
 bool g_connected = false;
 
@@ -34,7 +34,7 @@ void usage(const char* prog) {
             << "  --port <port>         Crate port (default 27015)\n"
             << "  --self-trigger        Force SAMPIC self-trigger mode instead of external\n"
             << "  --no-calibration      Skip loading calibration files\n"
-            << "  --calibration-dir <d> Calibration directory (default resources/calib)\n"
+            << "  --calibration-dir <d> Calibration directory (default repository N1)\n"
             << "  --events <n>          Number of events to read (default 10)\n";
 }
 

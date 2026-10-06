@@ -3,7 +3,7 @@
     "ip": "192.168.0.4",
     "port": 27015,
     "load_calibration": true,
-    "calibration_dir": "resources/calib",
+    "calibration_dir": "resources/calib/Crate_PIONEER_N1_LPNHE",
     "threshold_volts": 0.1,
     "use_external_clock": false,
     "use_external_trigger": false

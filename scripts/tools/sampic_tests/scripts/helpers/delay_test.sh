@@ -5,7 +5,7 @@ SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PROJECT_DIR=$(realpath "$SCRIPT_DIR/../..")
 BUILD_DIR="$PROJECT_DIR/build"
 REPO_ROOT=$(realpath "$SCRIPT_DIR/../../../../..")
-VENDOR_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lib"
+VENDOR_LIB_DIR="$REPO_ROOT/build/lib"
 LPDEVC_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
 BINARY="$BUILD_DIR/bin/delay_separation_test"
 

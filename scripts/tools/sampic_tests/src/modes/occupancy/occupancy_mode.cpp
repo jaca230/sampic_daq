@@ -6,9 +6,11 @@
 #include <csignal>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <sstream>
@@ -140,8 +142,6 @@ class OccupancySession {
     check(SAMPIC256CH_SetChannelMode(&info_, &params_, ALL_FE_BOARDs, ALL_CHANNELs, FALSE),
           "DisableAllChannels");
     for (int board : enabled_boards_) {
-      check(SAMPIC256CH_SetChannelMode(&info_, &params_, board, ALL_CHANNELs, TRUE),
-            "EnableBoardChannels");
       check(SAMPIC256CH_SetSampicChannelTriggerMode(&info_, &params_, board, ALL_SAMPICs,
                                                     ALL_CHANNELs,
                                                     SAMPIC_CHANNEL_SELF_TRIGGER_MODE),
@@ -157,6 +157,24 @@ class OccupancySession {
                 static_cast<float>(opts_.threshold)),
             "SetThreshold");
     }
+    if (opts_.enabled_channels.empty()) {
+      for (int board : enabled_boards_) {
+        check(SAMPIC256CH_SetChannelMode(&info_, &params_, board, ALL_CHANNELs, TRUE),
+              "EnableBoardChannels");
+      }
+    } else {
+      for (const auto& [board, channel] : opts_.enabled_channels) {
+        if (std::find(enabled_boards_.begin(), enabled_boards_.end(), board) ==
+            enabled_boards_.end()) {
+          throw std::runtime_error("Requested channel belongs to unavailable FEB " +
+                                   std::to_string(board));
+        }
+        check(SAMPIC256CH_SetChannelMode(&info_, &params_, board, channel, TRUE),
+              "EnableChannel");
+      }
+    }
+    check(SAMPIC256CH_SetNbOfFramesPerBlock(&info_, &params_, opts_.frames_per_block),
+          "SetNbOfFramesPerBlock");
   }
 
  private:
@@ -248,7 +266,10 @@ AcquisitionSummary run_occupancy(OccupancySession& session,
   AcquisitionSummary summary;
   summary.events_requested = opts.events;
 
-  EventStruct event{};
+  // EventStruct is roughly 7.6 MiB with the current vendor headers. Keeping it
+  // on the default 8 MiB thread stack leaves too little room for this function
+  // and causes an immediate stack-overflow SIGSEGV before StartRun().
+  auto event = std::make_unique<EventStruct>();
   bool run_started = false;
   auto guard = [&]() {
     if (run_started) {
@@ -289,8 +310,13 @@ AcquisitionSummary run_occupancy(OccupancySession& session,
     int nframes = 0;
     int hits = 0;
     int loop_counter = 0;
+    bool acquisition_complete = false;
 
     while (err != SAMPIC256CH_Success) {
+      if (should_stop(std::chrono::steady_clock::now())) {
+        acquisition_complete = true;
+        break;
+      }
       err = SAMPIC256CH_ReadEventBuffer(&session.info(), 0, session.event_buffer(),
                                         session.frames(), &nframes);
       if (err == SAMPIC256CH_Success) {
@@ -298,7 +324,7 @@ AcquisitionSummary run_occupancy(OccupancySession& session,
           err = SAMPIC256CH_NoFrameRead;
         } else {
           err = SAMPIC256CH_DecodeEvent(&session.info(), &session.params(),
-                                        session.frames(), &event, nframes, &hits);
+                                        session.frames(), event.get(), nframes, &hits);
         }
       }
       if (err == SAMPIC256CH_AcquisitionError || err == SAMPIC256CH_ErrInvalidEvent) {
@@ -316,19 +342,23 @@ AcquisitionSummary run_occupancy(OccupancySession& session,
       }
     }
 
+    if (acquisition_complete) break;
+
     summary.events_recorded++;
     summary.total_hits += static_cast<std::size_t>(hits);
     const int capped_hits = std::min(hits, MAX_EXPECTED_FRAMES);
     for (int i = 0; i < capped_hits; ++i) {
-      const auto& hit = event.Hit[i];
+      const auto& hit = event->Hit[i];
       ChannelKey key{hit.FeBoardIndex, hit.SampicIndex, hit.Channel};
       summary.counts[key]++;
     }
   }
 
+  // StopRun performs buffer purging and hardware resets. That cleanup can take
+  // hundreds of milliseconds and is not part of the acquisition live time.
+  const auto t_end = std::chrono::steady_clock::now();
+  summary.duration_s = std::chrono::duration<double>(t_end - t_begin).count();
   guard();
-  summary.duration_s =
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - t_begin).count();
   return summary;
 }
 
@@ -355,12 +385,14 @@ void print_summary(const AcquisitionSummary& summary, const Options& opts) {
 
   const double divisor =
       static_cast<double>(summary.events_recorded > 0 ? summary.events_recorded : 1);
+  const double elapsed = summary.duration_s > 0.0 ? summary.duration_s : 1.0;
   std::cout << "\nChannel hits (sorted by FEB/SAMPIC/channel):\n";
   for (const auto& [key, hits] : entries) {
     const double per_event = static_cast<double>(hits) / divisor;
+    const double rate_hz = static_cast<double>(hits) / elapsed;
     std::cout << "  FEB " << key.feb << " Sampic " << key.sampic << " Ch " << key.channel
               << ": " << hits << " hits (" << std::fixed << std::setprecision(3)
-              << per_event << " / event)\n";
+              << per_event << " / event, " << rate_hz << " Hz)\n";
   }
 }
 
@@ -371,9 +403,11 @@ nlohmann::json summary_to_json(const AcquisitionSummary& summary, const Options&
       {"events_recorded", summary.events_recorded},
       {"total_hits", summary.total_hits},
       {"duration_s", summary.duration_s},
+      {"frames_per_block", opts.frames_per_block},
   };
   const double divisor =
       static_cast<double>(summary.events_recorded > 0 ? summary.events_recorded : 1);
+  const double elapsed = summary.duration_s > 0.0 ? summary.duration_s : 1.0;
   nlohmann::json channels = nlohmann::json::array();
   for (const auto& [key, hits] : summary.counts) {
     nlohmann::json entry{
@@ -382,6 +416,7 @@ nlohmann::json summary_to_json(const AcquisitionSummary& summary, const Options&
         {"channel", key.channel},
         {"hits", hits},
         {"hits_per_event", static_cast<double>(hits) / divisor},
+        {"hit_rate_hz", static_cast<double>(hits) / elapsed},
     };
     channels.push_back(entry);
   }
@@ -416,6 +451,14 @@ int ChannelOccupancyMode::run(int argc, char** argv) {
     auto json = summary_to_json(summary, opts);
     std::cout << json.dump(2) << "\n";
   }
+  if (!opts.json_output_path.empty()) {
+    std::ofstream output(opts.json_output_path);
+    if (!output) {
+      throw std::runtime_error("Unable to open JSON output file: " +
+                               opts.json_output_path);
+    }
+    output << summary_to_json(summary, opts).dump(2) << "\n";
+  }
   return 0;
 }
 
@@ -442,6 +485,23 @@ ChannelOccupancyOptions ChannelOccupancyMode::parse_args(int argc, char** argv) 
       opts.duration_s = std::stod(require_value(arg));
     } else if (arg == "--threshold") {
       opts.threshold = std::stod(require_value(arg));
+    } else if (arg == "--frames-per-block") {
+      opts.frames_per_block = std::stoi(require_value(arg));
+    } else if (arg == "--enable-channel") {
+      const std::string value = require_value(arg);
+      const auto separator = value.find(':');
+      if (separator == std::string::npos) {
+        throw std::runtime_error("--enable-channel expects FEB:CHANNEL");
+      }
+      const std::pair<int, int> selected{
+          std::stoi(value.substr(0, separator)),
+          std::stoi(value.substr(separator + 1))};
+      if (selected.first < 0 || selected.first >= MAX_NB_OF_FE_BOARDS ||
+          selected.second < 0 || selected.second >= 64) {
+        throw std::runtime_error(
+            "--enable-channel requires FEB 0..3 and channel 0..63");
+      }
+      opts.enabled_channels.push_back(selected);
     } else if (arg == "--prepare-interval") {
       opts.prepare_interval = std::stoi(require_value(arg));
     } else if (arg == "--max-loops") {
@@ -454,22 +514,27 @@ ChannelOccupancyOptions ChannelOccupancyMode::parse_args(int argc, char** argv) 
       opts.load_calibration = false;
     } else if (arg == "--json") {
       opts.json_output = true;
+    } else if (arg == "--json-file") {
+      opts.json_output_path = require_value(arg);
     } else if (arg == "--quiet") {
       opts.quiet = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout << "Channel occupancy mode options:\n"
-                << "  --ip <addr>              Crate IP (default 192.168.0.4)\n"
-                << "  --port <port>            Crate port (default 27015)\n"
+                << "  --ip <addr>              Crate IP (default N1: 192.168.0.13)\n"
+                << "  --port <port>            Crate port (default N1: 27013)\n"
                 << "  --board <index>          Front-end board index (-1 = all)\n"
                 << "  --events <n>             Stop after N events (default 500)\n"
                 << "  --duration <sec>         Stop after duration seconds (0 = unlimited)\n"
-                << "  --threshold <volts>      Self-trigger threshold (default 0.02)\n"
+                << "  --threshold <volts>      Self-trigger threshold (default 0.1)\n"
+                << "  --frames-per-block <n>   Aggregate 1..31 frames/block (default 31)\n"
+                << "  --enable-channel F:C     Enable only this channel (repeatable)\n"
                 << "  --prepare-interval <n>   Re-send prepare after N read loops (default 100)\n"
                 << "  --max-loops <n>          Abort read loop after N retries (default 10000)\n"
                 << "  --retry-us <µs>          Sleep between retries (default 100)\n"
                 << "  --no-calibration         Skip loading calibration files\n"
                 << "  --calibration-dir <dir>  Calibration directory\n"
                 << "  --json                   Emit JSON summary\n"
+                << "  --json-file <file>       Write JSON summary directly to a file\n"
                 << "  --quiet                  Suppress human-readable summary/logs\n";
       std::exit(0);
     } else {
@@ -478,6 +543,9 @@ ChannelOccupancyOptions ChannelOccupancyMode::parse_args(int argc, char** argv) 
   }
   if (opts.events < 0) {
     throw std::runtime_error("--events must be non-negative");
+  }
+  if (opts.frames_per_block < 1 || opts.frames_per_block > 31) {
+    throw std::runtime_error("--frames-per-block must be in [1, 31]");
   }
   return opts;
 }

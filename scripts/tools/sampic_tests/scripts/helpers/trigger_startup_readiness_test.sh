@@ -11,5 +11,5 @@ if [[ ! -x "$BINARY" ]]; then
   exit 1
 fi
 
-export LD_LIBRARY_PATH="$REPO_ROOT/external/sampic_256ch_lib/lib:$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$REPO_ROOT/build/lib:$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$BINARY" "$@"

@@ -8,7 +8,8 @@ struct SampicInitSettingsModeDefaultConfig {
     int port = 27015;
     int connection_type = 1;
     int control_type = 1;
-    std::string calibration_directory = "resources/calib";
+    std::string calibration_directory =
+        "resources/calib/Crate_PIONEER_N1_LPNHE";
 };
 
 #endif

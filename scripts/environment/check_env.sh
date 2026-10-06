@@ -46,7 +46,7 @@ check_file() {
 if [ "${SAMPIC_SKIP_ACTIVE_ENV_CHECK:-0}" != "1" ] &&
    [ "${CONDA_PREFIX:-}" != "$SAMPIC_ENV_PREFIX" ]; then
     echo "[FAIL] active environment is not $SAMPIC_ENV_NAME"
-    echo "       Run: source scripts/setup_env.sh"
+    echo "       Run: source scripts/setup_env.sh --dev"
     failures=$((failures + 1))
 else
     echo "[OK]   environment    ${CONDA_PREFIX:-$SAMPIC_ENV_PREFIX}"

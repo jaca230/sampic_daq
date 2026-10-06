@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PROJECT_DIR=$(realpath "$SCRIPT_DIR/../..")
+REPO_ROOT=$(realpath "$PROJECT_DIR/../../..")
 CONFIG=${1:-"$PROJECT_DIR/config/dual_crate_capability_probe.default.json"}
 PULSER="$PROJECT_DIR/build/bin/sampic_deadtime_scan"
 BATCH_RUNNER="$SCRIPT_DIR/external_trigger_batching_scan.sh"
@@ -35,6 +36,7 @@ for index in 0 1; do
   ip=$(jq -r ".crates[$index].ip" "$CONFIG")
   port=$(jq -r ".crates[$index].port" "$CONFIG")
   calibration=$(jq -r ".crates[$index].calibration_dir" "$CONFIG")
+  [[ "$calibration" = /* ]] || calibration="$REPO_ROOT/$calibration"
   jq --arg ip "$ip" --arg calibration "$calibration" --argjson port "$port" \
     '.connection.ip=$ip | .connection.port=$port |
      .connection.calibration_dir=$calibration |
@@ -58,6 +60,7 @@ for index in 0 1; do
   ip=$(jq -r ".crates[$index].ip" "$CONFIG")
   port=$(jq -r ".crates[$index].port" "$CONFIG")
   calibration=$(jq -r ".crates[$index].calibration_dir" "$CONFIG")
+  [[ "$calibration" = /* ]] || calibration="$REPO_ROOT/$calibration"
   "$PULSER" --mode pulser-rate --ip "$ip" --port "$port" \
     --calibration-dir "$calibration" --period-ticks "$period" \
     --threshold "$threshold" --events 0 --duration "$duration" --quiet \

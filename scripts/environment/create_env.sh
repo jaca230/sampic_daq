@@ -12,7 +12,7 @@ show_help() {
     cat <<EOF
 Usage: ./scripts/environment/create_env.sh [OPTIONS]
 
-Create or update the project-local '$SAMPIC_ENV_NAME' micromamba environment.
+Create or update the project-local '$SAMPIC_ENV_NAME' developer environment.
 
 Options:
   --recreate    Remove and recreate only the managed environment prefix.
@@ -153,7 +153,7 @@ if [ "$RUN_CHECK" = true ]; then
         "$SAMPIC_MICROMAMBA" run \
         --name "$SAMPIC_ENV_NAME" \
         bash -c \
-        "source '$SAMPIC_PROJECT_ROOT/scripts/setup_env.sh' &&
+        "source '$SAMPIC_PROJECT_ROOT/scripts/setup_env.sh' --dev &&
          '$SCRIPT_DIRECTORY/check_env.sh'"
 fi
 
@@ -161,6 +161,6 @@ cat <<EOF
 
 Environment ready. Activate it in the current shell with:
 
-  source scripts/setup_env.sh
+  source scripts/setup_env.sh --dev
 
 EOF

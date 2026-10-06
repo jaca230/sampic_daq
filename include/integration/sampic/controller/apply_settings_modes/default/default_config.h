@@ -5,7 +5,8 @@
 
 struct SampicApplySettingsModeDefaultConfig {
     bool reload_calibration = false;
-    std::string calibration_directory = "resources/calib";
+    std::string calibration_directory =
+        "resources/calib/Crate_PIONEER_N1_LPNHE";
 };
 
 #endif

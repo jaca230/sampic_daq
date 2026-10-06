@@ -16,9 +16,25 @@ SAMPIC_REGISTER_MODE(
     "External-trigger timestamp windows",
     [](const FrontendCollectorModeExternalTriggerConfig& config) {
         if (config.pre_window_ns < 0 || config.post_window_ns < 0 ||
-            config.sampling_frequency_mhz <= 0) {
+            config.sampling_frequency_mhz <= 0 || config.wait_timeout_ms == 0) {
             throw std::invalid_argument(
-                "windows must be non-negative and sampling frequency positive");
+                "windows must be non-negative and frequencies/timeouts positive");
+        }
+    });
+
+// Explicit operational name for the same trigger-record association strategy.
+// Keep external_trigger registered for existing ODB trees.
+SAMPIC_REGISTER_MODE(
+    FrontendCollectorModeRegistry,
+    FrontendCollectorModeExternalTrigger,
+    FrontendCollectorModeExternalTriggerConfig,
+    "external_gated_trigger",
+    "External-gated trigger association",
+    [](const FrontendCollectorModeExternalTriggerConfig& config) {
+        if (config.pre_window_ns < 0 || config.post_window_ns < 0 ||
+            config.sampling_frequency_mhz <= 0 || config.wait_timeout_ms == 0) {
+            throw std::invalid_argument(
+                "windows must be non-negative and frequencies/timeouts positive");
         }
     });
 
@@ -31,7 +47,8 @@ FrontendCollectorModeExternalTrigger::FrontendCollectorModeExternalTrigger(
           mode_cfg_.hit_time_offset_ns,
           mode_cfg_.pre_window_ns,
           mode_cfg_.post_window_ns,
-          mode_cfg_.sampling_frequency_mhz) {
+          mode_cfg_.sampling_frequency_mhz),
+      wait_timeout_(mode_cfg_.wait_timeout_ms) {
     spdlog::info("External-trigger frontend collector initialized (hit offset={} ns, window=[-{}, +{}] ns)",
                  mode_cfg_.hit_time_offset_ns, mode_cfg_.pre_window_ns, mode_cfg_.post_window_ns);
 }
@@ -41,6 +58,8 @@ bool FrontendCollectorModeExternalTrigger::collect() {
     auto events = sampic_buffer_.getSince(last_timestamp_);
     if (events.empty()) return true;
     last_timestamp_ = events.back()->timestamp();
+    std::size_t produced_events = 0;
+    std::size_t produced_hits = 0;
     for (const auto& parent_ref : events) {
         if (!parent_ref || !parent_ref->data()) continue;
         const EventStruct& parent = *parent_ref->data();
@@ -83,8 +102,14 @@ bool FrontendCollectorModeExternalTrigger::collect() {
             timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
             frontend_event->addBank(std::move(timing_bank));
             frontend_buffer_.push(std::move(frontend_event));
+            ++produced_events;
+            produced_hits += assigned_hits.size();
         }
     }
     sampic_buffer_.pruneUpTo(last_timestamp_);
+    if (produced_events > 0) {
+        diagnostics_.produced(
+            produced_events, produced_hits, frontend_buffer_.size());
+    }
     return true;
 }

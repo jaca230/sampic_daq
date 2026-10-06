@@ -41,7 +41,8 @@ Options:
 - `--duration` – optional run duration in seconds (0 = no time limit).
 - `--threshold` – internal trigger threshold (volts, relative to baseline).
 - `--no-calibration` – skip loading calibration files.
-- `--calibration-dir` – override calibration lookup directory (default `resources/calib` relative to the current working dir).
+- `--calibration-dir` – override calibration lookup directory (default N1:
+  `resources/calib/Crate_PIONEER_N1_LPNHE`).
 - `--quiet` – suppress per-event log messages.
 
 The program prints aggregate statistics (events/second, average hits, decoder timings) plus the last MIDAS-style event summary for debugging.
@@ -68,10 +69,27 @@ Use the occupancy mode to grab a quick set of self-triggered events, but configu
 
 ```bash
 scripts/tools/sampic_tests/scripts/helpers/channel_occupancy_mode.sh \
-  --board 0 --events 200 --json
+  --ip 192.168.0.13 --port 27013 --board 0 --events 200 \
+  --calibration-dir resources/calib/Crate_PIONEER_N1_LPNHE \
+  --json
 ```
 
-This runs `sampic_deadtime_scan --mode occupancy`, which disables every FEB, enables the requested board, forces `SAMPIC_CHANNEL_SELF_TRIGGER_MODE` with a 0.1 V threshold, and then reports the hit count plus hits-per-event for each `(FEB, Sampic, Channel)` tuple. Pass `--skip-calibration`, `--calibration-dir /path`, `--duration`, `--threshold`, or `--json` to mirror the DAQ defaults while steering to the FEB that’s actually cabled.
+This runs `sampic_deadtime_scan --mode occupancy`, which disables every FEB, enables the requested board, forces `SAMPIC_CHANNEL_SELF_TRIGGER_MODE` with a 0.1 V threshold, and then reports the hit count, hits-per-event, and hit rate for each `(FEB, Sampic, Channel)` tuple. Pass `--no-calibration`, `--calibration-dir /path`, `--duration`, `--threshold`, or `--json` to mirror the DAQ defaults while steering to the FEB that’s actually cabled.
+
+For the two PIONEER crates, use the dual-crate wrapper:
+
+```bash
+scripts/tools/sampic_tests/scripts/helpers/dual_crate_channel_occupancy.sh \
+  --duration 10 --threshold 0.1 --min-rate 1
+```
+
+It uses `192.168.0.13:27013` for N1 and `192.168.0.14:27014` for N2,
+loads their calibration directories from `/home/pioneer/Pascal/sampic`, probes
+all FEBs, and prints observed channels ordered by hit rate. Results include the
+raw per-crate JSON, a combined JSON document, and `channel_rates.tsv`. Stop the
+MIDAS SAMPIC frontends first because this scan reconfigures every discovered
+channel into self-trigger mode. The `/bug` suffix used by `samreader` is an
+argument-parser workaround and must not be appended here.
 
 ### Board probe (experimental)
 
@@ -131,6 +149,27 @@ Highlights:
 - Run `scripts/tools/sampic_tests/scripts/helpers/lecroy/test.sh --config <json>` to push a configuration into the generator and read back its ID (`*IDN?`) without starting the SAMPIC run. Adding `--delay-ns <value>` lets you spot-check the double-pulse spacing interactively.
 - Need a no-config-file tweak? `scripts/tools/sampic_tests/scripts/helpers/lecroy/quick_set.py --frequency-hz 50 --channel A --width-ns 2.4` applies only the provided parameters and then prints a full readback so you can confirm the settings on the console.
 - `--list-modes` shows the currently built-in modes (`pulser-rate`, `crate-smoke`, `deadtime`, `double-pulse`) if you want to call the binary directly.
+
+### Live MIDAS Agilent rate search
+
+With frontend 00 connected to N1 and a MIDAS run already in progress, the
+Agilent-driven nine-channel setup can be scanned for the highest generator
+rate reproduced by the MIDAS equipment event rate:
+
+```bash
+python3 scripts/tools/sampic_tests/scripts/helpers/agilent_midas_rate_search.py
+```
+
+The default search covers 1--10 kHz, accepts a median settled event rate within
+10% of the programmed frequency, and stops with a 100 Hz passing/failing
+bracket. Each point settles for 5 seconds and is sampled for 8 seconds. Raw ODB
+samples, trial summaries, and the final boundary are written beneath
+`data/agilent_midas_rate_search/<UTC timestamp>/`. The initial generator rate
+is restored on exit; pass `--leave-at-best` to retain the highest passing rate.
+
+Useful overrides include `--tolerance`, `--settle-seconds`,
+`--measurement-seconds`, `--resolution-hz`, and `--frontend-index`.
+
 # L2 external-trigger gate probe
 
 `l2_external_gate_probe` is a standalone hardware test, not a MIDAS frontend mode.

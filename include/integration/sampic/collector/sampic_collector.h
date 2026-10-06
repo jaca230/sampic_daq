@@ -7,6 +7,7 @@
 #include "core/threading/polling_worker.h"
 
 #include <memory>
+#include <functional>
 #include <spdlog/spdlog.h>
 #include "core/config/config_store.h"
 
@@ -29,8 +30,8 @@ public:
                     std::string modes_root);
     ~SampicCollector();
 
-    void start();
-    void stop();
+    void start(std::function<int()> hardware_stop = {});
+    int stop();
     bool running() const { return worker_.running(); }
 
     /** @brief Update configuration; does not rebuild collector. */
@@ -51,6 +52,7 @@ private:
     CrateParamStruct& params_;
     void* eventBuffer_;
     ML_Frame* mlFrames_;
+    int last_stop_result_{0};
     std::string modes_root_;
 
     std::unique_ptr<SampicEventBuffer> buffer_;

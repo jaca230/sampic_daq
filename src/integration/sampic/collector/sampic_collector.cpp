@@ -55,16 +55,34 @@ int SampicCollector::applySettings(const ConfigStore& store) {
     }
 }
 
-void SampicCollector::start() {
+void SampicCollector::start(std::function<int()> hardware_stop) {
+    last_stop_result_ = 0;
     worker_.start(
         [this] { return mode_->collect(); },
         std::chrono::microseconds(cfg_.sleep_time_us),
         [this] {
             spdlog::info("SAMPIC Collector started (mode={})", cfg_.mode);
         },
-        [] { spdlog::info("SAMPIC Collector stopped"); });
+        [this, hardware_stop = std::move(hardware_stop)] {
+            if (hardware_stop) {
+                try {
+                    last_stop_result_ = hardware_stop();
+                } catch (const std::exception& error) {
+                    last_stop_result_ = -1;
+                    spdlog::error(
+                        "SAMPIC collector hardware-stop callback failed: {}",
+                        error.what());
+                } catch (...) {
+                    last_stop_result_ = -1;
+                    spdlog::error(
+                        "SAMPIC collector hardware-stop callback failed");
+                }
+            }
+            spdlog::info("SAMPIC Collector stopped");
+        });
 }
 
-void SampicCollector::stop() {
+int SampicCollector::stop() {
     worker_.stop();
+    return last_stop_result_;
 }

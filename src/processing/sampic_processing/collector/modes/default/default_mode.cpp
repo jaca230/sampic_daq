@@ -111,29 +111,11 @@ bool FrontendCollectorModeDefault::collect()
             }
 
             if (!placed) {
-                // Before creating new group, finalize old groups that are now too far away
-                // Any group whose hits are outside the time window from this new hit
-                // can never receive more hits, so finalize immediately
-                auto it = pending_groups_.begin();
-                while (it != pending_groups_.end()) {
-                    if (it->hits.size() > 0) {
-                        const double dt_from_new_hit =
-                            std::abs(hit->FirstCellTimeStamp - it->hits.front()->FirstCellTimeStamp);
-
-                        // If this group is beyond the time window, it's complete
-                        if (dt_from_new_hit > time_window_ns_) {
-                            ready_groups_.emplace_back(std::move(*it));
-                            it = pending_groups_.erase(it);
-                            continue;
-                        } else {
-                            // pending groups are time-ordered; newer groups will be closer in time
-                            break;
-                        }
-                    }
-                    ++it;
-                }
-
-                // Now create new group for this hit
+                // Vendor events from different FEBs are not guaranteed to
+                // arrive in global timestamp order. A hit outside an existing
+                // group's time window therefore cannot prove that the group
+                // is complete; only the wall-clock inactivity timeout below
+                // may finalize pending groups.
                 PendingGroup g;
                 g.created = now;
                 g.last_activity = now;
@@ -155,10 +137,17 @@ bool FrontendCollectorModeDefault::collect()
     // ---------------------------------------------------------------------
     const auto timeout_cutoff = now - finalize_after_;
 
-    // Remove groups from front that have timed out
-    while (!pending_groups_.empty() && pending_groups_.front().last_activity < timeout_cutoff) {
-        ready_groups_.emplace_back(std::move(pending_groups_.front()));
-        pending_groups_.pop_front();
+    // A late hit can refresh an older group, so pending_groups_ is not ordered
+    // by last_activity. Scan the complete deque rather than stopping at the
+    // first active group.
+    auto pending = pending_groups_.begin();
+    while (pending != pending_groups_.end()) {
+        if (pending->last_activity < timeout_cutoff) {
+            ready_groups_.emplace_back(std::move(*pending));
+            pending = pending_groups_.erase(pending);
+        } else {
+            ++pending;
+        }
     }
 
     // Always release the raw events, even when no group is ready yet. Pending

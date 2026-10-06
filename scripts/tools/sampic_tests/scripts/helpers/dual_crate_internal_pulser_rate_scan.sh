@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PROJECT_DIR=$(realpath "$SCRIPT_DIR/../..")
+REPO_ROOT=$(realpath "$PROJECT_DIR/../../..")
 CONFIG=${1:-"$PROJECT_DIR/config/dual_crate_internal_pulser_rate_scan.default.json"}
 BINARY="$PROJECT_DIR/build/bin/sampic_deadtime_scan"
 
@@ -60,6 +61,7 @@ run_crate() {
   ip=$(jq -r ".crates[$index].ip" "$CONFIG")
   port=$(jq -r ".crates[$index].port" "$CONFIG")
   calibration=$(jq -r ".crates[$index].calibration_dir" "$CONFIG")
+  [[ "$calibration" = /* ]] || calibration="$REPO_ROOT/$calibration"
   channel_csv="${log%.log}_channels.csv"
   "$BINARY" --mode pulser-rate --ip "$ip" --port "$port" \
     --calibration-dir "$calibration" --period-ticks "$ticks" \

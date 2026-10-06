@@ -282,7 +282,7 @@ CrateSmokeOptions CrateSmokeMode::parse_args(int argc, char** argv) {
       std::cout << "Crate smoke options:\n"
                 << "  --ip <addr>              Crate control IP (default 192.168.0.4)\n"
                 << "  --port <port>            Control port (default 27015)\n"
-                << "  --calibration-dir <dir>  Calibration directory (default resources/calib)\n"
+                << "  --calibration-dir <dir>  Calibration directory (default repository N1)\n"
                 << "  --no-calibration         Skip calibration load\n"
                 << "  --attempts <n>           Max read attempts before giving up (default 25)\n"
                 << "  --retry-us <µs>          Sleep between read retries (default 2000)\n";

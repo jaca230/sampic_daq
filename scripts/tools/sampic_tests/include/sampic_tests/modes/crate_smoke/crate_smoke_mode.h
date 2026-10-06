@@ -11,7 +11,7 @@ struct CrateSmokeOptions {
   std::string ip = "192.168.0.4";
   int port = 27015;
   bool load_calibration = true;
-  std::string calibration_dir = "resources/calib";
+  std::string calibration_dir = "resources/calib/Crate_PIONEER_N1_LPNHE";
   int read_attempts = 25;
   int retry_sleep_us = 2000;
 };

@@ -112,7 +112,7 @@ fi
 # --------------------------------------------------------------------------
 # Ensure vendor libraries are available at runtime (matches scripts/run.sh)
 # --------------------------------------------------------------------------
-VENDOR_LIB_DIR="$BASE_DIR/external/sampic_256ch_lib/lib"
+VENDOR_LIB_DIR="$BASE_DIR/build/lib"
 LPDEVC_LIB_DIR="$BASE_DIR/external/sampic_256ch_lib/lpdevc_install/lib"
 RUNTIME_LIB_PATHS=()
 

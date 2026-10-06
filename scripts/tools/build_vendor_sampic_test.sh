@@ -14,19 +14,22 @@ if [[ ! -d "$EXAMPLE_DIR" ]]; then
   exit 1
 fi
 
-if [[ ! -e "$FTDI_DIR/libftd2xx.so" ]]; then
-  newest_ftdi=$(ls "$FTDI_DIR"/libftd2xx.so.* 2>/dev/null | sort -V | tail -n 1 || true)
-  if [[ -z "$newest_ftdi" ]]; then
-    echo "[build_vendor_sampic_test.sh, ERROR] Missing libftd2xx.so under: $FTDI_DIR" >&2
-    exit 1
-  fi
-  ln -s "$(basename "$newest_ftdi")" "$FTDI_DIR/libftd2xx.so"
-  echo "[build_vendor_sampic_test.sh] Created libftd2xx.so -> $(basename "$newest_ftdi")"
+newest_ftdi=$(ls "$FTDI_DIR"/libftd2xx.so.* 2>/dev/null | sort -V | tail -n 1 || true)
+if [[ -z "$newest_ftdi" ]]; then
+  echo "[build_vendor_sampic_test.sh, ERROR] Missing libftd2xx.so under: $FTDI_DIR" >&2
+  exit 1
 fi
+FTDI_LINK_DIR=$(mktemp -d)
+ln -s "$newest_ftdi" "$FTDI_LINK_DIR/libftd2xx.so"
+cleanup_ftdi_link() {
+  unlink "$FTDI_LINK_DIR/libftd2xx.so" 2>/dev/null || true
+  rmdir "$FTDI_LINK_DIR" 2>/dev/null || true
+}
+trap cleanup_ftdi_link EXIT
 
 make -C "$EXAMPLE_DIR" clean all \
   CFLAGS="-I$VENDOR_ROOT/include_lib -I$FTDI_DIR/include -m64 -fPIC -Wall" \
-  LFLAGS="-L$SAMPIC_LIB_DIR -L$LPDEVC_LIB_DIR -L$FTDI_DIR -lsampic256ch -llpdevC -llpdev -lftd2xx -lrt -lpthread -Wl,--disable-new-dtags -Wl,-rpath,$SAMPIC_LIB_DIR -Wl,-rpath,$LPDEVC_LIB_DIR -Wl,-rpath,$FTDI_DIR"
+  LFLAGS="-L$SAMPIC_LIB_DIR -L$LPDEVC_LIB_DIR -L$FTDI_LINK_DIR -lsampic256ch -llpdevC -llpdev -lftd2xx -lrt -lpthread -Wl,--disable-new-dtags -Wl,-rpath,$SAMPIC_LIB_DIR -Wl,-rpath,$LPDEVC_LIB_DIR -Wl,-rpath,$FTDI_DIR"
 
 echo
 echo "[build_vendor_sampic_test.sh] Built: $EXAMPLE_DIR/sampic_test"

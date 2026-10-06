@@ -488,7 +488,7 @@ PulserRateOptions PulserRateMode::parse_args(int argc, char** argv) {
                 << "  --max-loops <n>             Abort read loop after N retries (default 10000)\n"
                 << "  --retry-us <µs>             Sleep between retries (default 100)\n"
                 << "  --no-calibration            Skip loading calibration files\n"
-                << "  --calibration-dir <path>    Calibration directory (default resources/calib)\n"
+                << "  --calibration-dir <path>    Calibration directory (default repository N1)\n"
                 << "  --sync-pulser               Enable synchronous pulser mode (default)\n"
                 << "  --async-pulser              Disable synchronous pulser mode\n"
                 << "  --enable-channel F:C        Use an explicit channel mask (repeatable)\n"

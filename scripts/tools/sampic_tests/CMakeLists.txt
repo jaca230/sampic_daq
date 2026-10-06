@@ -5,11 +5,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
-set(SAMPIC_VENDOR_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib)
-set(SAMPIC_VENDOR_INCLUDE ${SAMPIC_VENDOR_ROOT}/include_lib)
-set(SAMPIC_VENDOR_LIB_DIR ${SAMPIC_VENDOR_ROOT}/lib)
-set(LPDEVC_INCLUDE_DIR ${SAMPIC_VENDOR_ROOT}/lpdevc_install/include)
-set(LPDEVC_LIB_DIR ${SAMPIC_VENDOR_ROOT}/lpdevc_install/lib)
+set(SAMPIC_LIBRARY_VERSION "3.2" CACHE STRING "SAMPIC library version used by the root build")
+set_property(CACHE SAMPIC_LIBRARY_VERSION PROPERTY STRINGS 3.2 3.1)
+set(SAMPIC_TRANSPORT_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib)
+if(SAMPIC_LIBRARY_VERSION STREQUAL "3.2")
+  set(SAMPIC_SOURCE_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib_3_2)
+elseif(SAMPIC_LIBRARY_VERSION STREQUAL "3.1")
+  set(SAMPIC_SOURCE_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib)
+else()
+  message(FATAL_ERROR "Unsupported SAMPIC_LIBRARY_VERSION='${SAMPIC_LIBRARY_VERSION}'")
+endif()
+set(SAMPIC_VENDOR_INCLUDE ${SAMPIC_SOURCE_ROOT}/include_lib)
+set(SAMPIC_VENDOR_LIB_DIR ${PROJECT_ROOT}/build/lib)
+set(LPDEVC_INCLUDE_DIR ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include)
+set(LPDEVC_LIB_DIR ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib)
 
 include(${PROJECT_ROOT}/cmake/CPM.cmake)
 
@@ -22,8 +31,8 @@ endforeach()
 find_library(FTD2XX_LIB_PATH
   NAMES ftd2xx libftd2xx.so libftd2xx.so.1.4.33 libftd2xx.so.1.4.8
   PATHS
-    ${SAMPIC_VENDOR_ROOT}/lpdevc_install
-    ${SAMPIC_VENDOR_ROOT}/lpdevc_install/lib
+    ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install
+    ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib
   NO_DEFAULT_PATH)
 if(NOT FTD2XX_LIB_PATH)
   message(FATAL_ERROR "Unable to locate libftd2xx. Run the vendor installer.")
@@ -245,6 +254,7 @@ foreach(target ${SAMPIC_TEST_TARGETS})
     ${SAMPIC_VENDOR_LIBS}
     Threads::Threads
     dl rt pthread m)
+  target_link_options(${target} PRIVATE "LINKER:--disable-new-dtags")
 endforeach()
 
 foreach(target ${SAMPIC_TEST_TARGETS})

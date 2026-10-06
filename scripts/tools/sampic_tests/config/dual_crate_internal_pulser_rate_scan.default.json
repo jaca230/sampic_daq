@@ -4,13 +4,13 @@
       "name": "crate_n2",
       "ip": "192.168.0.14",
       "port": 27014,
-      "calibration_dir": "/home/pioneer/Crate_PIONEER_N2_LPNHE"
+      "calibration_dir": "resources/calib/Crate_PIONEER_N2_LPNHE"
     },
     {
       "name": "crate_n1",
       "ip": "192.168.0.13",
       "port": 27013,
-      "calibration_dir": "/home/pioneer/Crate_PIONEER_N1_LPNHE"
+      "calibration_dir": "resources/calib/Crate_PIONEER_N1_LPNHE"
     }
   ],
   "common_channel_count": 7,

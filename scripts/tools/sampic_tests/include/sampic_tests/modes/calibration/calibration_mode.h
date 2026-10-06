@@ -12,7 +12,7 @@ struct CalibrationCheckOptions {
   int port = 27015;
   int board_index = -1;  // -1 => first detected board
   bool load_calibration = true;
-  std::string calibration_dir = "resources/calib";
+  std::string calibration_dir = "resources/calib/Crate_PIONEER_N1_LPNHE";
   double threshold = 0.1;
   int max_events = 50;
   int prepare_interval = 100;

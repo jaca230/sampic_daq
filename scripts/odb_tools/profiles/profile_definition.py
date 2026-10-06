@@ -36,6 +36,28 @@ def settings_root(frontend_index: int) -> str:
     return f"/Equipment/SAMPIC {frontend_index:02d}/Settings"
 
 
+def correction_writes(root: str) -> list[OdbWrite]:
+    """Enable every vendor correction supported by loaded calibration data."""
+    correction_root = f"{root}/Crate/correction_levels"
+    return [
+        OdbWrite(
+            f"{correction_root}/adc_linearity",
+            True,
+            "Apply loaded ADC-linearity calibration to waveform samples.",
+        ),
+        OdbWrite(
+            f"{correction_root}/time_inl",
+            True,
+            "Apply loaded time-INL calibration to sample timing.",
+        ),
+        OdbWrite(
+            f"{correction_root}/residual_pedestal",
+            True,
+            "Apply residual-pedestal calibration when available.",
+        ),
+    ]
+
+
 def parse_index_selection(
     raw: str,
     upper_bound: int,

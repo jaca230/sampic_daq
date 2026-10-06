@@ -74,11 +74,14 @@ set(PLAYGROUND_SOURCES
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_event_collector.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/frontend_diagnostics.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/default/default_mode.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_hit_associator.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_mode.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/vendor_passthrough/vendor_passthrough_mode.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_collector_timing.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_trigger_metadata.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_vendor_triggers.cpp"
 )
 
 add_executable(sampic_playground
@@ -92,7 +95,7 @@ target_include_directories(sampic_playground PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${ROOT_DIR}/include"
   "${ROOT_DIR}/src"
-  "${ROOT_DIR}/external/sampic_256ch_lib/include_lib"
+  "${ROOT_DIR}/external/sampic_256ch_lib_3_2/include_lib"
   "${ROOT_DIR}/external/sampic_256ch_lib/lpdevc_install/include"
   ${CPM_HEADER_INCLUDE_DIRS}
 )
@@ -102,7 +105,7 @@ if(CPM_LINK_TARGETS)
 endif()
 
 # Link against SAMPIC vendor library
-set(SAMPIC_LIB_DIR "${ROOT_DIR}/external/sampic_256ch_lib/lib")
+set(SAMPIC_LIB_DIR "${ROOT_DIR}/build/lib")
 set(LPDEVC_LIB_DIR "${ROOT_DIR}/external/sampic_256ch_lib/lpdevc_install/lib")
 
 target_link_libraries(sampic_playground PRIVATE
@@ -111,6 +114,7 @@ target_link_libraries(sampic_playground PRIVATE
   "${LPDEVC_LIB_DIR}/liblpdevC.so"
   "${LPDEVC_LIB_DIR}/liblpdev.so"
 )
+target_link_options(sampic_playground PRIVATE "LINKER:--disable-new-dtags")
 
 # Aggressive optimizations for performance benchmarking
 target_compile_options(sampic_playground PRIVATE

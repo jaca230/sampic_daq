@@ -49,7 +49,7 @@ public:
 
     // ---------------- Collector ----------------
     void startCollector();
-    void stopCollector();
+    int stopCollector();
 
     // ---------------- Buffer access ----------------
     SampicEventBuffer& buffer();

@@ -34,7 +34,7 @@ struct ConnectionConfig {
   std::string ip = "192.168.0.4";
   int port = 27015;
   bool load_calibration = true;
-  std::string calibration_dir = "resources/calib";
+  std::string calibration_dir = "resources/calib/Crate_PIONEER_N1_LPNHE";
   double threshold_volts = 0.1;
   bool use_external_clock = false;
   bool use_external_trigger = true;

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PROJECT_DIR=$(realpath "$SCRIPT_DIR/../..")
+REPO_ROOT=$(realpath "$PROJECT_DIR/../../..")
 CONFIG=${1:-"$PROJECT_DIR/config/internal_pulser_channel_discovery.default.json"}
 BINARY="$PROJECT_DIR/build/bin/sampic_deadtime_scan"
 
@@ -28,6 +29,7 @@ for ((index=0; index<crate_count; ++index)); do
   ip=$(jq -r ".crates[$index].ip" "$CONFIG")
   port=$(jq -r ".crates[$index].port" "$CONFIG")
   calibration=$(jq -r ".crates[$index].calibration_dir" "$CONFIG")
+  [[ "$calibration" = /* ]] || calibration="$REPO_ROOT/$calibration"
   disable_args=()
   while IFS= read -r channel; do
     disable_args+=(--disable-channel "$channel")

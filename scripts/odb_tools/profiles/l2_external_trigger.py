@@ -6,6 +6,7 @@ from typing import Sequence
 from profiles.profile_definition import (
     OdbProfile,
     OdbWrite,
+    correction_writes,
     parse_index_selection,
     settings_root,
 )
@@ -21,7 +22,7 @@ class L2ExternalTriggerProfile(OdbProfile):
     )
 
     def configure_parser(self, parser: ArgumentParser) -> None:
-        parser.add_argument("--boards", default="0")
+        parser.add_argument("--boards", default="all")
         parser.add_argument("--chips", default="all")
         parser.add_argument("--channels", default="all")
         parser.add_argument(
@@ -45,11 +46,33 @@ class L2ExternalTriggerProfile(OdbProfile):
         parser.add_argument("--primitive-gate-length", type=int, default=10)
         parser.add_argument("--latency-gate-length", type=int, default=3)
         parser.add_argument("--level2-ext-gate", type=int, default=5)
+        parser.add_argument("--sampling-frequency-mhz", type=int, default=6400)
+        parser.add_argument(
+            "--external-clock",
+            action="store_true",
+            help="Use the externally supplied sampling clock.",
+        )
+        parser.add_argument("--frames-per-block", type=int, default=31)
+        parser.add_argument("--triggers-per-event", type=int, default=127)
+        parser.add_argument("--threshold-volts", type=float, default=0.1)
+        parser.add_argument("--sampic-buffer-size", type=int, default=1024)
+        parser.add_argument("--frontend-buffer-size", type=int, default=4096)
         parser.add_argument("--hit-time-offset-ns", type=float, default=-470.0)
-        parser.add_argument("--pre-window-ns", type=float, default=20.0)
-        parser.add_argument("--post-window-ns", type=float, default=20.0)
+        parser.add_argument("--pre-window-ns", type=float, default=500.0)
+        parser.add_argument("--post-window-ns", type=float, default=500.0)
 
     def build_writes(self, arguments: Namespace) -> Sequence[OdbWrite]:
+        if arguments.frames_per_block <= 0:
+            raise ValueError("frames per block must be positive")
+        if arguments.triggers_per_event < 1 or arguments.triggers_per_event > 127:
+            raise ValueError("triggers per event must be in [1, 127]")
+        if arguments.sampling_frequency_mhz <= 0:
+            raise ValueError("sampling frequency must be positive")
+        if (
+            arguments.sampic_buffer_size <= 0
+            or arguments.frontend_buffer_size <= 0
+        ):
+            raise ValueError("buffer sizes must be positive")
         boards = parse_index_selection(arguments.boards, 4, "board")
         chips = parse_index_selection(arguments.chips, 4, "chip")
         channels = parse_index_selection(
@@ -57,7 +80,42 @@ class L2ExternalTriggerProfile(OdbProfile):
         )
         root = settings_root(arguments.frontend_index)
 
-        writes = [
+        writes = correction_writes(root) + [
+            OdbWrite(
+                f"{root}/Sampic Event Collector/mode",
+                "default",
+                "Use the dedicated vendor-readout worker.",
+            ),
+            OdbWrite(
+                f"{root}/Sampic Event Collector/buffer_size",
+                arguments.sampic_buffer_size,
+                "Keep enough decoded vendor packets for batched readout.",
+            ),
+            OdbWrite(
+                f"{root}/Sampic Event Collector/sleep_time_us",
+                0,
+                "Return immediately to the vendor receive path.",
+            ),
+            OdbWrite(
+                f"{root}/Crate/sampling_frequency/frequency_mhz",
+                arguments.sampling_frequency_mhz,
+                "Set the sampling rate used by acquisition and association.",
+            ),
+            OdbWrite(
+                f"{root}/Crate/sampling_frequency/use_external_clock",
+                arguments.external_clock,
+                "Select the internal or externally supplied sampling clock.",
+            ),
+            OdbWrite(
+                f"{root}/Crate/frames_per_block",
+                arguments.frames_per_block,
+                "Use the packetization found reliable in gated-trigger tests.",
+            ),
+            OdbWrite(
+                f"{root}/Crate/triggers_per_event",
+                arguments.triggers_per_event,
+                "Batch trigger records at the tested maximum.",
+            ),
             OdbWrite(
                 f"{root}/Crate/external_trigger_type",
                 arguments.ext_trigger_type,
@@ -72,6 +130,16 @@ class L2ExternalTriggerProfile(OdbProfile):
                 f"{root}/Crate/trigger_edge",
                 arguments.trigger_edge,
                 "Trigger on the configured external-signal edge.",
+            ),
+            OdbWrite(
+                f"{root}/Crate/sync_edge",
+                arguments.trigger_edge,
+                "Use the same edge convention for external synchronization.",
+            ),
+            OdbWrite(
+                f"{root}/Crate/sync_level",
+                arguments.signal_level,
+                "Use the same electrical level for external synchronization.",
             ),
             OdbWrite(
                 f"{root}/Crate/primitives_gate_length",
@@ -100,26 +168,48 @@ class L2ExternalTriggerProfile(OdbProfile):
             ),
             OdbWrite(
                 f"{root}/Frontend Event Collector/mode",
-                "external_trigger",
+                "external_gated_trigger",
                 "Build frontend events around external-trigger timestamps.",
             ),
             OdbWrite(
+                f"{root}/Frontend Event Collector/buffer_size",
+                arguments.frontend_buffer_size,
+                "Buffer the one-event-per-trigger output burst.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/sleep_time_us",
+                0,
+                "Process decoded packets without an added polling delay.",
+            ),
+            OdbWrite(
                 f"{root}/Frontend Event Collector/modes/"
-                "external_trigger/hit_time_offset_ns",
+                "external_gated_trigger/hit_time_offset_ns",
                 arguments.hit_time_offset_ns,
                 "Align hit timestamps with the external trigger.",
             ),
             OdbWrite(
                 f"{root}/Frontend Event Collector/modes/"
-                "external_trigger/pre_window_ns",
+                "external_gated_trigger/pre_window_ns",
                 arguments.pre_window_ns,
                 "Accept hits this far before the aligned trigger.",
             ),
             OdbWrite(
                 f"{root}/Frontend Event Collector/modes/"
-                "external_trigger/post_window_ns",
+                "external_gated_trigger/post_window_ns",
                 arguments.post_window_ns,
                 "Accept hits this far after the aligned trigger.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/sampling_frequency_mhz",
+                float(arguments.sampling_frequency_mhz),
+                "Convert trigger-cell offsets with the configured sample rate.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/emit_triggers_without_hits",
+                True,
+                "Keep accepted gates even when no hit is assigned.",
             ),
         ]
 
@@ -156,12 +246,24 @@ class L2ExternalTriggerProfile(OdbProfile):
                 chip_root = (
                     f"{board_root}/sampics/sampic{chip}"
                 )
-                writes.append(
-                    OdbWrite(
-                        f"{chip_root}/trigger_option",
-                        1,
-                        "Enable the SAMPIC channel-trigger option.",
-                    )
+                writes.extend(
+                    [
+                        OdbWrite(
+                            f"{chip_root}/trigger_option",
+                            1,
+                            "Enable the SAMPIC channel-trigger option.",
+                        ),
+                        OdbWrite(
+                            f"{chip_root}/central_trigger_mode",
+                            0,
+                            "OR participating channel primitives.",
+                        ),
+                        OdbWrite(
+                            f"{chip_root}/central_trigger_effect",
+                            0,
+                            "Read participating channels after the central trigger.",
+                        ),
+                    ]
                 )
 
                 for channel in channels:
@@ -171,9 +273,29 @@ class L2ExternalTriggerProfile(OdbProfile):
                     writes.extend(
                         [
                             OdbWrite(
+                                f"{channel_root}/enabled",
+                                True,
+                                "Enable this channel for acquisition.",
+                            ),
+                            OdbWrite(
                                 f"{channel_root}/trigger_mode",
                                 0,
                                 "Use self-trigger mode for this channel.",
+                            ),
+                            OdbWrite(
+                                f"{channel_root}/trigger_edge",
+                                0,
+                                "Use the rising edge for channel self-triggering.",
+                            ),
+                            OdbWrite(
+                                f"{channel_root}/pulse_mode",
+                                True,
+                                "Use positive-pulse self-triggering.",
+                            ),
+                            OdbWrite(
+                                f"{channel_root}/internal_threshold",
+                                arguments.threshold_volts,
+                                "Set the channel self-trigger threshold.",
                             ),
                             OdbWrite(
                                 f"{channel_root}/"

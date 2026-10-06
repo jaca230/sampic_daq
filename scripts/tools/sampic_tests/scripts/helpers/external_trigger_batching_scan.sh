@@ -7,7 +7,7 @@ BUILD_DIR="$PROJECT_DIR/build"
 REPO_ROOT=$(realpath "$PROJECT_DIR/../../..")
 BINARY="$BUILD_DIR/bin/external_trigger_probe"
 DEFAULT_CONFIG="$PROJECT_DIR/config/external_trigger_batching_scan.default.json"
-VENDOR_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lib"
+VENDOR_LIB_DIR="$REPO_ROOT/build/lib"
 LPDEVC_LIB_DIR="$REPO_ROOT/external/sampic_256ch_lib/lpdevc_install/lib"
 
 if [[ ! -x "$BINARY" ]]; then

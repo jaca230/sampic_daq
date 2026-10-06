@@ -1,0 +1,7 @@
+=== TOT Ramp Current Calibration Values:  5nes: dac step (int) dac value (float) intercept (float) slope (int) === 
+
+dac step= 0 dac Value= 0.450000 intercept= 0.861406 slope= 0.016360  
+dac step= 1 dac Value= 0.220000 intercept= -0.183992 slope= 0.033556  
+dac step= 2 dac Value= 0.105000 intercept= -1.512866 slope= 0.069370  
+dac step= 3 dac Value= 0.031000 intercept= -7.684446 slope= 0.216259  
+dac step= 4 dac Value= 0.010000 intercept= -20.781515 slope= 0.540983  

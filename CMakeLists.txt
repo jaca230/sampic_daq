@@ -91,13 +91,31 @@ list(REMOVE_DUPLICATES CPM_LINK_TARGETS)
 # --------------------------------------------------------------------------
 # Vendor library: sampic_256ch_lib
 # --------------------------------------------------------------------------
-set(SAMPIC_VENDOR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/sampic_256ch_lib" CACHE PATH "Root directory of the vendor Sampic library")
-if(NOT IS_DIRECTORY "${SAMPIC_VENDOR_ROOT}")
-  message(FATAL_ERROR "Missing sampic_256ch_lib under ${SAMPIC_VENDOR_ROOT}. Run `git submodule update --init --recursive`.")
+set(SAMPIC_LIBRARY_VERSION "3.2" CACHE STRING "SAMPIC vendor library version (3.2 or 3.1)")
+set_property(CACHE SAMPIC_LIBRARY_VERSION PROPERTY STRINGS 3.2 3.1)
+set(SAMPIC_SOURCE_ROOT_OVERRIDE "" CACHE PATH "Optional SAMPIC source package override")
+set(SAMPIC_TRANSPORT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/sampic_256ch_lib" CACHE PATH
+    "Root containing the lpdev/FTDI transport dependencies")
+
+if(SAMPIC_SOURCE_ROOT_OVERRIDE)
+  set(SAMPIC_SOURCE_ROOT "${SAMPIC_SOURCE_ROOT_OVERRIDE}")
+elseif(SAMPIC_LIBRARY_VERSION STREQUAL "3.2")
+  set(SAMPIC_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/sampic_256ch_lib_3_2")
+elseif(SAMPIC_LIBRARY_VERSION STREQUAL "3.1")
+  set(SAMPIC_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/sampic_256ch_lib")
+else()
+  message(FATAL_ERROR "Unsupported SAMPIC_LIBRARY_VERSION='${SAMPIC_LIBRARY_VERSION}'; choose 3.2 or 3.1")
 endif()
 
-set(SAMPIC_VENDOR_INCLUDE_DIR "${SAMPIC_VENDOR_ROOT}/include_lib")
-set(LPDEVC_INCLUDE_DIR       "${SAMPIC_VENDOR_ROOT}/lpdevc_install/include")
+if(NOT IS_DIRECTORY "${SAMPIC_SOURCE_ROOT}")
+  message(FATAL_ERROR "Missing SAMPIC source package: ${SAMPIC_SOURCE_ROOT}")
+endif()
+if(NOT IS_DIRECTORY "${SAMPIC_TRANSPORT_ROOT}")
+  message(FATAL_ERROR "Missing SAMPIC transport package: ${SAMPIC_TRANSPORT_ROOT}. Run `git submodule update --init --recursive`.")
+endif()
+
+set(SAMPIC_VENDOR_INCLUDE_DIR "${SAMPIC_SOURCE_ROOT}/include_lib")
+set(LPDEVC_INCLUDE_DIR       "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include")
 foreach(VENDOR_INC IN ITEMS "${SAMPIC_VENDOR_INCLUDE_DIR}" "${LPDEVC_INCLUDE_DIR}")
   if(NOT IS_DIRECTORY "${VENDOR_INC}")
     message(FATAL_ERROR "Missing vendor include directory: ${VENDOR_INC}")
@@ -107,7 +125,7 @@ endforeach()
 # Locate FTDI headers (allow user installs to override)
 find_path(FTD2XX_INCLUDE_DIR
   NAMES ftd2xx.h
-  PATHS "${SAMPIC_VENDOR_ROOT}/lpdevc_install/include"
+  PATHS "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include"
   NO_DEFAULT_PATH
 )
 if(NOT FTD2XX_INCLUDE_DIR)
@@ -117,8 +135,8 @@ if(NOT FTD2XX_INCLUDE_DIR)
   message(FATAL_ERROR "Unable to locate ftd2xx.h. Run the vendor FTDI install script.")
 endif()
 
-set(SAMPIC_VENDOR_LIB_DIR "${SAMPIC_VENDOR_ROOT}/lib")
-set(LPDEVC_LIB_DIR        "${SAMPIC_VENDOR_ROOT}/lpdevc_install/lib")
+set(SAMPIC_VENDOR_LIB_DIR "${CMAKE_BINARY_DIR}/lib")
+set(LPDEVC_LIB_DIR        "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib")
 foreach(REQUIRED_LIB_NAME IN ITEMS liblpdevC.so liblpdev.so)
   if(NOT EXISTS "${LPDEVC_LIB_DIR}/${REQUIRED_LIB_NAME}")
     message(FATAL_ERROR "Missing ${REQUIRED_LIB_NAME} in ${LPDEVC_LIB_DIR}. Did you run the vendor installer?")
@@ -128,8 +146,8 @@ endforeach()
 find_library(FTD2XX_LIB_PATH
   NAMES ftd2xx libftd2xx.so libftd2xx.so.1.4.33 libftd2xx.so.1.4.8
   PATHS
-    "${SAMPIC_VENDOR_ROOT}/lpdevc_install"
-    "${SAMPIC_VENDOR_ROOT}/lpdevc_install/lib"
+    "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install"
+    "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib"
   NO_DEFAULT_PATH
 )
 if(NOT FTD2XX_LIB_PATH)
@@ -140,23 +158,25 @@ if(NOT FTD2XX_LIB_PATH)
 endif()
 get_filename_component(FTD2XX_LIB_DIR "${FTD2XX_LIB_PATH}" DIRECTORY)
 
-# Create libftd2xx.so symlink if needed (before defining imported targets)
+# Keep the unversioned FTDI runtime name in the build tree. Never generate
+# files inside the legacy transport submodule.
 get_filename_component(FTD2XX_BASENAME "${FTD2XX_LIB_PATH}" NAME)
 if(NOT FTD2XX_BASENAME STREQUAL "libftd2xx.so")
-  set(FTD2XX_SYMLINK "${FTD2XX_LIB_DIR}/libftd2xx.so")
+  file(MAKE_DIRECTORY "${SAMPIC_VENDOR_LIB_DIR}")
+  set(FTD2XX_SYMLINK "${SAMPIC_VENDOR_LIB_DIR}/libftd2xx.so")
   if(NOT EXISTS "${FTD2XX_SYMLINK}")
     message(STATUS "Creating symlink: libftd2xx.so -> ${FTD2XX_BASENAME}")
     execute_process(
-      COMMAND ${CMAKE_COMMAND} -E create_symlink "${FTD2XX_BASENAME}" "libftd2xx.so"
-      WORKING_DIRECTORY "${FTD2XX_LIB_DIR}"
+      COMMAND ${CMAKE_COMMAND} -E create_symlink
+              "${FTD2XX_LIB_PATH}" "${FTD2XX_SYMLINK}"
       RESULT_VARIABLE SYMLINK_RESULT
     )
     if(NOT SYMLINK_RESULT EQUAL 0)
       message(WARNING "Failed to create libftd2xx.so symlink. Build may fail.")
     endif()
   endif()
-  # Update FTD2XX_LIB_PATH to point to the symlink for proper linking
   set(FTD2XX_LIB_PATH "${FTD2XX_SYMLINK}")
+  set(FTD2XX_LIB_DIR "${SAMPIC_VENDOR_LIB_DIR}")
 endif()
 
 # Imported vendor-shipped shared libraries
@@ -182,8 +202,8 @@ set_target_properties(ftd2xx PROPERTIES
 # Build the vendor Sampic library with CMake instead of Makefiles
 # --------------------------------------------------------------------------
 set(SAMPIC_VENDOR_SOURCES
-  "${SAMPIC_VENDOR_ROOT}/sources_lib/SAMPIC_256Ch_hardware_core.c"
-  "${SAMPIC_VENDOR_ROOT}/sources_lib/SAMPIC_256Ch_lib.c"
+  "${SAMPIC_SOURCE_ROOT}/sources_lib/SAMPIC_256Ch_hardware_core.c"
+  "${SAMPIC_SOURCE_ROOT}/sources_lib/SAMPIC_256Ch_lib.c"
 )
 foreach(VENDOR_SRC IN LISTS SAMPIC_VENDOR_SOURCES)
   if(NOT EXISTS "${VENDOR_SRC}")
@@ -208,12 +228,17 @@ target_link_libraries(sampic256ch
     ftd2xx
     m
 )
+target_link_options(sampic256ch PRIVATE "LINKER:--disable-new-dtags")
 set_target_properties(sampic256ch PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${SAMPIC_VENDOR_LIB_DIR}"
   OUTPUT_NAME "sampic256ch"
   BUILD_RPATH "${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
   INSTALL_RPATH "${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
 )
+
+message(STATUS "SAMPIC library version: ${SAMPIC_LIBRARY_VERSION}")
+message(STATUS "SAMPIC source package: ${SAMPIC_SOURCE_ROOT}")
+message(STATUS "SAMPIC transport package: ${SAMPIC_TRANSPORT_ROOT}")
 
 # --------------------------------------------------------------------------
 # Main frontend build
@@ -246,6 +271,7 @@ target_link_libraries(sampic_frontend PRIVATE
   "${MIDASSYS_LIB_DIR}/libmfe.a"
   "${MIDASSYS_LIB_DIR}/libmidas.a"
 )
+target_link_options(sampic_frontend PRIVATE "LINKER:--disable-new-dtags")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(sampic_frontend PRIVATE -Wno-stringop-overflow -Wno-cpp)
