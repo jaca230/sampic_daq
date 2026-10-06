@@ -30,23 +30,43 @@ bool Runtime::loadInitialConfigs(std::string& err) {
     odb.initialize(frontend_path, FrontendConfig{});
     configs.frontend = odb.read<FrontendConfig>(frontend_path);
 
-    const auto crate_path = path(frontend::odb::Section::Crate);
-    odb.initialize(crate_path, SampicSystemSettings{});
-    configs.system = odb.read<SampicSystemSettings>(crate_path);
-
     const auto controller_path = path(frontend::odb::Section::SampicController);
-    odb.initialize(controller_path, SampicControllerConfig{});
-    configs.controller = odb.read<SampicControllerConfig>(controller_path);
+    odb.initializeValue(controller_path + "/init_mode", std::string("default"));
+    odb.initializeValue(controller_path + "/apply_mode", std::string("default"));
+    configs.controller.init_mode = odb.readValue<std::string>(controller_path + "/init_mode");
+    configs.controller.apply_mode = odb.readValue<std::string>(controller_path + "/apply_mode");
+    SampicController::initializeOdb(
+        odb, controller_path + "/init_modes", controller_path + "/apply_modes");
 
     const auto collector_path = path(frontend::odb::Section::SampicEventCollector);
-    odb.initialize(collector_path, SampicCollectorConfig{});
-    configs.collector = odb.read<SampicCollectorConfig>(collector_path);
+    odb.initializeValue(collector_path + "/mode", std::string("default"));
+    odb.initializeValue(collector_path + "/buffer_size", std::size_t(128));
+    odb.initializeValue(collector_path + "/sleep_time_us", 0);
+    configs.collector.mode = odb.readValue<std::string>(collector_path + "/mode");
+    configs.collector.buffer_size = odb.readValue<std::size_t>(collector_path + "/buffer_size");
+    configs.collector.sleep_time_us = odb.readValue<int>(collector_path + "/sleep_time_us");
+    SampicCollector::initializeOdb(odb, collector_path + "/modes");
 
     const auto frontend_collector_path =
         path(frontend::odb::Section::FrontendEventCollector);
-    odb.initialize(frontend_collector_path, FrontendEventCollectorConfig{});
-    configs.frontend_collector =
-        odb.read<FrontendEventCollectorConfig>(frontend_collector_path);
+    odb.initializeValue(frontend_collector_path + "/mode", std::string("default"));
+    odb.initializeValue(frontend_collector_path + "/buffer_size", std::uint32_t(512));
+    odb.initializeValue(frontend_collector_path + "/sleep_time_us", std::uint32_t(1000));
+    odb.initialize(frontend_collector_path + "/diagnostics",
+                   FrontendCollectorDiagnosticsConfig{});
+    configs.frontend_collector.mode =
+        odb.readValue<std::string>(frontend_collector_path + "/mode");
+    configs.frontend_collector.buffer_size =
+        odb.readValue<std::uint32_t>(frontend_collector_path + "/buffer_size");
+    configs.frontend_collector.sleep_time_us =
+        odb.readValue<std::uint32_t>(frontend_collector_path + "/sleep_time_us");
+    configs.frontend_collector.diagnostics =
+        odb.read<FrontendCollectorDiagnosticsConfig>(
+            frontend_collector_path + "/diagnostics");
+    FrontendEventCollector::initializeOdb(odb, frontend_collector_path + "/modes");
+
+    const auto hardware_path = path(frontend::odb::Section::Crate);
+    SampicHardwareRegistry::catalog().initializeOdb(odb, hardware_path);
 
     pollingInterval = std::chrono::microseconds(configs.frontend.polling_interval_us);
     return true;
@@ -66,14 +86,24 @@ bool Runtime::refreshConfigs(std::string& err) {
 
     configs.logger = odb.read<LoggerConfig>(path(frontend::odb::Section::Logger));
     configs.frontend = odb.read<FrontendConfig>(path(frontend::odb::Section::Frontend));
-    configs.system = odb.read<SampicSystemSettings>(path(frontend::odb::Section::Crate));
-    configs.controller =
-        odb.read<SampicControllerConfig>(path(frontend::odb::Section::SampicController));
-    configs.collector =
-        odb.read<SampicCollectorConfig>(path(frontend::odb::Section::SampicEventCollector));
-    configs.frontend_collector =
-        odb.read<FrontendEventCollectorConfig>(
-            path(frontend::odb::Section::FrontendEventCollector));
+    const auto controller_path = path(frontend::odb::Section::SampicController);
+    configs.controller.init_mode = odb.readValue<std::string>(controller_path + "/init_mode");
+    configs.controller.apply_mode = odb.readValue<std::string>(controller_path + "/apply_mode");
+    const auto collector_path = path(frontend::odb::Section::SampicEventCollector);
+    configs.collector.mode = odb.readValue<std::string>(collector_path + "/mode");
+    configs.collector.buffer_size = odb.readValue<std::size_t>(collector_path + "/buffer_size");
+    configs.collector.sleep_time_us = odb.readValue<int>(collector_path + "/sleep_time_us");
+    const auto frontend_collector_path =
+        path(frontend::odb::Section::FrontendEventCollector);
+    configs.frontend_collector.mode =
+        odb.readValue<std::string>(frontend_collector_path + "/mode");
+    configs.frontend_collector.buffer_size =
+        odb.readValue<std::uint32_t>(frontend_collector_path + "/buffer_size");
+    configs.frontend_collector.sleep_time_us =
+        odb.readValue<std::uint32_t>(frontend_collector_path + "/sleep_time_us");
+    configs.frontend_collector.diagnostics =
+        odb.read<FrontendCollectorDiagnosticsConfig>(
+            frontend_collector_path + "/diagnostics");
 
     LoggerConfigurator::configure(configs.logger);
     pollingInterval = std::chrono::microseconds(configs.frontend.polling_interval_us);
@@ -86,8 +116,17 @@ bool Runtime::refreshConfigs(std::string& err) {
 
 bool Runtime::initializeController(std::string& err) {
   try {
+    OdbManager odb;
+    const auto controller_path =
+        frontend::odb::make_path(settingsPath, frontend::odb::Section::SampicController);
+    const auto collector_path =
+        frontend::odb::make_path(settingsPath, frontend::odb::Section::SampicEventCollector);
+    const auto hardware_path =
+        frontend::odb::make_path(settingsPath, frontend::odb::Section::Crate);
     controller = std::make_unique<SampicController>(
-        configs.system, configs.controller, configs.collector);
+        configs.controller, configs.collector, odb,
+        controller_path + "/init_modes", controller_path + "/apply_modes",
+        collector_path + "/modes", hardware_path);
     const int rc = controller->initialize();
     if (rc != 0) {
       controller.reset();
@@ -126,4 +165,3 @@ std::string Runtime::makeBankName(const std::string& prefix) const {
 }
 
 }  // namespace frontend::runtime
-

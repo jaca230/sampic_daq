@@ -1,0 +1,101 @@
+#include "integration/sampic/collector/modes/example/example_mode.h"
+#include "integration/sampic/collector/sampic_event.h"
+#include "core/registry/mode/mode_auto_registration.h"
+
+#include <spdlog/spdlog.h>
+#include <thread>
+#include <chrono>
+
+SAMPIC_REGISTER_MODE(
+    SampicCollectorModeRegistry,
+    SampicCollectorModeExample,
+    SampicCollectorModeExampleConfig,
+    "example",
+    "Example hardware readout",
+    [](const SampicCollectorModeExampleConfig& config) {
+        if (config.soft_trigger_prepare_interval <= 0 ||
+            config.soft_trigger_max_loops <= 0 ||
+            config.soft_trigger_retry_sleep_us < 0) {
+            throw std::invalid_argument("retry values must be positive");
+        }
+    });
+
+SampicCollectorModeExample::SampicCollectorModeExample(
+    SampicCollectorModeContext& context,
+    SampicCollectorModeExampleConfig config)
+    : SampicCollectorMode(context),
+      mode_cfg_(std::move(config))
+{
+}
+
+bool SampicCollectorModeExample::collect()
+{
+    SampicTimingBreakdown timing{};
+    auto ev_data = SampicEvent::makeEventStruct();
+
+    const auto t_start = std::chrono::steady_clock::now();
+    SAMPIC256CH_PrepareEvent(&info_, &params_);
+    const auto t_after_prepare = std::chrono::steady_clock::now();
+
+    SAMPIC256CH_ErrCode errCode = SAMPIC256CH_NoFrameRead;
+    int numberOfHits = 0;
+    int nframes = 0;
+    int dummy = 0;
+    int nloop = 0;
+
+    // ---------------------------------------------------------------------
+    // Basic blocking acquisition loop
+    // ---------------------------------------------------------------------
+    while (errCode != SAMPIC256CH_Success)
+    {
+        const auto t_read_start = std::chrono::steady_clock::now();
+        errCode = SAMPIC256CH_ReadEventBuffer(&info_, dummy, eventBuffer_, mlFrames_, &nframes);
+        const auto t_read_end = std::chrono::steady_clock::now();
+        timing.read += std::chrono::duration_cast<std::chrono::microseconds>(t_read_end - t_read_start);
+
+        if (errCode == SAMPIC256CH_Success)
+        {
+            const auto t_decode_start = std::chrono::steady_clock::now();
+            errCode = SAMPIC256CH_DecodeEvent(&info_, &params_, mlFrames_, ev_data.get(), nframes, &numberOfHits);
+            const auto t_decode_end = std::chrono::steady_clock::now();
+            timing.decode = std::chrono::duration_cast<std::chrono::microseconds>(t_decode_end - t_decode_start);
+        }
+
+        if (errCode == SAMPIC256CH_AcquisitionError || errCode == SAMPIC256CH_ErrInvalidEvent)
+        {
+            spdlog::error("Example mode: acquisition error (errCode={})",
+                          static_cast<int>(errCode));
+            return false;
+        }
+
+        if ((nloop % mode_cfg_.soft_trigger_prepare_interval) == 0)
+            SAMPIC256CH_PrepareEvent(&info_, &params_);
+
+        ++nloop;
+
+        if (nloop > mode_cfg_.soft_trigger_max_loops)
+        {
+            spdlog::warn("Example mode: timeout after {} loops", nloop);
+            return true;
+        }
+
+        if (errCode != SAMPIC256CH_Success && mode_cfg_.soft_trigger_retry_sleep_us > 0)
+            std::this_thread::sleep_for(std::chrono::microseconds(mode_cfg_.soft_trigger_retry_sleep_us));
+    }
+
+    // ---------------------------------------------------------------------
+    // Timing and event packaging
+    // ---------------------------------------------------------------------
+    timing.prepare = std::chrono::duration_cast<std::chrono::microseconds>(t_after_prepare - t_start);
+    timing.total   = std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::steady_clock::now() - t_start);
+
+    if (errCode == SAMPIC256CH_Success && numberOfHits > 0)
+    {
+        auto ev = std::make_unique<SampicEvent>(
+            std::move(ev_data), timing, std::chrono::steady_clock::now());
+        buffer_.push(std::move(ev));
+    }
+
+    return true;
+}

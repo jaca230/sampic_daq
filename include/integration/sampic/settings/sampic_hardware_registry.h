@@ -1,0 +1,9 @@
+#ifndef SAMPIC_DAQ_INTEGRATION_SAMPIC_SETTINGS_SAMPIC_HARDWARE_REGISTRY_H
+#define SAMPIC_DAQ_INTEGRATION_SAMPIC_SETTINGS_SAMPIC_HARDWARE_REGISTRY_H
+
+#include "core/registry/hardware_setting/hardware_setting_registry.h"
+#include "integration/sampic/settings/sampic_hardware_context.h"
+
+using SampicHardwareRegistry = HardwareSettingRegistry<SampicHardwareContext>;
+
+#endif

@@ -1,8 +1,9 @@
 #ifndef SAMPIC_INIT_SETTINGS_MODE_H
 #define SAMPIC_INIT_SETTINGS_MODE_H
 
-#include "integration/sampic/config/sampic_crate_config.h"
-#include "integration/sampic/config/sampic_controller_config.h"
+#include <utility>
+#include "core/registry/mode/mode_registry.h"
+#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_context.h"
 
 extern "C" {
 #include <SAMPIC_256Ch_lib.h>
@@ -11,18 +12,11 @@ extern "C" {
 
 class SampicInitSettingsMode {
 public:
-    SampicInitSettingsMode(CrateInfoStruct& info,
-                           CrateParamStruct& params,
-                           void*& eventBuffer,
-                           ML_Frame*& mlFrames,
-                           const SampicSystemSettings& settings,
-                           const SampicControllerConfig& controllerCfg)
-        : info_(info),
-          params_(params),
-          eventBuffer_(eventBuffer),
-          mlFrames_(mlFrames),
-          settings_(settings),
-          controllerCfg_(controllerCfg) {}
+    explicit SampicInitSettingsMode(SampicInitSettingsModeContext& context)
+        : info_(context.info),
+          params_(context.params),
+          eventBuffer_(context.event_buffer),
+          mlFrames_(context.frames) {}
 
     virtual ~SampicInitSettingsMode() = default;
 
@@ -33,8 +27,9 @@ protected:
     CrateParamStruct& params_;
     void*& eventBuffer_;
     ML_Frame*& mlFrames_;
-    const SampicSystemSettings& settings_;
-    const SampicControllerConfig& controllerCfg_;
 };
+
+using SampicInitSettingsModeRegistry =
+    ModeRegistry<SampicInitSettingsMode, SampicInitSettingsModeContext>;
 
 #endif // SAMPIC_INIT_SETTINGS_MODE_H

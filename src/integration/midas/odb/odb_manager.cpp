@@ -1,5 +1,18 @@
 #include "integration/midas/odb/odb_manager.h"
+#include <cstdint>
 #include <cstring>
+
+ConfigStore::Json OdbManager::readJson(const std::string& path) const {
+    return const_cast<OdbManager*>(this)->read(path, true);
+}
+
+void OdbManager::writeJson(const std::string& path, const Json& value) {
+    write(path, value);
+}
+
+void OdbManager::initializeJson(const std::string& path, const Json& default_value) {
+    initialize(path, default_value);
+}
 
 // --- JSON/String API ---
 std::string OdbManager::read(const std::string& path) {
@@ -51,22 +64,55 @@ json OdbManager::readRecursive(HNDLE key, const std::string& fullPath) {
 
     // Scalar leaf keys
     switch (type) {
-        case TID_UINT8: case TID_INT8: case TID_UINT16: case TID_INT16:
-        case TID_UINT32: case TID_INT32: case TID_INT64: case TID_UINT64: {
-            int64_t val = 0;
-            int read_size = item_size;
-            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &val, &read_size, type, FALSE);
-            if (ret == DB_SUCCESS) result = val;
-            else spdlog::error("db_get_value failed for path '{}' (int)", fullPath);
-            break;
+        case TID_UINT8: {
+            std::uint8_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
         }
-        case TID_FLOAT32: case TID_FLOAT64: {
-            double val = 0;
-            int read_size = item_size;
-            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &val, &read_size, type, FALSE);
-            if (ret == DB_SUCCESS) result = val;
-            else spdlog::error("db_get_value failed for path '{}' (float)", fullPath);
-            break;
+        case TID_INT8: {
+            std::int8_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_UINT16: {
+            std::uint16_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_INT16: {
+            std::int16_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_UINT32: {
+            std::uint32_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_INT32: {
+            std::int32_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_UINT64: {
+            std::uint64_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_INT64: {
+            std::int64_t value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_FLOAT32: {
+            float value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
+        }
+        case TID_FLOAT64: {
+            double value{}; int size = sizeof(value);
+            ret = db_get_value(hDB_handle, 0, fullPath.c_str(), &value, &size, type, FALSE);
+            if (ret == DB_SUCCESS) result = value; break;
         }
         case TID_BOOL: {
             int val = 0;
@@ -81,7 +127,7 @@ json OdbManager::readRecursive(HNDLE key, const std::string& fullPath) {
             std::vector<char> buf(buf_size, 0);
             int read_size = buf_size;
             ret = db_get_value(hDB_handle, 0, fullPath.c_str(), buf.data(), &read_size, type, FALSE);
-            if (ret == DB_SUCCESS) result = std::string(buf.data(), read_size);
+            if (ret == DB_SUCCESS) result = std::string(buf.data());
             else spdlog::error("db_get_value failed for path '{}' (string)", fullPath);
             break;
         }

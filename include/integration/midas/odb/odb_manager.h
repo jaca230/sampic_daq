@@ -11,11 +11,13 @@
 #include <optional>
 #include <stdexcept>
 
+#include "core/config/config_store.h"
+
 using json = nlohmann::json;
 
 extern HNDLE hDB;
 
-class OdbManager {
+class OdbManager : public ConfigStore {
 public:
     explicit OdbManager(HNDLE handle = hDB) : hDB_handle(handle) {}
 
@@ -28,6 +30,10 @@ public:
 
     void initialize(const std::string& path, const std::string& jsonStr);
     void initialize(const std::string& path, const json& j);
+
+    Json readJson(const std::string& path) const override;
+    void writeJson(const std::string& path, const Json& value) override;
+    void initializeJson(const std::string& path, const Json& default_value) override;
 
     // Generic template API (Reflect-C++)
     template <typename T>

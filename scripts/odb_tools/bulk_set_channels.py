@@ -13,7 +13,7 @@ import argparse
 import sys
 from typing import Iterable, List, Sequence
 
-import midas.client
+from midas_client_utils import create_midas_client
 
 FRONTEND_NAME_TEMPLATE = "SAMPIC {index:02d}"
 SETTINGS_ROOT = "/Equipment/{frontend}/Settings/Crate/front_end_boards"
@@ -67,8 +67,8 @@ def build_paths(frontend: str,
         for chip in chips:
             for channel in channels:
                 yield (
-                    f"{base}/feb{board}/sampics/sampic{chip}/channels/"
-                    f"channel{channel}/{field}"
+                    f"{base}/feb{board}/sampics/sampic{chip}/"
+                    f"channels/channel{channel}/{field}"
                 )
 
 
@@ -128,15 +128,22 @@ def main() -> int:
         print("Nothing to update.")
         return 0
 
-    client = midas.client.MidasClient("sampic_channel_bulk_update")
+    if args.dry_run:
+        for path in paths:
+            print(f"[DRY-RUN] {path} <- {value!r}")
+        print("No ODB fields changed.")
+        return 0
+
+    try:
+        client = create_midas_client("sampic_channel_bulk_update")
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
 
     try:
         for path in paths:
-            if args.dry_run:
-                print(f"[DRY-RUN] {path} <- {value!r}")
-            else:
-                client.odb_set(path, value)
-                print(f"{path} <- {value!r}")
+            client.odb_set(path, value)
+            print(f"{path} <- {value!r}")
     except Exception as exc:  # pylint: disable=broad-except
         print(f"ERROR: {exc}")
         return 1
@@ -149,4 +156,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

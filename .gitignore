@@ -28,6 +28,12 @@ bin/
 *.su
 *.idb
 *.pdb
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+perf.data*
 
 # ------------------------------------------------------------------
 # CMake, CPM, and other build directories
@@ -40,14 +46,17 @@ cmake-build-*/
 **/CMakeCache.txt
 **/cmake_install.cmake
 **/CTestTestfile.cmake
+**/Testing/
 **/CPM_modules/
 **/_deps/
+**/.ninja_deps
+**/.ninja_log
+compile_commands.json
 
 # ------------------------------------------------------------------
 # Tool outputs
 # ------------------------------------------------------------------
-scripts/tools/**/build/
-scripts/tools/**/generated/
+!scripts/tools/sampic_tests/data/README.md
 
 # ------------------------------------------------------------------
 # Python
@@ -59,6 +68,10 @@ __pycache__/
 env/
 venv/
 .venv/
+.tools/
+.env
+.env.*
+!.env.example
 ENV/
 env.bak/
 venv.bak/
@@ -76,6 +89,9 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 *.mo
 
 # ------------------------------------------------------------------
@@ -97,13 +113,21 @@ Thumbs.db
 # Logs and databases
 # ------------------------------------------------------------------
 *.log
+nohup.out
 *.sql
 *.sqlite
 *.data
+/core
+/core.*
+vgcore.*
+.gdb_history
 
 # ------------------------------------------------------------------
 # Misc project-specific ignores
 # ------------------------------------------------------------------
+.artifacts/
+.context/
+**/* - Copie/
 *.mid*
 *.odb
 scripts/*.bin
@@ -111,3 +135,6 @@ deprecated/
 recycle/
 recycled/
 recycling_bin/
+
+# Development-only tools retained on develop
+/scripts/tools/

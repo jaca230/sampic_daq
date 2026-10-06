@@ -40,6 +40,14 @@ public:
      */
     void push(const std::shared_ptr<FrontendEvent>& ev);
 
+    /**
+     * @brief Restore an event to the front after a consumer aborts a pop.
+     *
+     * This is used when end-of-run stops the asynchronous MIDAS writer while
+     * it is waiting for ring-buffer space.
+     */
+    void pushFront(const std::shared_ptr<FrontendEvent>& ev);
+
     // ------------------------------------------------------------------
     // Consumer interface
     // ------------------------------------------------------------------

@@ -1,53 +1,24 @@
 #include "integration/sampic/controller/sampic_controller.h"
-#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_default.h"
-#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_example.h"
-#include "integration/sampic/controller/init_settings_modes/sampic_init_settings_mode_simulator.h"
-#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_default.h"
-#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_example.h"
-#include "integration/sampic/controller/apply_settings_modes/sampic_apply_settings_mode_simulator.h"
 
-SampicController::SampicController(const SampicSystemSettings& sys_cfg,
-                                   const SampicControllerConfig& ctrl_cfg,
-                                   const SampicCollectorConfig& coll_cfg)
-    : settings_(sys_cfg),
-      ctrl_cfg_(ctrl_cfg),
-      coll_cfg_(coll_cfg)
+SampicController::SampicController(const SampicControllerConfig& ctrl_cfg,
+                                   const SampicCollectorConfig& coll_cfg,
+                                   const ConfigStore& store,
+                                   std::string init_modes_root,
+                                   std::string apply_modes_root,
+                                   std::string collector_modes_root,
+                                   std::string hardware_root)
+    : ctrl_cfg_(ctrl_cfg), coll_cfg_(coll_cfg),
+      init_modes_root_(std::move(init_modes_root)),
+      apply_modes_root_(std::move(apply_modes_root)),
+      collector_modes_root_(std::move(collector_modes_root)),
+      hardware_root_(std::move(hardware_root))
 {
-    // Select init mode
-    switch (ctrl_cfg_.init_mode) {
-        case SampicInitSettingsModeType::DEFAULT:
-            init_mode_ = std::make_unique<SampicInitSettingsModeDefault>(
-                info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
-            break;
-        case SampicInitSettingsModeType::EXAMPLE:
-            init_mode_ = std::make_unique<SampicInitSettingsModeExample>(
-                info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
-            break;
-        case SampicInitSettingsModeType::SIMULATOR:
-            init_mode_ = std::make_unique<SampicInitSettingsModeSimulator>(
-                info_, params_, eventBuffer_, mlFrames_, settings_, ctrl_cfg_);
-            break;
-    }
-
-    // Select apply mode
-    switch (ctrl_cfg_.apply_mode) {
-        case SampicApplySettingsModeType::DEFAULT:
-            apply_mode_ = std::make_unique<SampicApplySettingsModeDefault>(
-                info_, params_, settings_, ctrl_cfg_);
-            break;
-        case SampicApplySettingsModeType::EXAMPLE:
-            apply_mode_ = std::make_unique<SampicApplySettingsModeExample>(
-                info_, params_, settings_, ctrl_cfg_);
-            break;
-        case SampicApplySettingsModeType::SIMULATOR:
-            apply_mode_ = std::make_unique<SampicApplySettingsModeSimulator>(
-                info_, params_, settings_, ctrl_cfg_);
-            break;
-    }
+    buildInitMode(store);
+    buildApplyMode(store);
 
     // Create collector (owns its buffer)
     collector_ = std::make_unique<SampicCollector>(
-        coll_cfg_, info_, params_, eventBuffer_, mlFrames_);
+        coll_cfg_, info_, params_, eventBuffer_, mlFrames_, store, collector_modes_root_);
 }
 
 SampicController::~SampicController() {
@@ -61,11 +32,13 @@ SampicController::~SampicController() {
 }
 
 // ---------------- Config management ----------------
-void SampicController::setSystemSettings(const SampicSystemSettings& s) { settings_ = s; }
-SampicSystemSettings& SampicController::systemSettings() { return settings_; }
-const SampicSystemSettings& SampicController::systemSettings() const { return settings_; }
-
-void SampicController::setControllerConfig(const SampicControllerConfig& c) { ctrl_cfg_ = c; }
+void SampicController::setControllerConfig(const SampicControllerConfig& c,
+                                           const ConfigStore& store) {
+    if (initialized_ && c.init_mode != ctrl_cfg_.init_mode)
+        throw std::logic_error("init_mode cannot change after controller initialization");
+    ctrl_cfg_ = c;
+    buildApplyMode(store);
+}
 SampicControllerConfig& SampicController::controllerConfig() { return ctrl_cfg_; }
 const SampicControllerConfig& SampicController::controllerConfig() const { return ctrl_cfg_; }
 
@@ -84,20 +57,20 @@ int SampicController::initialize() {
     return rc;
 }
 
-int SampicController::applySettings() {
+int SampicController::applySettings(const ConfigStore& store) {
     if (!apply_mode_) {
         spdlog::error("Apply mode not configured");
         return -1;
     }
     try {
         // Apply hardware settings
-        apply_mode_->apply();
+        apply_mode_->apply(store);
 
         // Rebuild collector with updated config
         stopCollector();
         collector_.reset();
         collector_ = std::make_unique<SampicCollector>(
-            coll_cfg_, info_, params_, eventBuffer_, mlFrames_);
+            coll_cfg_, info_, params_, eventBuffer_, mlFrames_, store, collector_modes_root_);
 
         spdlog::info("Collector rebuilt with new configuration");
         return 0;
@@ -114,11 +87,15 @@ int SampicController::startRun() {
     }
 
     spdlog::info("Starting SAMPIC run...");
-    if (ctrl_cfg_.init_mode == SampicInitSettingsModeType::SIMULATOR) {
+    if (ctrl_cfg_.init_mode == "simulator") {
+        run_start_attempted_ = true;
         run_started_ = true;
         return 0;
     }
 
+    // The vendor call performs several hardware writes. A later write may
+    // fail after triggers or flow control have already been changed.
+    run_start_attempted_ = true;
     auto err = SAMPIC256CH_StartRun(&info_, &params_, TRUE);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to start run (err={})", static_cast<int>(err));
@@ -129,34 +106,41 @@ int SampicController::startRun() {
 }
 
 int SampicController::stopRun() {
-    if (!run_started_) {
+    if (!run_started_ && !run_start_attempted_) {
         spdlog::debug("stopRun() called but run was not started — skipping");
         return 0;
     }
 
     spdlog::info("Stopping SAMPIC run...");
-    if (ctrl_cfg_.init_mode == SampicInitSettingsModeType::SIMULATOR) {
+    if (ctrl_cfg_.init_mode == "simulator") {
         run_started_ = false;
+        run_start_attempted_ = false;
         return 0;
     }
 
     auto err = SAMPIC256CH_StopRun(&info_, &params_);
+    // Do not retry this automatically after the crate connection is closed.
+    // The attempt has nevertheless completed from this process's perspective.
+    run_started_ = false;
+    run_start_attempted_ = false;
     if (err != SAMPIC256CH_Success) {
         spdlog::error("Failed to stop run (err={})", static_cast<int>(err));
         return err;
     }
-    run_started_ = false;
     return 0;
 }
 
 void SampicController::cleanup() {
+    stopCollector();
+    stopRun();
+
     if (!initialized_) {
         spdlog::debug("cleanup() called but controller not initialized — skipping");
         return;
     }
 
     spdlog::info("Cleaning up SAMPIC resources...");
-    if (ctrl_cfg_.init_mode != SampicInitSettingsModeType::SIMULATOR) {
+    if (ctrl_cfg_.init_mode != "simulator") {
         if (eventBuffer_ || mlFrames_) {
             SAMPIC256CH_FreeEventMemory(&eventBuffer_, &mlFrames_);
             eventBuffer_ = nullptr;
@@ -170,15 +154,17 @@ void SampicController::cleanup() {
 // ---------------- Collector ----------------
 void SampicController::startCollector() {
     if (collector_ && !collector_running_) {
-        collector_->start();
+        collector_->start([this] { return stopRun(); });
         collector_running_ = true;
     }
 }
-void SampicController::stopCollector() {
+int SampicController::stopCollector() {
     if (collector_ && collector_running_) {
-        collector_->stop();
+        const int result = collector_->stop();
         collector_running_ = false;
+        return result;
     }
+    return 0;
 }
 
 // ---------------- Buffer access ----------------
@@ -187,4 +173,23 @@ SampicEventBuffer& SampicController::buffer() {
 }
 const SampicEventBuffer& SampicController::buffer() const {
     return collector_->buffer();
+}
+
+void SampicController::initializeOdb(ConfigStore& store,
+                                     const std::string& init_modes_root,
+                                     const std::string& apply_modes_root) {
+    SampicInitSettingsModeRegistry::catalog().initializeOdb(store, init_modes_root);
+    SampicApplySettingsModeRegistry::catalog().initializeOdb(store, apply_modes_root);
+}
+
+void SampicController::buildInitMode(const ConfigStore& store) {
+    SampicInitSettingsModeContext context{info_, params_, eventBuffer_, mlFrames_};
+    init_mode_ = SampicInitSettingsModeRegistry::catalog().create(
+        ctrl_cfg_.init_mode, context, store, init_modes_root_);
+}
+
+void SampicController::buildApplyMode(const ConfigStore& store) {
+    SampicApplySettingsModeContext context{info_, params_, hardware_root_};
+    apply_mode_ = SampicApplySettingsModeRegistry::catalog().create(
+        ctrl_cfg_.apply_mode, context, store, apply_modes_root_);
 }

@@ -8,9 +8,9 @@
 #include "midas.h"
 
 #include "integration/midas/frontend_config.h"
+#include "integration/midas/frontend_config_bundle.h"
 #include "integration/spdlog/logger_config.h"
 
-#include "integration/sampic/config/sampic_crate_config.h"
 #include "integration/sampic/config/sampic_controller_config.h"
 #include "integration/sampic/config/sampic_collector_config.h"
 
@@ -20,15 +20,6 @@
 #include "processing/sampic_processing/collector/frontend_event_collector.h"
 
 namespace frontend::runtime {
-
-struct ConfigBundle {
-  FrontendConfig frontend{};
-  LoggerConfig logger{};
-  SampicSystemSettings system{};
-  SampicControllerConfig controller{};
-  SampicCollectorConfig collector{};
-  FrontendEventCollectorConfig frontend_collector{};
-};
 
 class Runtime {
 public:
@@ -43,7 +34,7 @@ public:
   std::chrono::steady_clock::time_point lastEventTimestamp{
       std::chrono::steady_clock::time_point::min()};
 
-  ConfigBundle configs{};
+  FrontendConfigBundle configs{};
   std::unique_ptr<SampicController> controller;
   std::unique_ptr<FrontendEventCollector> collector;
 
@@ -63,4 +54,3 @@ private:
 }  // namespace frontend::runtime
 
 #endif  // SAMPIC_DAQ_INTEGRATION_MIDAS_FRONTEND_RUNTIME_H
-
