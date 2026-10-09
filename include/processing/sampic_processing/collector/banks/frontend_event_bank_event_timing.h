@@ -50,12 +50,12 @@ public:
      * @param fe_ts Timestamp of the frontend event.
      * @param nhits Number of hits in this event.
      * @param parents Vector of contributing SampicEvent objects.
-     * @param prefix Optional bank prefix (default "AT").
+     * @param prefix Optional bank prefix (default "ST").
      */
     FrontendEventBankEventTiming(std::chrono::steady_clock::time_point fe_ts,
                                  uint32_t nhits,
                                  const std::vector<SampicEvent*>& parents,
-                                 const std::string& prefix = "AT");
+                                 const std::string& prefix = "ST");
 
     /** @brief Return pointer to serialized record data. */
     const uint8_t* data() const override;

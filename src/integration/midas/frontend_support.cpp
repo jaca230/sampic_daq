@@ -39,7 +39,7 @@ INT FrontendSupport::composeEvent(
 
     std::size_t bank_index = 0;
     for (const auto& bank : event->banks()) {
-        if (!bank) {
+        if (!bank || !bank->enabled()) {
             continue;
         }
 

@@ -11,9 +11,14 @@ struct FrontendCollectorModeExternalTriggerConfig {
     double sampling_frequency_mhz = 6400.0;
     std::uint32_t wait_timeout_ms = 1000;
     bool emit_triggers_without_hits = true;
-    std::string data_bank_prefix = "AD";
-    std::string event_timing_bank_prefix = "AT";
-    std::string trigger_metadata_bank_prefix = "TG";
+    bool data_bank_enabled = true;
+    std::string data_bank_prefix = "SD";
+    bool advanced_bank_enabled = true;
+    std::string advanced_bank_prefix = "SH";
+    bool event_timing_bank_enabled = true;
+    std::string event_timing_bank_prefix = "ST";
+    bool trigger_metadata_bank_enabled = true;
+    std::string trigger_metadata_bank_prefix = "SG";
 };
 
 #endif

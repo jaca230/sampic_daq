@@ -2,7 +2,7 @@
 
 FrontendEventBankTriggerMetadata::FrontendEventBankTriggerMetadata(Record record)
     : record_(record) {
-    setBankPrefix("TG");
+    setBankPrefix("SG");
 }
 
 const uint8_t* FrontendEventBankTriggerMetadata::data() const {

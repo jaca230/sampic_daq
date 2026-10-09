@@ -4,6 +4,7 @@
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_data.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_collector_timing.h"
+#include "processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits.h"
 
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -25,8 +26,20 @@ SAMPIC_REGISTER_MODE(
 FrontendCollectorModeDefault::FrontendCollectorModeDefault(
     FrontendCollectorModeContext& context,
     FrontendCollectorModeDefaultConfig config)
+    : FrontendCollectorModeDefault(
+          context, std::move(config), false, "SH", "default") {}
+
+FrontendCollectorModeDefault::FrontendCollectorModeDefault(
+    FrontendCollectorModeContext& context,
+    FrontendCollectorModeDefaultConfig config,
+    bool advanced_bank_enabled,
+    std::string advanced_bank_prefix,
+    std::string mode_name)
     : FrontendCollectorMode(context),
-      mode_cfg_(std::move(config))
+      mode_cfg_(std::move(config)),
+      advanced_bank_enabled_(advanced_bank_enabled),
+      advanced_bank_prefix_(std::move(advanced_bank_prefix)),
+      mode_name_(std::move(mode_name))
 {
     time_window_ns_ = mode_cfg_.time_window_ns;
     finalize_after_ = std::chrono::milliseconds(static_cast<int>(mode_cfg_.finalize_after_ms));
@@ -35,11 +48,13 @@ FrontendCollectorModeDefault::FrontendCollectorModeDefault(
     ready_groups_.reserve(32);
     emitted_events_.reserve(32);
 
-    spdlog::info("FrontendCollectorModeDefault initialized "
-                 "(time_window_ns={}, finalize_after_ms={}, wait_timeout_ms={})",
+    spdlog::info("Frontend collector mode '{}' initialized "
+                 "(time_window_ns={}, finalize_after_ms={}, wait_timeout_ms={}, advanced_data={})",
+                 mode_name_,
                  time_window_ns_,
                  mode_cfg_.finalize_after_ms,
-                 mode_cfg_.wait_timeout_ms);
+                 mode_cfg_.wait_timeout_ms,
+                 advanced_bank_enabled_);
 }
 
 /**
@@ -218,22 +233,33 @@ bool FrontendCollectorModeDefault::emitReadyGroups(
 
         auto fev = std::make_shared<FrontendEvent>(g.created);
 
+        if (advanced_bank_enabled_) {
+            auto advanced_bank =
+                std::make_unique<FrontendEventBankAdvancedHits>(g.hits);
+            advanced_bank->setBankPrefix(advanced_bank_prefix_);
+            fev->addBank(std::move(advanced_bank));
+        }
+
         // Zero-copy data bank (no temporary vector)
-        auto data_bank =
-            std::make_unique<FrontendEventBankData>(std::move(g.parents), g.hits);
-        data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
-        fev->addBank(std::move(data_bank));
+        if (mode_cfg_.data_bank_enabled) {
+            auto data_bank =
+                std::make_unique<FrontendEventBankData>(std::move(g.parents), g.hits);
+            data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
+            fev->addBank(std::move(data_bank));
+        }
 
         // Optional user-defined postprocessing
         fev->finalize();
 
         // Per-event timing bank
-        auto event_timing_bank =
-            std::make_unique<FrontendEventBankEventTiming>(g.created,
-                                                           static_cast<uint32_t>(g.hits.size()),
-                                                           parent_ptr_scratch_);
-        event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
-        fev->addBank(std::move(event_timing_bank));
+        if (mode_cfg_.event_timing_bank_enabled) {
+            auto event_timing_bank =
+                std::make_unique<FrontendEventBankEventTiming>(g.created,
+                                                               static_cast<uint32_t>(g.hits.size()),
+                                                               parent_ptr_scratch_);
+            event_timing_bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
+            fev->addBank(std::move(event_timing_bank));
+        }
 
         emitted_events_.emplace_back(std::move(fev));
 
@@ -260,7 +286,7 @@ bool FrontendCollectorModeDefault::emitReadyGroups(
     // ---------------------------------------------------------------------
     // Step 5: Collector timing bank (last event only)
     // ---------------------------------------------------------------------
-    if (!emitted_events_.empty()) {
+    if (!emitted_events_.empty() && mode_cfg_.collector_timing_bank_enabled) {
         FrontendEventBankCollectorTiming::Record rec{};
         rec.collector_timestamp_ns = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(

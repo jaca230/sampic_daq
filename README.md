@@ -103,15 +103,50 @@ Mode selectors use canonical lower-case IDs. Available frontend collector modes
 are:
 
 - `default`: cluster hits from one or more decoded SAMPIC events by timestamp.
+  This legacy-compatible mode always emits the original bank set.
+- `time_grouping`: the explicit timestamp-clustering mode. It uses the same
+  grouping algorithm as `default` and can optionally emit compact advanced-hit
+  data.
 - `external_gated_trigger`: associate hits with decoded external-trigger
   records and emit one MIDAS event per trigger. The older `external_trigger`
   ID remains as a compatible alias.
 - `vendor_passthrough`: emit exactly one MIDAS event per decoded vendor
-  `EventStruct`, without time grouping or trigger-based splitting. Its `AD`
-  bank contains all corrected hits from that vendor event and its `VT` bank
+  `EventStruct`, without time grouping or trigger-based splitting. Its `SD`
+  bank contains all corrected hits from that vendor event and its `SV` bank
   retains the vendor trigger records.
 
-The packed `VTxx` payload starts with `uint32_t trigger_count`, followed by
+Every frontend collector bank has a mode-specific `*_bank_enabled` setting.
+All banks are enabled by default. Disabled banks are neither constructed nor
+written to MIDAS. The available switches are:
+
+- `default`: `data_bank_enabled`, `event_timing_bank_enabled`, and
+  `collector_timing_bank_enabled`;
+- `time_grouping`: the default-mode switches plus `advanced_bank_enabled`;
+- `external_gated_trigger`: `data_bank_enabled`, `advanced_bank_enabled`,
+  `event_timing_bank_enabled`, and `trigger_metadata_bank_enabled`;
+- `vendor_passthrough`: `data_bank_enabled`, `advanced_bank_enabled`,
+  `event_timing_bank_enabled`, and `trigger_bank_enabled`.
+
+`time_grouping`, `external_gated_trigger`, and `vendor_passthrough` also accept
+an `advanced_bank_prefix` setting. With the default switches, every emitted
+event has both its normal data bank (`SDxx` by default) and a compact
+advanced-hit bank (`SHxx` by default), including zero-hit events.
+Advanced record `i` corresponds to SD hit `i`.
+
+The packed `SHxx` payload starts with an 8-byte header: `uint16_t
+format_version` (currently 1), `uint16_t record_size` (currently 54), and
+`uint32_t hit_count`. Each record then contains, in order:
+`uint16_t sampic_data_header`, `int32_t first_trigger_position_cell`,
+`int32_t trigger_position_cell`,
+`double physical_cell0_timestamp_ns`, `int32_t sampic_timestamp_a`, `int32_t
+sampic_timestamp_b`, `uint64_t fpga_timestamp`, `int32_t
+adc_counter_latched_at_end_of_conversion`, `int32_t start_of_adc_ramp`,
+`uint64_t trigger_position_mask`, and `int32_t time_physical_index`. Bit N of
+the mask is the lossless compact representation of vendor
+`TriggerPosition[N]`. Thus the complete 302-byte vendor advanced struct is
+represented by 54 bytes per hit without discarding a field.
+
+The packed `SVxx` payload starts with `uint32_t trigger_count`, followed by
 that many records containing `uint32_t fpga_trigger_id`, `uint32_t
 external_trigger_id`, `uint16_t spill_number`, `uint16_t raw_extra_word`, and
 `double trigger_timestamp_ns`, in that order.
@@ -156,8 +191,11 @@ the hardware selection, timing windows, sampling frequency, or packetization
 with the profile's command-line options.
 
 `vendor_passthrough` switches only collection/event-building behavior.
-`time_grouped` also configures vendor frame batching and the grouping worker's
-processing interval, but it does not rewrite channel trigger settings.
+`time_grouped` selects the explicit `time_grouping` mode and also configures
+vendor frame batching and the grouping worker's processing interval, but it
+does not rewrite channel trigger settings. These profiles enable all their
+banks by default. Their `--omit-*-bank` options selectively suppress output;
+`--omit-advanced-data` suppresses `SHxx`.
 
 Each profile owns its arguments and documented ODB writes in one Python
 module. The runner discovers profile modules automatically, so adding a

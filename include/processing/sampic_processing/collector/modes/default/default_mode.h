@@ -27,6 +27,14 @@ public:
     bool collect() override;
     bool flush() override;
 
+protected:
+    FrontendCollectorModeDefault(
+        FrontendCollectorModeContext& context,
+        FrontendCollectorModeDefaultConfig config,
+        bool advanced_bank_enabled,
+        std::string advanced_bank_prefix,
+        std::string mode_name);
+
 private:
     struct PendingGroup {
         std::chrono::steady_clock::time_point created;
@@ -48,6 +56,9 @@ private:
     std::chrono::milliseconds finalize_after_;
     std::chrono::milliseconds wait_timeout_;
     double time_window_ns_;
+    bool advanced_bank_enabled_{false};
+    std::string advanced_bank_prefix_{"SH"};
+    std::string mode_name_{"default"};
 
     bool emitReadyGroups(
         std::chrono::steady_clock::time_point started,

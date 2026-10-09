@@ -51,7 +51,7 @@ std::vector<FrontendEventBank*> FrontendEvent::banks() {
 
 FrontendEventBank* FrontendEvent::findBankByPrefix(const std::string& prefix) const {
     for (const auto& bank : banks_) {
-        if (bank && bank->bankPrefix() == prefix)
+        if (bank && bank->enabled() && bank->bankPrefix() == prefix)
             return bank.get();
     }
     return nullptr;
@@ -62,13 +62,18 @@ void FrontendEvent::clearBanks() {
 }
 
 size_t FrontendEvent::numBanks() const {
-    return banks_.size();
+    size_t count = 0;
+    for (const auto& bank : banks_) {
+        if (bank && bank->enabled())
+            ++count;
+    }
+    return count;
 }
 
 size_t FrontendEvent::totalDataSize() const {
     size_t total = 0;
     for (const auto& b : banks_) {
-        if (b)
+        if (b && b->enabled())
             total += b->size();
     }
     return total;
