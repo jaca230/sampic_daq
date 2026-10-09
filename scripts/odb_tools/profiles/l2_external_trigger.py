@@ -60,6 +60,15 @@ class L2ExternalTriggerProfile(OdbProfile):
         parser.add_argument("--hit-time-offset-ns", type=float, default=-470.0)
         parser.add_argument("--pre-window-ns", type=float, default=500.0)
         parser.add_argument("--post-window-ns", type=float, default=500.0)
+        parser.add_argument("--omit-data-bank", action="store_true")
+        parser.add_argument(
+            "--omit-advanced-data",
+            action="store_true",
+            help="Do not write the compact advanced-hit bank.",
+        )
+        parser.add_argument("--advanced-bank-prefix", default="SH")
+        parser.add_argument("--omit-event-timing-bank", action="store_true")
+        parser.add_argument("--omit-trigger-metadata-bank", action="store_true")
 
     def build_writes(self, arguments: Namespace) -> Sequence[OdbWrite]:
         if arguments.frames_per_block <= 0:
@@ -68,6 +77,10 @@ class L2ExternalTriggerProfile(OdbProfile):
             raise ValueError("triggers per event must be in [1, 127]")
         if arguments.sampling_frequency_mhz <= 0:
             raise ValueError("sampling frequency must be positive")
+        if len(arguments.advanced_bank_prefix) != 2:
+            raise ValueError("advanced bank prefix must contain exactly 2 characters")
+        if not arguments.omit_advanced_data and arguments.advanced_bank_prefix == "SD":
+            raise ValueError("advanced and data bank prefixes must differ")
         if (
             arguments.sampic_buffer_size <= 0
             or arguments.frontend_buffer_size <= 0
@@ -210,6 +223,36 @@ class L2ExternalTriggerProfile(OdbProfile):
                 "external_gated_trigger/emit_triggers_without_hits",
                 True,
                 "Keep accepted gates even when no hit is assigned.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/data_bank_enabled",
+                not arguments.omit_data_bank,
+                "Enable the corrected-hit SD bank.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/advanced_bank_enabled",
+                not arguments.omit_advanced_data,
+                "Write one compact advanced record for every SD-bank hit.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/advanced_bank_prefix",
+                arguments.advanced_bank_prefix,
+                "Set the two-character advanced-hit bank prefix.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/event_timing_bank_enabled",
+                not arguments.omit_event_timing_bank,
+                "Enable the per-event ST timing bank.",
+            ),
+            OdbWrite(
+                f"{root}/Frontend Event Collector/modes/"
+                "external_gated_trigger/trigger_metadata_bank_enabled",
+                not arguments.omit_trigger_metadata_bank,
+                "Enable the SG external-trigger metadata bank.",
             ),
         ]
 

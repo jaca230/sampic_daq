@@ -43,10 +43,10 @@ public:
     /**
      * @brief Construct the collector timing bank directly from a filled record.
      * @param record Fully populated timing record.
-     * @param prefix Optional bank prefix (default "AC").
+     * @param prefix Optional bank prefix (default "SC").
      */
     explicit FrontendEventBankCollectorTiming(const Record& record,
-                                              const std::string& prefix = "AC");
+                                              const std::string& prefix = "SC");
 
     /** @brief Return pointer to serialized record data. */
     const uint8_t* data() const override;

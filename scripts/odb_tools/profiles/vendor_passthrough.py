@@ -23,11 +23,19 @@ class VendorPassthroughProfile(OdbProfile):
         parser.add_argument("--sampic-buffer-size", type=int, default=512)
         parser.add_argument("--frontend-buffer-size", type=int, default=512)
         parser.add_argument("--wait-timeout-ms", type=int, default=1000)
+        parser.add_argument("--omit-data-bank", action="store_true")
         parser.add_argument(
             "--omit-trigger-records",
             action="store_true",
             help="Do not write the vendor trigger-record bank.",
         )
+        parser.add_argument(
+            "--omit-advanced-data",
+            action="store_true",
+            help="Do not write the compact advanced-hit bank.",
+        )
+        parser.add_argument("--advanced-bank-prefix", default="SH")
+        parser.add_argument("--omit-event-timing-bank", action="store_true")
 
     def build_writes(self, arguments: Namespace) -> Sequence[OdbWrite]:
         if (
@@ -37,6 +45,10 @@ class VendorPassthroughProfile(OdbProfile):
             raise ValueError("buffer sizes must be positive")
         if arguments.wait_timeout_ms <= 0:
             raise ValueError("wait timeout must be positive")
+        if len(arguments.advanced_bank_prefix) != 2:
+            raise ValueError("advanced bank prefix must contain exactly 2 characters")
+        if not arguments.omit_advanced_data and arguments.advanced_bank_prefix == "SD":
+            raise ValueError("advanced and data bank prefixes must differ")
         root = settings_root(arguments.frontend_index)
         mode_root = f"{root}/Frontend Event Collector/modes/vendor_passthrough"
         return correction_writes(root) + [
@@ -76,9 +88,29 @@ class VendorPassthroughProfile(OdbProfile):
                 "Bound idle waits while retaining blocking readout.",
             ),
             OdbWrite(
-                f"{mode_root}/include_trigger_records",
+                f"{mode_root}/trigger_bank_enabled",
                 not arguments.omit_trigger_records,
                 "Retain the vendor packet's trigger-record array.",
+            ),
+            OdbWrite(
+                f"{mode_root}/data_bank_enabled",
+                not arguments.omit_data_bank,
+                "Enable the corrected-hit SD bank.",
+            ),
+            OdbWrite(
+                f"{mode_root}/advanced_bank_enabled",
+                not arguments.omit_advanced_data,
+                "Write one compact advanced record for every SD-bank hit.",
+            ),
+            OdbWrite(
+                f"{mode_root}/advanced_bank_prefix",
+                arguments.advanced_bank_prefix,
+                "Set the two-character advanced-hit bank prefix.",
+            ),
+            OdbWrite(
+                f"{mode_root}/event_timing_bank_enabled",
+                not arguments.omit_event_timing_bank,
+                "Enable the per-event ST timing bank.",
             ),
         ]
 

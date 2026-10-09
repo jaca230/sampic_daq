@@ -22,7 +22,18 @@ The operational profiles are:
   disable all hit-time grouping.
 - `time_grouped`: select the standard timestamp-clustering mode and configure
   its grouping/finalization windows, vendor frame batching, and collector
-processing interval.
+  processing interval.
+
+The `time_grouped`, `l2_external_trigger`, and `vendor_passthrough` profiles
+write the compact `SHxx` bank in addition to the normal `SDxx` bank by
+default. Pass `--omit-advanced-data` to disable it, or override `SH` with the
+two-character `--advanced-bank-prefix` option.
+
+All collector banks are enabled by default. Profiles expose bank-specific
+suppression options such as `--omit-data-bank`, `--omit-event-timing-bank`,
+`--omit-collector-timing-bank`, and `--omit-trigger-metadata-bank` where the
+selected collector supports those banks. `vendor_passthrough` retains
+`--omit-trigger-records` for its `SVxx` bank.
 
 Hardware-trigger and collector profiles are intentionally composable. For the
 known N1 channel set with a 10 us grouping window, use:

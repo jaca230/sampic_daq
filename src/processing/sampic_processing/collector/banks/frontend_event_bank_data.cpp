@@ -14,7 +14,7 @@ FrontendEventBankData::FrontendEventBankData(
     std::vector<std::shared_ptr<SampicEvent>> parents,
     const std::vector<const HitStruct*>& hits)
 {
-    setBankPrefix("AD");
+    setBankPrefix("SD");
     parent_refs_ = std::move(parents);
     slices_.reserve(hits.size() * 2);  ///< header + corrected section
     total_size_ = 0;

@@ -5,7 +5,7 @@
 
 FrontendEventBankVendorTriggers::FrontendEventBankVendorTriggers(
     const TriggerDataStruct& triggers) {
-    setBankPrefix("VT");
+    setBankPrefix("SV");
 
     const int bounded_count = std::clamp(
         triggers.NbOfTriggers, 0, static_cast<int>(MAX_NB_OF_TRIGGERS_IN_EVENT));

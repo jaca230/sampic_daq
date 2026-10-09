@@ -15,7 +15,7 @@ public:
     FrontendEventBank() = default;
     virtual ~FrontendEventBank() = default;
 
-    /// Set the 2-character MIDAS bank prefix (e.g. "AD", "AT").
+    /// Set the 2-character MIDAS bank prefix (e.g. "SD", "ST").
     /// Throws if prefix is not exactly 2 characters.
     void setBankPrefix(const std::string& prefix) {
         if (prefix.size() != 2)
@@ -27,6 +27,10 @@ public:
 
     /// Retrieve the prefix as a C string.
     const char* bankPrefix() const { return bank_prefix_; }
+
+    /// Enable or disable serialization of this bank. Banks are enabled by default.
+    void setEnabled(bool enabled) { enabled_ = enabled; }
+    bool enabled() const { return enabled_; }
 
     /// Pointer to start of serialized bank data (zero-copy reference)
     virtual const uint8_t* data() const = 0;
@@ -45,6 +49,7 @@ public:
 
 protected:
     char bank_prefix_[3] = {'X', 'X', '\0'};  ///< 2-char prefix + null terminator
+    bool enabled_{true};
 };
 
 #endif // FRONTEND_EVENT_BANK_H

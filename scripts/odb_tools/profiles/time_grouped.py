@@ -12,7 +12,7 @@ from profiles.profile_definition import (
 
 
 class TimeGroupedProfile(OdbProfile):
-    """Select the legacy/default hit-time clustering strategy."""
+    """Select the explicit hit-time clustering strategy."""
 
     name = "time_grouped"
     description = "Group SAMPIC hits into MIDAS events by timestamp proximity."
@@ -25,6 +25,15 @@ class TimeGroupedProfile(OdbProfile):
         parser.add_argument("--sampic-buffer-size", type=int, default=512)
         parser.add_argument("--frontend-buffer-size", type=int, default=512)
         parser.add_argument("--frontend-sleep-time-us", type=int, default=0)
+        parser.add_argument("--omit-data-bank", action="store_true")
+        parser.add_argument(
+            "--omit-advanced-data",
+            action="store_true",
+            help="Do not write the compact advanced-hit bank.",
+        )
+        parser.add_argument("--omit-event-timing-bank", action="store_true")
+        parser.add_argument("--omit-collector-timing-bank", action="store_true")
+        parser.add_argument("--advanced-bank-prefix", default="SH")
 
     def build_writes(self, arguments: Namespace) -> Sequence[OdbWrite]:
         if arguments.time_window_ns < 0 or arguments.finalize_after_ms < 0:
@@ -35,13 +44,17 @@ class TimeGroupedProfile(OdbProfile):
             raise ValueError("frames per block must be in [1, 31]")
         if arguments.frontend_sleep_time_us < 0:
             raise ValueError("frontend sleep time must be non-negative")
+        if len(arguments.advanced_bank_prefix) != 2:
+            raise ValueError("advanced bank prefix must contain exactly 2 characters")
+        if not arguments.omit_advanced_data and arguments.advanced_bank_prefix == "SD":
+            raise ValueError("advanced and data bank prefixes must differ")
         if (
             arguments.sampic_buffer_size <= 0
             or arguments.frontend_buffer_size <= 0
         ):
             raise ValueError("buffer sizes must be positive")
         root = settings_root(arguments.frontend_index)
-        mode_root = f"{root}/Frontend Event Collector/modes/default"
+        mode_root = f"{root}/Frontend Event Collector/modes/time_grouping"
         return correction_writes(root) + [
             OdbWrite(
                 f"{root}/Sampic Event Collector/mode",
@@ -65,7 +78,7 @@ class TimeGroupedProfile(OdbProfile):
             ),
             OdbWrite(
                 f"{root}/Frontend Event Collector/mode",
-                "default",
+                "time_grouping",
                 "Enable hit-time clustering.",
             ),
             OdbWrite(
@@ -92,6 +105,31 @@ class TimeGroupedProfile(OdbProfile):
                 f"{mode_root}/wait_timeout_ms",
                 arguments.wait_timeout_ms,
                 "Bound idle waits for decoded events.",
+            ),
+            OdbWrite(
+                f"{mode_root}/data_bank_enabled",
+                not arguments.omit_data_bank,
+                "Enable the corrected-hit SD bank.",
+            ),
+            OdbWrite(
+                f"{mode_root}/advanced_bank_enabled",
+                not arguments.omit_advanced_data,
+                "Write one compact advanced record for every SD-bank hit.",
+            ),
+            OdbWrite(
+                f"{mode_root}/advanced_bank_prefix",
+                arguments.advanced_bank_prefix,
+                "Set the two-character advanced-hit bank prefix.",
+            ),
+            OdbWrite(
+                f"{mode_root}/event_timing_bank_enabled",
+                not arguments.omit_event_timing_bank,
+                "Enable the per-event ST timing bank.",
+            ),
+            OdbWrite(
+                f"{mode_root}/collector_timing_bank_enabled",
+                not arguments.omit_collector_timing_bank,
+                "Enable the periodic SC collector timing bank.",
             ),
         ]
 
