@@ -1,0 +1,14 @@
+{
+  "hardware_config": "double_pulse_deadtime_scan.default.json",
+  "output_root": "scripts/tools/sampic_tests/data/sampling_frequency_waveform_scan_crate_n2",
+  "sampling_frequencies_mhz": [2133, 6400, 1600, 4252, 3200, 2133, 6400],
+  "channel_groups": [
+    {"board": 0, "channels": [31]}
+  ],
+  "threshold_v": 0.15,
+  "acquisition_s": 2.0,
+  "max_waveforms_per_channel": 100,
+  "reconnect_each_frequency": false,
+  "frames_per_block": 31,
+  "triggers_per_event": 127
+}

@@ -426,6 +426,26 @@ hardware configuration supplies the crate endpoint, calibration directory,
 threshold, sampling frequency, selected self-trigger channels, and Lecroy pulse
 shape.
 
+### Crate-N1 sampling-frequency waveform check
+
+This short check reproduces the sampling-frequency timestamp diagnostic without
+configuring the pulse generator. It uses the nine known Agilent-fed channels on
+crate N1, requests every supported sampling frequency in a deliberately
+non-monotonic order with repeated 2133 and 6400 MHz anchor points, and verifies
+the vendor readback. It records the first-to-last timestamp span, consecutive
+per-channel pulse intervals, corrected and raw waveforms, and interpolated
+half-height waveform widths in samples. It does not use wall time in the output.
+
+```bash
+cmake --build scripts/tools/sampic_tests/build \
+  --target sampling_frequency_waveform_scan -j2
+scripts/tools/sampic_tests/scripts/helpers/sampling_frequency_waveform_scan.sh
+```
+
+The default output is a timestamped directory under
+`scripts/tools/sampic_tests/data/sampling_frequency_waveform_scan/`. Stop the
+MIDAS frontend connected to crate N1 before running this direct-hardware test.
+
 ### Gated versus ungated channel-rate comparison
 
 To compare the effect of the gate without changing any other configured setting,

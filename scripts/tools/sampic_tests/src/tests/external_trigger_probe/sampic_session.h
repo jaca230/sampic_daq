@@ -29,15 +29,16 @@ class SimpleSession {
   SimpleSession(
       const ConnectionConfig& conn,
       const ExternalTriggerConfig& trig,
-      bool use_self_trigger_channels)
+      bool use_self_trigger_channels,
+      bool defer_trigger_configuration = false)
       : conn_opts_(conn),
         trig_opts_(trig),
         use_self_trigger_channels_(use_self_trigger_channels) {
     try {
       initialise_connection();
-      configure_base();
+      configure_base(defer_trigger_configuration);
       allocate_event_memory();
-      configure_defaults();
+      if (!defer_trigger_configuration) configure_defaults();
     } catch (...) {
       // A throwing constructor does not run this class's destructor. Release
       // the vendor connection explicitly so the next scan retry starts clean.
@@ -106,6 +107,16 @@ class SimpleSession {
   bool sampling_frequency_external_clock() const {
     return sampling_frequency_external_clock_;
   }
+
+  // Complete the trigger/channel phase after readout and sampling-frequency
+  // settings have been applied. This reproduces Pascal's systemInit ->
+  // systemSet -> systemTrigger ordering when construction deferred this phase.
+  void configure_trigger_defaults() { configure_defaults(); }
+
+  // Reinitialize hardware while retaining the existing transport connection
+  // and host-side event buffers. This is Pascal's systemInit hardware sequence
+  // without closing/reopening the socket.
+  void reinitialize_hardware_like_pascal() { configure_base(true); }
 
   void set_packetization(int frames_per_block, int triggers_per_event) {
     check(SAMPIC256CH_SetNbOfFramesPerBlock(
@@ -490,7 +501,16 @@ class SimpleSession {
     std::cout << "Connected to crate. FEBs=" << info_.NbOfFeBoards << "\n";
   }
 
-  void configure_base() {
+  void configure_base(bool reset_like_pascal) {
+    if (reset_like_pascal) {
+      check(SAMPIC256CH_CheckCrateFirmwareVersions(&info_),
+            "CheckCrateFirmwareVersions");
+      // Pascal deliberately issues StopRun before ResetCrate even when no run
+      // was started in this process. Do not make a benign StopRun failure fatal.
+      SAMPIC256CH_StopRun(&info_, &params_);
+      check(SAMPIC256CH_ResetCrate(&info_, &params_), "ResetCrate");
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
     check(SAMPIC256CH_SetDefaultParameters(&info_, &params_), "SetDefaultParameters");
     if (conn_opts_.load_calibration) {
       namespace fs = std::filesystem;
@@ -506,6 +526,11 @@ class SimpleSession {
         std::cerr << "Warning: calibration load failed (code " << static_cast<int>(err)
                   << ")\n";
       }
+    }
+    if (reset_like_pascal) {
+      check(SAMPIC256CH_SetCrateCorrectionLevels(
+                &info_, &params_, TRUE, TRUE, TRUE),
+            "SetCrateCorrectionLevels");
     }
   }
 
