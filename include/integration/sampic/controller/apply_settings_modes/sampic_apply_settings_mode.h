@@ -20,7 +20,9 @@ public:
     explicit SampicApplySettingsMode(SampicApplySettingsModeContext& context)
         : info_(context.info),
           params_(context.params),
-          hardware_root_(std::move(context.hardware_root)) {}
+          hardware_root_(std::move(context.hardware_root)),
+          settings_applied_since_initialization_(
+              context.settings_applied_since_initialization) {}
 
     virtual ~SampicApplySettingsMode() = default;
 
@@ -31,6 +33,7 @@ protected:
     CrateInfoStruct& info_;
     CrateParamStruct& params_;
     std::string hardware_root_;
+    bool& settings_applied_since_initialization_;
 };
 
 using SampicApplySettingsModeRegistry =

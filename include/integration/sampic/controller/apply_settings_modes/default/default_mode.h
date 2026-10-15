@@ -16,7 +16,10 @@ public:
     void apply(const ConfigStore& store) override;
 
 private:
-    void reloadCalibrationIfNeeded();
+    bool shouldResetHardware(const ConfigStore& store) const;
+    void resetHardware();
+    bool shouldReloadCalibration(bool hardware_was_reset) const;
+    void reloadCalibration();
     SampicApplySettingsModeDefaultConfig config_;
 };
 
