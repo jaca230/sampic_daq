@@ -54,6 +54,7 @@ int SampicController::initialize() {
     }
     int rc = init_mode_->initialize();
     initialized_ = (rc == SAMPIC256CH_Success);
+    if (initialized_) settings_applied_since_initialization_ = false;
     return rc;
 }
 
@@ -189,7 +190,9 @@ void SampicController::buildInitMode(const ConfigStore& store) {
 }
 
 void SampicController::buildApplyMode(const ConfigStore& store) {
-    SampicApplySettingsModeContext context{info_, params_, hardware_root_};
+    SampicApplySettingsModeContext context{
+        info_, params_, hardware_root_,
+        settings_applied_since_initialization_};
     apply_mode_ = SampicApplySettingsModeRegistry::catalog().create(
         ctrl_cfg_.apply_mode, context, store, apply_modes_root_);
 }

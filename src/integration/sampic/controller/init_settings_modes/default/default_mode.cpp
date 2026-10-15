@@ -2,7 +2,9 @@
 #include "core/registry/mode/mode_auto_registration.h"
 #include "integration/sampic/calibration/calibration_loader.h"
 #include <spdlog/spdlog.h>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 SAMPIC_REGISTER_MODE(
     SampicInitSettingsModeRegistry,
@@ -26,6 +28,21 @@ SAMPIC_REGISTER_MODE(
 int SampicInitSettingsModeDefault::initialize() {
     spdlog::info("InitSettingsModeDefault: Initializing SAMPIC system...");
 
+    auto err = openCrateConnection();
+    if (err != SAMPIC256CH_Success) return err;
+    err = checkAndLogFirmware();
+    if (err != SAMPIC256CH_Success) return err;
+    err = resetHardware();
+    if (err != SAMPIC256CH_Success) return err;
+    err = setDefaultParameters();
+    if (err != SAMPIC256CH_Success) return err;
+
+    loadCalibration();
+    logCorrectionLevels();
+    return allocateEventMemory();
+}
+
+SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::openCrateConnection() {
     CrateConnectionParamStruct conn{};
     conn.ConnectionType = static_cast<ConnectionType_t>(config_.connection_type);
     conn.ControlBoardControlType = static_cast<ControlType_t>(config_.control_type);
@@ -33,14 +50,17 @@ int SampicInitSettingsModeDefault::initialize() {
     conn.CtrlIpAddress[sizeof(conn.CtrlIpAddress) - 1] = '\0';
     conn.CtrlPort = config_.port;
 
-    auto err = SAMPIC256CH_OpenCrateConnection(conn, &info_);
+    const auto err = SAMPIC256CH_OpenCrateConnection(conn, &info_);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("InitSettingsModeDefault: Failed to open crate connection (err={})", static_cast<int>(err));
         return err;
     }
     spdlog::info("InitSettingsModeDefault: Connection opened with {} FE boards.", info_.NbOfFeBoards);
+    return SAMPIC256CH_Success;
+}
 
-    err = SAMPIC256CH_CheckCrateFirmwareVersions(&info_);
+SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::checkAndLogFirmware() {
+    const auto err = SAMPIC256CH_CheckCrateFirmwareVersions(&info_);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("InitSettingsModeDefault: Failed to read crate firmware versions (err={})",
                       static_cast<int>(err));
@@ -72,26 +92,48 @@ int SampicInitSettingsModeDefault::initialize() {
                          feFpgaFw.FPGAEvolution);
         }
     }
+    return SAMPIC256CH_Success;
+}
 
-    err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
+SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::resetHardware() {
+    // Match the vendor application's known-good systemInit sequence. StopRun
+    // is intentionally best-effort because this process has not started a run,
+    // but the crate may have retained acquisition state from an earlier client.
+    SAMPIC256CH_StopRun(&info_, &params_);
+    const auto err = SAMPIC256CH_ResetCrate(&info_, &params_);
     if (err != SAMPIC256CH_Success) {
-        spdlog::error("InitSettingsModeDefault: Failed to open crate connection (err={})", static_cast<int>(err));
+        spdlog::error("InitSettingsModeDefault: Failed to reset crate (err={})",
+                      static_cast<int>(err));
         return err;
     }
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
+    return SAMPIC256CH_Success;
+}
 
-    err = CalibrationLoader::load(
+SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::setDefaultParameters() {
+    const auto err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::error("InitSettingsModeDefault: Failed to set default parameters (err={})", static_cast<int>(err));
+        return err;
+    }
+    return SAMPIC256CH_Success;
+}
+
+void SampicInitSettingsModeDefault::loadCalibration() {
+    const auto err = CalibrationLoader::load(
         info_, params_, config_.calibration_directory);
     if (err != SAMPIC256CH_Success) {
         spdlog::warn("InitSettingsModeDefault: Calibration files missing, continuing anyway...");
     }
+}
+
+void SampicInitSettingsModeDefault::logCorrectionLevels() {
     Boolean adcCorrectionEnabled{};
     Boolean timeInlCorrectionEnabled{};
     Boolean residualPedestalCorrectionEnabled{};
-    err = SAMPIC256CH_GetCrateCorrectionLevels(&info_,
-                                               &params_,
-                                               &adcCorrectionEnabled,
-                                               &timeInlCorrectionEnabled,
-                                               &residualPedestalCorrectionEnabled);
+    const auto err = SAMPIC256CH_GetCrateCorrectionLevels(
+        &info_, &params_, &adcCorrectionEnabled, &timeInlCorrectionEnabled,
+        &residualPedestalCorrectionEnabled);
     if (err != SAMPIC256CH_Success) {
         spdlog::warn("InitSettingsModeDefault: Failed to read crate correction levels (err={})",
                      static_cast<int>(err));
@@ -101,13 +143,14 @@ int SampicInitSettingsModeDefault::initialize() {
                       timeInlCorrectionEnabled ? "enabled" : "disabled",
                       residualPedestalCorrectionEnabled ? "enabled" : "disabled");
     }
+}
 
-    err = SAMPIC256CH_AllocateEventMemory(&eventBuffer_, &mlFrames_);
+SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::allocateEventMemory() {
+    const auto err = SAMPIC256CH_AllocateEventMemory(&eventBuffer_, &mlFrames_);
     if (err != SAMPIC256CH_Success) {
         spdlog::error("InitSettingsModeDefault: Failed to allocate event memory (err={})", static_cast<int>(err));
         return err;
     }
     spdlog::info("InitSettingsModeDefault: Event memory allocated successfully.");
-
     return SAMPIC256CH_Success;
 }

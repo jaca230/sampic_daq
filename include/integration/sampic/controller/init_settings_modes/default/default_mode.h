@@ -12,7 +12,16 @@ public:
         : SampicInitSettingsMode(context),
           config_(std::move(config)) {}
     int initialize() override;
+
 private:
+    SAMPIC256CH_ErrCode openCrateConnection();
+    SAMPIC256CH_ErrCode checkAndLogFirmware();
+    SAMPIC256CH_ErrCode resetHardware();
+    SAMPIC256CH_ErrCode setDefaultParameters();
+    void loadCalibration();
+    void logCorrectionLevels();
+    SAMPIC256CH_ErrCode allocateEventMemory();
+
     SampicInitSettingsModeDefaultConfig config_;
 };
 
