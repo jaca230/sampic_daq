@@ -11,7 +11,6 @@ struct SampicApplySettingsModeContext {
     CrateInfoStruct& info;
     CrateParamStruct& params;
     std::string hardware_root;
-    bool& settings_applied_since_initialization;
 };
 
 #endif

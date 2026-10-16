@@ -4,7 +4,6 @@
 #include <string>
 
 struct SampicApplySettingsModeDefaultConfig {
-    bool reset_on_relevant_change = true;
     bool reload_calibration = false;
     std::string calibration_directory =
         "resources/calib/Crate_PIONEER_N1_LPNHE";
