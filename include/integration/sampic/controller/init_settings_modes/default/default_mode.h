@@ -16,11 +16,11 @@ public:
 private:
     SAMPIC256CH_ErrCode openCrateConnection();
     SAMPIC256CH_ErrCode checkAndLogFirmware();
-    SAMPIC256CH_ErrCode resetHardware();
     SAMPIC256CH_ErrCode setDefaultParameters();
     void loadCalibration();
     void logCorrectionLevels();
     SAMPIC256CH_ErrCode allocateEventMemory();
+    void stopExistingRun();
 
     SampicInitSettingsModeDefaultConfig config_;
 };
