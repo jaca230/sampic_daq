@@ -124,13 +124,17 @@ add_executable(external_trigger_probe
 
 add_executable(trigger_startup_readiness_test
   src/tests/trigger_startup_readiness_test.cpp
-  src/modes/double_pulse/config.cpp
   src/lecroy/lecroy_client.cpp
   src/lecroy/lecroy_output_gate.cpp)
 
 add_executable(sampling_frequency_waveform_scan
   src/tests/sampling_frequency_waveform_scan.cpp
   src/modes/double_pulse/config.cpp)
+
+add_executable(sampling_frequency_order_test
+  src/tests/sampling_frequency_order_test.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp)
 
 # Keep native crash diagnostics useful even in the release tools build. This
 # probe exercises a prebuilt vendor library where ordinary C++ exceptions
@@ -218,6 +222,14 @@ target_include_directories(sampling_frequency_waveform_scan PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${PROJECT_ROOT}/include)
 
+target_include_directories(sampling_frequency_order_test PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
 target_include_directories(l2_external_gate_probe PRIVATE
   ${SAMPIC_VENDOR_INCLUDE}
   ${LPDEVC_INCLUDE_DIR}
@@ -258,6 +270,7 @@ set(SAMPIC_TEST_TARGETS
   external_trigger_probe
   trigger_startup_readiness_test
   sampling_frequency_waveform_scan
+  sampling_frequency_order_test
   l2_external_gate_probe
   double_pulse_smoke
   sampic_hit_dump
