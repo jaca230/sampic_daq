@@ -2,9 +2,7 @@
 #include "core/registry/mode/mode_auto_registration.h"
 #include "integration/sampic/calibration/calibration_loader.h"
 #include <spdlog/spdlog.h>
-#include <chrono>
 #include <cstring>
-#include <thread>
 
 SAMPIC_REGISTER_MODE(
     SampicInitSettingsModeRegistry,
@@ -32,14 +30,15 @@ int SampicInitSettingsModeDefault::initialize() {
     if (err != SAMPIC256CH_Success) return err;
     err = checkAndLogFirmware();
     if (err != SAMPIC256CH_Success) return err;
-    err = resetHardware();
-    if (err != SAMPIC256CH_Success) return err;
     err = setDefaultParameters();
     if (err != SAMPIC256CH_Success) return err;
 
     loadCalibration();
     logCorrectionLevels();
-    return allocateEventMemory();
+    err = allocateEventMemory();
+    if (err != SAMPIC256CH_Success) return err;
+    stopExistingRun();
+    return SAMPIC256CH_Success;
 }
 
 SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::openCrateConnection() {
@@ -95,21 +94,6 @@ SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::checkAndLogFirmware() {
     return SAMPIC256CH_Success;
 }
 
-SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::resetHardware() {
-    // Match the vendor application's known-good systemInit sequence. StopRun
-    // is intentionally best-effort because this process has not started a run,
-    // but the crate may have retained acquisition state from an earlier client.
-    SAMPIC256CH_StopRun(&info_, &params_);
-    const auto err = SAMPIC256CH_ResetCrate(&info_, &params_);
-    if (err != SAMPIC256CH_Success) {
-        spdlog::error("InitSettingsModeDefault: Failed to reset crate (err={})",
-                      static_cast<int>(err));
-        return err;
-    }
-    std::this_thread::sleep_for(std::chrono::microseconds(100));
-    return SAMPIC256CH_Success;
-}
-
 SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::setDefaultParameters() {
     const auto err = SAMPIC256CH_SetDefaultParameters(&info_, &params_);
     if (err != SAMPIC256CH_Success) {
@@ -153,4 +137,17 @@ SAMPIC256CH_ErrCode SampicInitSettingsModeDefault::allocateEventMemory() {
     }
     spdlog::info("InitSettingsModeDefault: Event memory allocated successfully.");
     return SAMPIC256CH_Success;
+}
+
+void SampicInitSettingsModeDefault::stopExistingRun() {
+    // StopRun uses the event memory while purging the DAQ buffers, so it must
+    // be called after AllocateEventMemory. Failure is non-fatal here because
+    // this process has not started a run; the call only clears acquisition
+    // state that may have been left by an earlier client.
+    const auto err = SAMPIC256CH_StopRun(&info_, &params_);
+    if (err != SAMPIC256CH_Success) {
+        spdlog::warn(
+            "InitSettingsModeDefault: best-effort StopRun returned err={}",
+            static_cast<int>(err));
+    }
 }
