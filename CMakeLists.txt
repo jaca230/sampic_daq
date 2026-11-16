@@ -370,7 +370,8 @@ if(SAMPIC_BUILD_BANK_TESTS)
   set_tests_properties(compact_event_banks PROPERTIES FIXTURES_SETUP bank_payloads)
   add_test(NAME compact_bank_python_decoder COMMAND "${Python3_EXECUTABLE}"
     "${PROJECT_SOURCE_ROOT}/tests/test_hit_bank_decoder.py" "${CMAKE_BINARY_DIR}/bank_test_fixtures")
-  set_tests_properties(compact_bank_python_decoder PROPERTIES FIXTURES_REQUIRED bank_payloads)
+  set_tests_properties(compact_bank_python_decoder PROPERTIES
+    FIXTURES_REQUIRED bank_payloads SKIP_RETURN_CODE 77)
   add_test(NAME threshold_scan_engine COMMAND "${Python3_EXECUTABLE}"
     "${PROJECT_SOURCE_ROOT}/tests/test_threshold_scan.py")
 

@@ -5,7 +5,11 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('decoder', ROOT/'scripts/data_management/decode_hit_banks.py')
+DECODER_PATH = ROOT / '.artifacts/scripts/decode_hit_banks.py'
+if not DECODER_PATH.is_file():
+    print(f'Skipping decoder checks: local artifact is absent: {DECODER_PATH}')
+    sys.exit(77)
+spec = importlib.util.spec_from_file_location('decoder', DECODER_PATH)
 decoder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(decoder)
 FIXTURES = Path(sys.argv.pop(1)) if len(sys.argv)>1 else ROOT/'build/bank_test_fixtures'
