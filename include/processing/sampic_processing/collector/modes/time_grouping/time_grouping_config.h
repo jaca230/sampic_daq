@@ -16,6 +16,7 @@ struct FrontendCollectorModeTimeGroupingConfig {
     std::string collector_timing_bank_prefix = "SC";
     bool advanced_bank_enabled = true;
     std::string advanced_bank_prefix = "SH";
+    bool verbose_banks = false;
 };
 
 #endif

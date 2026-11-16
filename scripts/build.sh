@@ -10,6 +10,7 @@ CLEANUP_SCRIPT="$SCRIPT_DIR/cleanup.sh"
 
 # Default flags
 OVERWRITE=false
+TRANSPORT_ROOT=""
 SAMPIC_LIBRARY_VERSION="3.2"
 DEFAULT_JOBS=$(command -v nproc >/dev/null 2>&1 && nproc || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
 JOBS_ARG="-j${DEFAULT_JOBS}"  # Use available processors by default
@@ -22,6 +23,7 @@ show_help() {
     echo "  -o, --overwrite           Remove existing build directory before building"
     echo "  -j, --jobs <number>       Specify number of processors to use (default: all available)"
     echo "      --sampic-version <v>  Build SAMPIC library version 3.2 (default) or 3.1"
+    echo "      --transport-root <p> Use transport headers/libraries from an installed prefix"
     echo "  -h, --help                Display this help message"
 }
 
@@ -40,6 +42,14 @@ while [[ "$#" -gt 0 ]]; do
                 JOBS_ARG="-j"
                 shift
             fi
+            ;;
+        --transport-root)
+            if [[ -z "${2:-}" || "$2" == -* ]]; then
+                echo "[build.sh, ERROR] --transport-root requires a path" >&2
+                exit 1
+            fi
+            TRANSPORT_ROOT="$(realpath "$2")"
+            shift 2
             ;;
         --sampic-version)
             if [[ "${2:-}" != "3.2" && "${2:-}" != "3.1" ]]; then
@@ -68,7 +78,7 @@ if [ "$OVERWRITE" = true ]; then
 fi
 
 # Ensure git submodules are available
-if [ -f "$BASE_DIR/.gitmodules" ]; then
+if [ -f "$BASE_DIR/.gitmodules" ] && { [ -z "$TRANSPORT_ROOT" ] || [ "$SAMPIC_LIBRARY_VERSION" = "3.1" ]; }; then
     echo "[build.sh] Ensuring git submodules are initialized"
     git -C "$BASE_DIR" submodule update --init --recursive
 fi
@@ -87,7 +97,11 @@ if [ ! -x "$HOST_CC" ] || [ ! -x "$HOST_CXX" ]; then
 fi
 echo "[build.sh] Using host toolchain: $HOST_CXX"
 echo "[build.sh] Using SAMPIC library version: $SAMPIC_LIBRARY_VERSION"
-cmake \
+CMAKE_TRANSPORT_ARGS=()
+if [ -n "$TRANSPORT_ROOT" ]; then
+    CMAKE_TRANSPORT_ARGS+=("-DSAMPIC_TRANSPORT_ROOT=$TRANSPORT_ROOT")
+fi
+cmake "${CMAKE_TRANSPORT_ARGS[@]}" \
     -S "$BASE_DIR" \
     -B "$BUILD_DIR" \
     -DCMAKE_C_COMPILER="$HOST_CC" \

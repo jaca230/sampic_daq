@@ -1,3 +1,4 @@
+#include "processing/sampic_processing/collector/banks/frontend_event_hit_banks.h"
 #include "processing/sampic_processing/collector/modes/default/default_mode.h"
 #include "core/registry/mode/mode_auto_registration.h"
 #include "processing/sampic_processing/collector/frontend_event.h"
@@ -17,6 +18,9 @@ SAMPIC_REGISTER_MODE(
     "default",
     "Hit-time clustering",
     [](const FrontendCollectorModeDefaultConfig& config) {
+        validateFrontendHitBanks(config, {
+            {config.event_timing_bank_enabled, config.event_timing_bank_prefix},
+            {config.collector_timing_bank_enabled, config.collector_timing_bank_prefix}});
         if (config.time_window_ns < 0 || config.finalize_after_ms < 0 ||
             config.wait_timeout_ms == 0) {
             throw std::invalid_argument("timing values are invalid");
@@ -27,18 +31,14 @@ FrontendCollectorModeDefault::FrontendCollectorModeDefault(
     FrontendCollectorModeContext& context,
     FrontendCollectorModeDefaultConfig config)
     : FrontendCollectorModeDefault(
-          context, std::move(config), false, "SH", "default") {}
+          context, std::move(config), "default") {}
 
 FrontendCollectorModeDefault::FrontendCollectorModeDefault(
     FrontendCollectorModeContext& context,
     FrontendCollectorModeDefaultConfig config,
-    bool advanced_bank_enabled,
-    std::string advanced_bank_prefix,
     std::string mode_name)
     : FrontendCollectorMode(context),
       mode_cfg_(std::move(config)),
-      advanced_bank_enabled_(advanced_bank_enabled),
-      advanced_bank_prefix_(std::move(advanced_bank_prefix)),
       mode_name_(std::move(mode_name))
 {
     time_window_ns_ = mode_cfg_.time_window_ns;
@@ -54,7 +54,7 @@ FrontendCollectorModeDefault::FrontendCollectorModeDefault(
                  time_window_ns_,
                  mode_cfg_.finalize_after_ms,
                  mode_cfg_.wait_timeout_ms,
-                 advanced_bank_enabled_);
+                 mode_cfg_.advanced_bank_enabled);
 }
 
 /**
@@ -233,20 +233,7 @@ bool FrontendCollectorModeDefault::emitReadyGroups(
 
         auto fev = std::make_shared<FrontendEvent>(g.created);
 
-        if (advanced_bank_enabled_) {
-            auto advanced_bank =
-                std::make_unique<FrontendEventBankAdvancedHits>(g.hits);
-            advanced_bank->setBankPrefix(advanced_bank_prefix_);
-            fev->addBank(std::move(advanced_bank));
-        }
-
-        // Zero-copy data bank (no temporary vector)
-        if (mode_cfg_.data_bank_enabled) {
-            auto data_bank =
-                std::make_unique<FrontendEventBankData>(std::move(g.parents), g.hits);
-            data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
-            fev->addBank(std::move(data_bank));
-        }
+        addFrontendHitBanks(*fev, g.parents, g.hits, mode_cfg_);
 
         // Optional user-defined postprocessing
         fev->finalize();

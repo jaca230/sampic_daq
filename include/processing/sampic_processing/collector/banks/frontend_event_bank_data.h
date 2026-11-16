@@ -2,54 +2,55 @@
 #define FRONTEND_EVENT_BANK_DATA_H
 
 #include "processing/sampic_processing/collector/banks/frontend_event_bank.h"
-#include "integration/sampic/collector/sampic_event.h"
+#include <SAMPIC_256Ch_Type.h>
 #include <vector>
-#include <memory>
-#include <cstring>
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
 
-/// Bank representing waveform and scalar data from multiple SampicEvents.
-/// Holds shared ownership of the contributing SampicEvents to guarantee that
-/// zero-copy slices remain valid while the bank exists.
+// Versioned, packed SD format. Integers/floats use the host's little-endian wire order.
 class FrontendEventBankData : public FrontendEventBank {
 public:
-    FrontendEventBankData(std::vector<std::shared_ptr<SampicEvent>> parents,
-                          const std::vector<const HitStruct*>& hits);
-
-    const uint8_t* data() const override { return nullptr; }  // multi-slice
-    size_t size() const override { return total_size_; }
-
-    void writeTo(uint8_t* dest) const override {
-        for (const auto& [ptr, len] : slices_) {
-#if defined(__AVX2__)
-            size_t offset = 0;
-            const uint8_t* src = ptr;
-            for (; offset + 32 <= len; offset += 32) {
-                __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + offset));
-                _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest + offset), chunk);
-            }
-            for (; offset + 16 <= len; offset += 16) {
-                __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + offset));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dest + offset), chunk);
-            }
-            if (offset < len) {
-                std::memcpy(dest + offset, src + offset, len - offset);
-            }
-#else
-            std::memcpy(dest, ptr, len);
-#endif
-            dest += len;
-        }
-    }
-
-    const std::vector<std::pair<const uint8_t*, size_t>>& slices() const { return slices_; }
-
+    static constexpr std::uint16_t FORMAT_VERSION = 1;
+    enum Flags : std::uint8_t {
+        INL_CORRECTED = 1 << 0,
+        ADC_CORRECTED = 1 << 1,
+        RESIDUAL_PEDESTAL_CORRECTED = 1 << 2,
+        WAVEFORM_CLIPPED = 1 << 3,
+        WAVEFORM_NONFINITE = 1 << 4,
+        RAW_TOT_CLIPPED = 1 << 5,
+    };
+#pragma pack(push, 1)
+    struct Header {
+        char magic[4]; // "SDC1", distinguishes this format from historical unversioned SD.
+        std::uint16_t format_version;
+        std::uint16_t record_size;
+        std::uint32_t hit_count;
+    };
+    struct Record {
+        std::uint8_t feb_index;
+        std::uint8_t channel;
+        std::int32_t hit_number; // Vendor-event-local number, not a run-global identifier.
+        std::uint8_t sampic_index;
+        std::uint8_t sampic_channel_index;
+        std::uint8_t waveform_size;
+        std::uint8_t flags;
+        std::uint8_t cell_info;
+        std::uint8_t first_cell_physical_index;
+        // ADC_CORRECTED: 0.1 mV/count (volts = value / 10000); otherwise ADC counts.
+        // One signed representation serves both units: calibrated voltages may be
+        // negative, while unsigned raw ADC counts (at most 12 bits: 0..4095) fit
+        // comfortably in int16. Time-corrected ADC counts can be fractional and
+        // are rounded; interpolation overshoot is covered by the clipping flag.
+        std::int16_t waveform[64];
+        std::uint16_t raw_tot;
+        float calibrated_tot_ns;
+        double first_cell_timestamp_ns;
+    };
+#pragma pack(pop)
+    explicit FrontendEventBankData(const std::vector<const HitStruct*>& hits);
+    const std::uint8_t* data() const override { return payload_.data(); }
+    std::size_t size() const override { return payload_.size(); }
 private:
-    std::vector<std::pair<const uint8_t*, size_t>> slices_;
-    std::vector<std::shared_ptr<SampicEvent>> parent_refs_;  ///< Hold parents alive for zero-copy slices
-    size_t total_size_{0};
+    std::vector<std::uint8_t> payload_;
 };
-
-#endif // FRONTEND_EVENT_BANK_DATA_H
+static_assert(sizeof(FrontendEventBankData::Header) == 12);
+static_assert(sizeof(FrontendEventBankData::Record) == 154);
+#endif
