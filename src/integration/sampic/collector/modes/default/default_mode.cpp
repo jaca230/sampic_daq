@@ -1,3 +1,4 @@
+#include "integration/sampic/collector/vendor_timestamp.h"
 #include "integration/sampic/collector/modes/default/default_mode.h"
 #include "integration/sampic/collector/sampic_event.h"
 #include "core/registry/mode/mode_auto_registration.h"
@@ -107,6 +108,7 @@ bool SampicCollectorModeDefault::collect()
     {
         auto ev = std::make_unique<SampicEvent>(
             std::move(ev_data), timing, std::chrono::steady_clock::now());
+        ev->setTimestampModulusNs(sampicTimestampModulusNs(params_.CommonParams.FreqEch));
         buffer_.push(std::move(ev));
     }
 

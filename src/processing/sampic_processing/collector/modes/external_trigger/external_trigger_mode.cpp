@@ -1,3 +1,4 @@
+#include "processing/sampic_processing/collector/banks/frontend_event_hit_banks.h"
 #include "processing/sampic_processing/collector/modes/external_trigger/external_trigger_mode.h"
 #include "core/registry/mode/mode_auto_registration.h"
 
@@ -16,17 +17,13 @@ SAMPIC_REGISTER_MODE(
     "external_trigger",
     "External-trigger timestamp windows",
     [](const FrontendCollectorModeExternalTriggerConfig& config) {
+        validateFrontendHitBanks(config, {
+            {config.event_timing_bank_enabled, config.event_timing_bank_prefix},
+            {config.trigger_metadata_bank_enabled, config.trigger_metadata_bank_prefix}});
         if (config.pre_window_ns < 0 || config.post_window_ns < 0 ||
             config.sampling_frequency_mhz <= 0 || config.wait_timeout_ms == 0) {
             throw std::invalid_argument(
                 "windows must be non-negative and frequencies/timeouts positive");
-        }
-        if (config.advanced_bank_prefix.size() != 2) {
-            throw std::invalid_argument("advanced bank prefix must contain exactly 2 characters");
-        }
-        if (config.advanced_bank_enabled &&
-            config.advanced_bank_prefix == config.data_bank_prefix) {
-            throw std::invalid_argument("advanced and data bank prefixes must differ");
         }
     });
 
@@ -39,17 +36,13 @@ SAMPIC_REGISTER_MODE(
     "external_gated_trigger",
     "External-gated trigger association",
     [](const FrontendCollectorModeExternalTriggerConfig& config) {
+        validateFrontendHitBanks(config, {
+            {config.event_timing_bank_enabled, config.event_timing_bank_prefix},
+            {config.trigger_metadata_bank_enabled, config.trigger_metadata_bank_prefix}});
         if (config.pre_window_ns < 0 || config.post_window_ns < 0 ||
             config.sampling_frequency_mhz <= 0 || config.wait_timeout_ms == 0) {
             throw std::invalid_argument(
                 "windows must be non-negative and frequencies/timeouts positive");
-        }
-        if (config.advanced_bank_prefix.size() != 2) {
-            throw std::invalid_argument("advanced bank prefix must contain exactly 2 characters");
-        }
-        if (config.advanced_bank_enabled &&
-            config.advanced_bank_prefix == config.data_bank_prefix) {
-            throw std::invalid_argument("advanced and data bank prefixes must differ");
         }
     });
 
@@ -96,18 +89,8 @@ bool FrontendCollectorModeExternalTrigger::collect() {
             if (assigned_hits.empty() && !mode_cfg_.emit_triggers_without_hits) continue;
 
             auto frontend_event = std::make_shared<FrontendEvent>(parent_ref->timestamp());
-            if (mode_cfg_.advanced_bank_enabled) {
-                auto advanced_bank =
-                    std::make_unique<FrontendEventBankAdvancedHits>(assigned_hits);
-                advanced_bank->setBankPrefix(mode_cfg_.advanced_bank_prefix);
-                frontend_event->addBank(std::move(advanced_bank));
-            }
-            if (mode_cfg_.data_bank_enabled) {
-                std::vector<std::shared_ptr<SampicEvent>> parents{parent_ref};
-                auto data_bank = std::make_unique<FrontendEventBankData>(std::move(parents), assigned_hits);
-                data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
-                frontend_event->addBank(std::move(data_bank));
-            }
+            std::vector<std::shared_ptr<SampicEvent>> parents{parent_ref};
+            addFrontendHitBanks(*frontend_event, parents, assigned_hits, mode_cfg_);
 
             FrontendEventBankTriggerMetadata::Record metadata{
                 static_cast<uint32_t>(parent.TriggerData.TriggerIDFromFPGA[trigger_index]),

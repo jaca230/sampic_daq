@@ -9,6 +9,7 @@
 #include "core/threading/polling_worker.h"
 
 #include <memory>
+#include <functional>
 #include <cstddef>
 #include <spdlog/spdlog.h>
 #include "core/config/config_store.h"
@@ -27,7 +28,8 @@ public:
 
     void start();
     void stop();
-    bool drain(std::size_t max_cycles = 10'000);
+    bool drain(std::size_t max_cycles = 10'000,
+               std::function<bool()> drain_output = {});
     bool running() const { return worker_.running(); }
 
     void setConfig(const FrontendEventCollectorConfig& cfg);

@@ -28,13 +28,24 @@ void FrontendEventBuffer::push(const std::shared_ptr<FrontendEvent>& ev) {
     cv_.notify_all();
 }
 
+bool FrontendEventBuffer::tryPush(const std::shared_ptr<FrontendEvent>& ev) {
+    if (!ev) return false;
+    std::unique_lock<std::mutex> lock(mtx_);
+    if (buffer_.size() >= capacity_) return false;
+    const auto ts = ev->timestamp();
+    buffer_.emplace_back(ev, ts);
+    last_timestamp_ = ts;
+    lock.unlock();
+    cv_.notify_all();
+    return true;
+}
+
 void FrontendEventBuffer::pushFront(const std::shared_ptr<FrontendEvent>& ev) {
     if (!ev) return;
 
     std::unique_lock<std::mutex> lock(mtx_);
-    if (buffer_.size() >= capacity_) {
-        buffer_.pop_back();
-    }
+    // Returning an in-flight event must not evict a newer queued event. The
+    // queue may exceed capacity by that returned event until it is drained.
     buffer_.emplace_front(ev, ev->timestamp());
     cv_.notify_all();
 }

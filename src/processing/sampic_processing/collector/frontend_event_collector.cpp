@@ -58,6 +58,7 @@ void FrontendEventCollector::start() {
         [this] { return mode_->collect(); },
         std::chrono::microseconds(cfg_.sleep_time_us),
         [this] {
+            mode_->onStart();
             spdlog::info(
                 "FrontendEventCollector started (mode={})", cfg_.mode);
         },
@@ -68,7 +69,7 @@ void FrontendEventCollector::stop() {
     worker_.stop();
 }
 
-bool FrontendEventCollector::drain(std::size_t max_cycles) {
+bool FrontendEventCollector::drain(std::size_t max_cycles, std::function<bool()> drain_output) {
     stop();
 
     std::size_t cycles = 0;
@@ -81,6 +82,7 @@ bool FrontendEventCollector::drain(std::size_t max_cycles) {
             return false;
         }
 
+        if (drain_output && !buffer_->empty() && !drain_output()) return false;
         const auto before = sampic_buffer_.size();
         if (!mode_->collect()) {
             spdlog::error(
@@ -97,10 +99,20 @@ bool FrontendEventCollector::drain(std::size_t max_cycles) {
         }
     }
 
+    if (drain_output && !buffer_->empty() && !drain_output()) return false;
     if (!mode_->flush()) {
         spdlog::error(
             "FrontendEventCollector mode failed to flush pending state");
         return false;
+    }
+
+    while (mode_->hasPendingOutput()) {
+        if (cycles++ >= max_cycles || !drain_output) {
+            spdlog::error("Pending frontend events require more output-drain cycles");
+            return false;
+        }
+        if (!buffer_->empty() && !drain_output()) return false;
+        if (!mode_->flush()) return false;
     }
 
     spdlog::info(

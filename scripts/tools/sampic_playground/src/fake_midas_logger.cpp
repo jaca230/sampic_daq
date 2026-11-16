@@ -51,14 +51,7 @@ size_t FakeMidasLogger::calculateEventSize(const std::shared_ptr<FrontendEvent>&
         total += 16;
 
         // Bank data
-        if (auto* data_bank = dynamic_cast<FrontendEventBankData*>(bank)) {
-            const auto& slices = data_bank->slices();
-            for (const auto& slice : slices) {
-                total += slice.second;
-            }
-        } else {
-            total += bank->size();
-        }
+        total += bank->size();
     }
     // Event header overhead (~32 bytes in MIDAS)
     total += 32;
@@ -93,19 +86,10 @@ void FakeMidasLogger::run() {
             event_buffer.resize(event_buffer.size() + 16);
 
             // Bank data - memcpy like MIDAS does
-            if (auto* data_bank = dynamic_cast<FrontendEventBankData*>(bank)) {
-                const auto& slices = data_bank->slices();
-                for (const auto& slice : slices) {
-                    size_t old_size = event_buffer.size();
-                    event_buffer.resize(old_size + slice.second);
-                    std::memcpy(event_buffer.data() + old_size, slice.first, slice.second);
-                }
-            } else {
-                size_t old_size = event_buffer.size();
-                size_t bank_size = bank->size();
-                event_buffer.resize(old_size + bank_size);
-                std::memcpy(event_buffer.data() + old_size, bank->data(), bank_size);
-            }
+            size_t old_size = event_buffer.size();
+            size_t bank_size = bank->size();
+            event_buffer.resize(old_size + bank_size);
+            bank->writeTo(event_buffer.data() + old_size);
         }
 
         // Count the event

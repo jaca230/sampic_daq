@@ -31,12 +31,18 @@ public:
      */
     virtual bool collect() = 0;
 
+    /// Called on the collection worker when acquisition starts, before any hits.
+    virtual void onStart() {}
+
     /**
      * @brief Finalize mode-local state after the input buffer is drained.
      *
      * Modes without pending aggregation state need no special action.
      */
     virtual bool flush() { return true; }
+
+    /// True when flush() needs more output-drain cycles to emit retained state.
+    virtual bool hasPendingOutput() const { return false; }
 
 protected:
     SampicEventBuffer& sampic_buffer_;

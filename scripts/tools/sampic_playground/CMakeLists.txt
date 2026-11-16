@@ -8,6 +8,17 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+set(SAMPIC_TRANSPORT_ROOT "${ROOT_DIR}/external/sampic_256ch_lib" CACHE PATH
+    "Transport library installation or vendor package")
+set(LPDEVC_INCLUDE_DIR "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include")
+set(LPDEVC_LIB_DIR "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib")
+if(NOT IS_DIRECTORY "${LPDEVC_INCLUDE_DIR}")
+  set(LPDEVC_INCLUDE_DIR "${SAMPIC_TRANSPORT_ROOT}/include")
+endif()
+if(NOT IS_DIRECTORY "${LPDEVC_LIB_DIR}")
+  set(LPDEVC_LIB_DIR "${SAMPIC_TRANSPORT_ROOT}/lib")
+endif()
+
 
 include("${ROOT_DIR}/cmake/CPM.cmake")
 include("${ROOT_DIR}/cmake/CPMConfig.cmake")
@@ -77,7 +88,13 @@ set(PLAYGROUND_SOURCES
   "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_hit_associator.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_mode.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/vendor_passthrough/vendor_passthrough_mode.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/time_grouping/time_grouping_mode.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/fixed_time_bins/fixed_time_bins_mode.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/modes/periodic_readout/periodic_readout_mode.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_data_verbose.cpp"
+  "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits_verbose.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_collector_timing.cpp"
   "${ROOT_DIR}/src/processing/sampic_processing/collector/banks/frontend_event_bank_trigger_metadata.cpp"
@@ -96,7 +113,7 @@ target_include_directories(sampic_playground PRIVATE
   "${ROOT_DIR}/include"
   "${ROOT_DIR}/src"
   "${ROOT_DIR}/external/sampic_256ch_lib_3_2/include_lib"
-  "${ROOT_DIR}/external/sampic_256ch_lib/lpdevc_install/include"
+  "${LPDEVC_INCLUDE_DIR}"
   ${CPM_HEADER_INCLUDE_DIRS}
 )
 
@@ -106,7 +123,7 @@ endif()
 
 # Link against SAMPIC vendor library
 set(SAMPIC_LIB_DIR "${ROOT_DIR}/build/lib")
-set(LPDEVC_LIB_DIR "${ROOT_DIR}/external/sampic_256ch_lib/lpdevc_install/lib")
+
 
 target_link_libraries(sampic_playground PRIVATE
   Threads::Threads
