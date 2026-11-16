@@ -47,6 +47,11 @@ public:
     EventStruct* data();
     const EventStruct* data() const;
 
+    // Zero means an unbounded synthetic clock; hardware producers attach the
+    // actual DecodeEvent timebase rather than duplicating a frequency in ODB.
+    void setTimestampModulusNs(double modulus) { timestamp_modulus_ns_ = modulus; }
+    double timestampModulusNs() const { return timestamp_modulus_ns_; }
+
     void setTiming(const SampicTimingBreakdown& timing);
     const SampicTimingBreakdown& timing() const;
 
@@ -69,6 +74,7 @@ public:
 
 private:
     EventPtr data_;
+    double timestamp_modulus_ns_{0};
     SampicTimingBreakdown timing_{};
     std::chrono::steady_clock::time_point timestamp_{};
     bool consumed_{false};  ///< Whether this event has been consumed by a downstream processor

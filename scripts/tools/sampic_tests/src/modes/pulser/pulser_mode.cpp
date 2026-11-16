@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -226,8 +227,20 @@ AcquisitionStats run_pulser_rate_test(PulserSession& session,
                                       const ModeOptions& opts,
                                       volatile std::sig_atomic_t* stop_flag) {
   AcquisitionStats stats;
-  EventStruct event{};
+  auto event = std::make_unique<EventStruct>();
   bool run_started = false;
+
+  // Ensure a failed acquisition also stops the hardware run.
+  struct StopOnExit {
+    PulserSession& session;
+    bool& started;
+    ~StopOnExit() {
+      if (started) {
+        SAMPIC256CH_StopRun(&session.info(), &session.params());
+        started = false;
+      }
+    }
+  } stop_on_exit{session, run_started};
 
   auto guard = [&]() {
     if (run_started) {
@@ -274,7 +287,7 @@ AcquisitionStats run_pulser_rate_test(PulserSession& session,
                                         session.ml_frames(), &nframes);
       if (err == SAMPIC256CH_Success) {
         err = SAMPIC256CH_DecodeEvent(&session.info(), &session.params(),
-                                      session.ml_frames(), &event, nframes, &hits);
+                                      session.ml_frames(), event.get(), nframes, &hits);
       }
 
       if (err == SAMPIC256CH_AcquisitionError || err == SAMPIC256CH_ErrInvalidEvent) {
@@ -312,7 +325,7 @@ AcquisitionStats run_pulser_rate_test(PulserSession& session,
       ++stats.events;
       stats.total_hits += static_cast<size_t>(hits);
       for (int i = 0; i < std::min(hits, MAX_EXPECTED_FRAMES); ++i) {
-        const auto& hit = event.Hit[i];
+        const auto& hit = event->Hit[i];
         ++stats.channel_counts[{hit.FeBoardIndex, hit.SampicIndex,
                                 hit.Channel}];
       }
@@ -321,7 +334,7 @@ AcquisitionStats run_pulser_rate_test(PulserSession& session,
                   << " frames=" << nframes
                   << " bytes=" << event_bytes << "\n";
         for (int i = 0; i < hits; ++i) {
-          const HitStruct& hit = event.Hit[i];
+          const HitStruct& hit = event->Hit[i];
           std::cout << "    hit[" << i << "]: FEB=" << hit.FeBoardIndex
                     << " sampic=" << hit.SampicIndex
                     << " channel=" << hit.Channel

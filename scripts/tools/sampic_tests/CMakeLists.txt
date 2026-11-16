@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(SAMPIC_LIBRARY_VERSION "3.2" CACHE STRING "SAMPIC library version used by the root build")
 set_property(CACHE SAMPIC_LIBRARY_VERSION PROPERTY STRINGS 3.2 3.1)
-set(SAMPIC_TRANSPORT_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib)
+set(SAMPIC_TRANSPORT_ROOT "${PROJECT_ROOT}/external/sampic_256ch_lib" CACHE PATH "Transport library installation or vendor package")
 if(SAMPIC_LIBRARY_VERSION STREQUAL "3.2")
   set(SAMPIC_SOURCE_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib_3_2)
 elseif(SAMPIC_LIBRARY_VERSION STREQUAL "3.1")
@@ -19,6 +19,12 @@ set(SAMPIC_VENDOR_INCLUDE ${SAMPIC_SOURCE_ROOT}/include_lib)
 set(SAMPIC_VENDOR_LIB_DIR ${PROJECT_ROOT}/build/lib)
 set(LPDEVC_INCLUDE_DIR ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include)
 set(LPDEVC_LIB_DIR ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib)
+if(NOT IS_DIRECTORY "${LPDEVC_INCLUDE_DIR}")
+  set(LPDEVC_INCLUDE_DIR "${SAMPIC_TRANSPORT_ROOT}/include")
+endif()
+if(NOT IS_DIRECTORY "${LPDEVC_LIB_DIR}")
+  set(LPDEVC_LIB_DIR "${SAMPIC_TRANSPORT_ROOT}/lib")
+endif()
 
 include(${PROJECT_ROOT}/cmake/CPM.cmake)
 
@@ -32,7 +38,7 @@ find_library(FTD2XX_LIB_PATH
   NAMES ftd2xx libftd2xx.so libftd2xx.so.1.4.33 libftd2xx.so.1.4.8
   PATHS
     ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install
-    ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib
+    ${LPDEVC_LIB_DIR}
   NO_DEFAULT_PATH)
 if(NOT FTD2XX_LIB_PATH)
   message(FATAL_ERROR "Unable to locate libftd2xx. Run the vendor installer.")

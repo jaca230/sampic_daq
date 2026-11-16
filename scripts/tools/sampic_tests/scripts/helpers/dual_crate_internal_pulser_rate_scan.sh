@@ -14,6 +14,42 @@ command -v jq >/dev/null || { echo "jq is required." >&2; exit 1; }
   exit 1
 }
 
+if pgrep -x sampic_frontend >/dev/null; then
+  echo "Stop SAMPIC frontends before starting the direct crate scan." >&2
+  exit 1
+fi
+
+stop_scan() {
+  trap - INT TERM HUP
+  echo "Stopping scan and acquisition processes; partial results are preserved."
+  python3 - "$$" <<'PYTHON'
+import os, signal, subprocess, sys, time
+root = int(sys.argv[1])
+rows = []
+for line in subprocess.check_output(['ps', '-eo', 'pid=,ppid=,args='], text=True).splitlines():
+    parts = line.strip().split(None, 2)
+    if len(parts) == 3:
+        rows.append((int(parts[0]), int(parts[1]), parts[2]))
+descendants = {root}
+while True:
+    found = {pid for pid, parent, _ in rows if parent in descendants}
+    if found <= descendants:
+        break
+    descendants |= found
+workers = [pid for pid, _, args in rows if pid in descendants and
+           args.split()[0].endswith('/sampic_deadtime_scan')]
+for pid in workers:
+    try: os.kill(pid, signal.SIGINT)
+    except ProcessLookupError: pass
+for _ in range(100):
+    if not any(os.path.exists(f'/proc/{pid}') for pid in workers):
+        break
+    time.sleep(0.1)
+PYTHON
+  exit 130
+}
+trap stop_scan INT TERM HUP
+
 mapfile -t CRATE_NAMES < <(jq -r '.crates[].name' "$CONFIG")
 if [[ ${#CRATE_NAMES[@]} -ne 2 ]]; then
   echo "The scan requires exactly two crates." >&2

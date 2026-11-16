@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "edge": "rising",
+  "threshold_min_v": 0.01,
+  "threshold_max_v": 0.5,
+  "threshold_step_v": 0.01,
+  "baseline_v": 0.21,
+  "sampling_frequency_mhz": 6400,
+  "adc_bits": 11,
+  "samples_per_hit": 64,
+  "duration_s": 0.2,
+  "pilot_s": 0.01,
+  "aggregate_rate_limit_hz": 20000,
+  "max_hits": 10000,
+  "max_frame_bytes": 1048576,
+  "max_attempts": 4,
+  "retry_delay_s": 0.5,
+  "worker_timeout_s": 20,
+  "recovery_timeout_s": 10,
+  "max_consecutive_failures": 8,
+  "output_root": ".artifacts/measurements/threshold_scan",
+  "crates": [
+    {
+      "name": "crate_n1",
+      "crate": {
+        "ip": "192.168.0.13",
+        "port": 27013,
+        "calibration_dir": "resources/calib/Crate_PIONEER_N1_LPNHE"
+      },
+      "channels": "all"
+    },
+    {
+      "name": "crate_n2",
+      "crate": {
+        "ip": "192.168.0.14",
+        "port": 27014,
+        "calibration_dir": "resources/calib/Crate_PIONEER_N2_LPNHE"
+      },
+      "channels": "all"
+    }
+  ],
+  "recovery_attempts": 3
+}

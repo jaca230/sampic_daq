@@ -14,6 +14,7 @@ struct FrontendCollectorModeVendorPassthroughConfig {
     std::string event_timing_bank_prefix = "ST";
     bool trigger_bank_enabled = true;
     std::string trigger_bank_prefix = "SV";
+    bool verbose_banks = false;
 };
 
 #endif

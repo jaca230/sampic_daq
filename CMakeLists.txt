@@ -115,7 +115,10 @@ if(NOT IS_DIRECTORY "${SAMPIC_TRANSPORT_ROOT}")
 endif()
 
 set(SAMPIC_VENDOR_INCLUDE_DIR "${SAMPIC_SOURCE_ROOT}/include_lib")
-set(LPDEVC_INCLUDE_DIR       "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include")
+set(LPDEVC_INCLUDE_DIR "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include")
+if(NOT IS_DIRECTORY "${LPDEVC_INCLUDE_DIR}")
+  set(LPDEVC_INCLUDE_DIR "${SAMPIC_TRANSPORT_ROOT}/include")
+endif()
 foreach(VENDOR_INC IN ITEMS "${SAMPIC_VENDOR_INCLUDE_DIR}" "${LPDEVC_INCLUDE_DIR}")
   if(NOT IS_DIRECTORY "${VENDOR_INC}")
     message(FATAL_ERROR "Missing vendor include directory: ${VENDOR_INC}")
@@ -125,7 +128,7 @@ endforeach()
 # Locate FTDI headers (allow user installs to override)
 find_path(FTD2XX_INCLUDE_DIR
   NAMES ftd2xx.h
-  PATHS "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include"
+  PATHS "${LPDEVC_INCLUDE_DIR}"
   NO_DEFAULT_PATH
 )
 if(NOT FTD2XX_INCLUDE_DIR)
@@ -136,7 +139,10 @@ if(NOT FTD2XX_INCLUDE_DIR)
 endif()
 
 set(SAMPIC_VENDOR_LIB_DIR "${CMAKE_BINARY_DIR}/lib")
-set(LPDEVC_LIB_DIR        "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib")
+set(LPDEVC_LIB_DIR "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib")
+if(NOT IS_DIRECTORY "${LPDEVC_LIB_DIR}")
+  set(LPDEVC_LIB_DIR "${SAMPIC_TRANSPORT_ROOT}/lib")
+endif()
 foreach(REQUIRED_LIB_NAME IN ITEMS liblpdevC.so liblpdev.so)
   if(NOT EXISTS "${LPDEVC_LIB_DIR}/${REQUIRED_LIB_NAME}")
     message(FATAL_ERROR "Missing ${REQUIRED_LIB_NAME} in ${LPDEVC_LIB_DIR}. Did you run the vendor installer?")
@@ -147,7 +153,7 @@ find_library(FTD2XX_LIB_PATH
   NAMES ftd2xx libftd2xx.so libftd2xx.so.1.4.33 libftd2xx.so.1.4.8
   PATHS
     "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install"
-    "${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib"
+    "${LPDEVC_LIB_DIR}"
   NO_DEFAULT_PATH
 )
 if(NOT FTD2XX_LIB_PATH)
@@ -292,3 +298,81 @@ set_target_properties(sampic_frontend PROPERTIES
 )
 
 install(TARGETS sampic_frontend DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  set_source_files_properties(
+    src/processing/sampic_processing/collector/frontend_event.cpp
+    src/processing/sampic_processing/collector/modes/default/default_mode.cpp
+    src/processing/sampic_processing/collector/modes/time_grouping/time_grouping_mode.cpp
+    src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_mode.cpp
+    src/processing/sampic_processing/collector/modes/vendor_passthrough/vendor_passthrough_mode.cpp
+    src/processing/sampic_processing/collector/modes/fixed_time_bins/fixed_time_bins_mode.cpp
+    src/processing/sampic_processing/collector/modes/periodic_readout/periodic_readout_mode.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data_verbose.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits_verbose.cpp
+    PROPERTIES COMPILE_OPTIONS "-O3")
+endif()
+
+option(SAMPIC_BUILD_THRESHOLD_SCAN "Build the supported threshold-scan worker" ON)
+if(SAMPIC_BUILD_THRESHOLD_SCAN)
+  add_executable(sampic_threshold_scan_worker scripts/tools/threshold_scan/worker.cpp)
+  target_include_directories(sampic_threshold_scan_worker PRIVATE ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(sampic_threshold_scan_worker PRIVATE sampic256ch)
+  target_link_options(sampic_threshold_scan_worker PRIVATE "LINKER:--disable-new-dtags")
+  set_target_properties(sampic_threshold_scan_worker PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(sampic_threshold_scan_worker PRIVATE -O3)
+  endif()
+endif()
+
+option(SAMPIC_BUILD_BANK_TESTS "Build hardware-free event-bank serialization tests" OFF)
+if(SAMPIC_BUILD_BANK_TESTS)
+  enable_testing()
+  set(SAMPIC_BANK_TEST_SOURCES
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data_verbose.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits_verbose.cpp
+    src/processing/sampic_processing/collector/frontend_event.cpp
+    src/integration/sampic/collector/sampic_event.cpp)
+  add_executable(fixed_time_bins_test tests/fixed_time_bins_test.cpp ${SAMPIC_BANK_TEST_SOURCES}
+    src/processing/sampic_processing/collector/modes/fixed_time_bins/fixed_time_bins_mode.cpp
+    src/processing/sampic_processing/collector/modes/periodic_readout/periodic_readout_mode.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.cpp
+    src/processing/sampic_processing/collector/frontend_diagnostics.cpp
+    src/processing/sampic_processing/collector/frontend_event_buffer.cpp
+    src/processing/sampic_processing/collector/frontend_event_collector.cpp
+    src/integration/sampic/collector/sampic_event_buffer.cpp
+    src/core/threading/polling_worker.cpp)
+  target_include_directories(fixed_time_bins_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(fixed_time_bins_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME fixed_time_bins COMMAND fixed_time_bins_test)
+  add_executable(timestamp_rollover_test tests/timestamp_rollover_test.cpp ${SAMPIC_BANK_TEST_SOURCES})
+  target_include_directories(timestamp_rollover_test PRIVATE "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(timestamp_rollover_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME timestamp_rollover COMMAND timestamp_rollover_test)
+  add_executable(compact_event_banks_test tests/compact_event_banks_test.cpp ${SAMPIC_BANK_TEST_SOURCES})
+  add_executable(compact_event_banks_benchmark tests/compact_event_banks_benchmark.cpp ${SAMPIC_BANK_TEST_SOURCES})
+  target_include_directories(compact_event_banks_benchmark PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(compact_event_banks_benchmark PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  target_compile_options(compact_event_banks_benchmark PRIVATE -O3)
+  target_include_directories(compact_event_banks_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(compact_event_banks_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME compact_event_banks COMMAND compact_event_banks_test "${CMAKE_BINARY_DIR}/bank_test_fixtures")
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set_tests_properties(compact_event_banks PROPERTIES FIXTURES_SETUP bank_payloads)
+  add_test(NAME compact_bank_python_decoder COMMAND "${Python3_EXECUTABLE}"
+    "${PROJECT_SOURCE_ROOT}/tests/test_hit_bank_decoder.py" "${CMAKE_BINARY_DIR}/bank_test_fixtures")
+  set_tests_properties(compact_bank_python_decoder PROPERTIES FIXTURES_REQUIRED bank_payloads)
+  add_test(NAME threshold_scan_engine COMMAND "${Python3_EXECUTABLE}"
+    "${PROJECT_SOURCE_ROOT}/tests/test_threshold_scan.py")
+
+
+endif()
