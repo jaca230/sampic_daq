@@ -1,0 +1,7 @@
+build/
+build-*/
+.artifacts/
+.context/
+.env
+__pycache__/
+*.pyc

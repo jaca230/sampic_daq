@@ -40,9 +40,12 @@ const char *frontend_name       = "SAMPIC_Frontend";
 const char *frontend_file_name  = __FILE__;
 BOOL        frontend_call_loop  = FALSE;
 INT         display_period      = 0;
-INT         max_event_size      = 128 * 1024 * 1024;
-INT         max_event_size_frag = 5 * max_event_size;
-INT         event_buffer_size   = 5 * max_event_size;
+// One maximal 8192-hit/64-sample SAMPIC event is well below this. The former
+// 128 MiB/640 MiB allocation per crate wasted substantial memory in multi-crate
+// tests and on readout hosts.
+INT         max_event_size      = 16 * 1024 * 1024;
+INT         max_event_size_frag = 0;
+INT         event_buffer_size   = 64 * 1024 * 1024;
 
 static std::thread g_event_writer_thread;
 static std::atomic<bool> g_event_writer_stop{false};

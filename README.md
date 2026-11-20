@@ -1,5 +1,25 @@
 # Sampic Data Acquisition Midas Frontend
 
+## Related in-tree projects
+
+The `external/` directory contains three sibling CMake projects used to
+prototype the multi-crate processing path:
+
+- `sampic_event_builder`: MIDAS-facing event building, selection, waveform
+  processing composition, product-bank format, simulation, and benchmarks;
+- `template_fitter`: MIDAS- and SAMPIC-agnostic waveform fitting;
+- `residual_compression`: MIDAS- and SAMPIC-agnostic integer residual codecs.
+
+They intentionally remain normal directories in this repository for now, not
+Git submodules. Each has its own public headers, sources, tests, and
+`CMakeLists.txt`, so it can be extracted into a separate repository later
+without redesigning its API. Building `sampic_event_builder` includes its two
+sibling libraries by default:
+
+```bash
+./external/sampic_event_builder/scripts/build.sh
+```
+
 ## External Dependencies
 
 SAMPIC library 3.2 is vendored as source in
@@ -114,6 +134,10 @@ are:
   `EventStruct`, without time grouping or trigger-based splitting. Its `SD`
   bank contains all corrected hits from that vendor event and its `SV` bank
   retains the vendor trigger records.
+- `vendor_raw_passthrough`: preserve the vendor `EventStruct` boundary but
+  emit ordered, pre-correction integer ADC samples in a versioned `SR` bank.
+  This is the event-builder/compression input contract and leaves `SD`
+  unchanged.
 
 Every frontend collector bank has a mode-specific `*_bank_enabled` setting.
 All banks are enabled by default. Disabled banks are neither constructed nor
@@ -125,6 +149,8 @@ written to MIDAS. The available switches are:
 - `external_gated_trigger`: `data_bank_enabled`, `advanced_bank_enabled`,
   `event_timing_bank_enabled`, and `trigger_metadata_bank_enabled`;
 - `vendor_passthrough`: `data_bank_enabled`, `advanced_bank_enabled`,
+  `event_timing_bank_enabled`, and `trigger_bank_enabled`.
+- `vendor_raw_passthrough`: `raw_data_bank_enabled`,
   `event_timing_bank_enabled`, and `trigger_bank_enabled`.
 
 `time_grouping`, `external_gated_trigger`, and `vendor_passthrough` also accept
@@ -180,6 +206,7 @@ Profiles are dry-run by default:
 ./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger
 ./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger --apply
 ./scripts/odb_tools/profiles/apply_profile.py vendor_passthrough --apply
+./scripts/odb_tools/profiles/apply_profile.py vendor_raw_passthrough --apply
 ./scripts/odb_tools/profiles/apply_profile.py time_grouped --apply
 ```
 

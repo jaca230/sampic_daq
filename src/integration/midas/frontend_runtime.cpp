@@ -65,8 +65,14 @@ bool Runtime::loadInitialConfigs(std::string& err) {
             frontend_collector_path + "/diagnostics");
     FrontendEventCollector::initializeOdb(odb, frontend_collector_path + "/modes");
 
-    const auto hardware_path = path(frontend::odb::Section::Crate);
-    SampicHardwareRegistry::catalog().initializeOdb(odb, hardware_path);
+    // Simulator mode never reads or applies physical crate settings. Avoid
+    // materializing the full FEB/SAMPIC/channel tree for every simulated
+    // crate: that tree is large enough to exhaust MIDAS's ODB size limit in
+    // an otherwise modest multi-crate benchmark.
+    if (configs.controller.init_mode != "simulator") {
+      const auto hardware_path = path(frontend::odb::Section::Crate);
+      SampicHardwareRegistry::catalog().initializeOdb(odb, hardware_path);
+    }
 
     pollingInterval = std::chrono::microseconds(configs.frontend.polling_interval_us);
     return true;

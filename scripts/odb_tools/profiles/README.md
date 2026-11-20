@@ -9,6 +9,8 @@ by the frontend. Dry-run is always the default.
 ./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger --apply
 ./scripts/odb_tools/profiles/apply_profile.py self_trigger --channels 0:3,0:14,0:15 --apply
 ./scripts/odb_tools/profiles/apply_profile.py vendor_passthrough --apply
+./scripts/odb_tools/profiles/apply_profile.py vendor_raw_passthrough --apply
+./scripts/odb_tools/profiles/apply_profile.py streaming_simulator --apply
 ./scripts/odb_tools/profiles/apply_profile.py time_grouped --apply
 ```
 
@@ -20,6 +22,10 @@ The operational profiles are:
   channels not explicitly listed, and remove stale external-gate/L2 settings.
 - `vendor_passthrough`: preserve one decoded vendor event per MIDAS event and
   disable all hit-time grouping.
+- `vendor_raw_passthrough`: preserve one decoded vendor event per MIDAS event
+  and publish ordered, pre-correction integer samples in `SRnn` banks.
+- `streaming_simulator`: configure one full software crate producing noisy
+  `SRnn` banks for MIDAS event-builder rate and compression tests.
 - `time_grouped`: select the standard timestamp-clustering mode and configure
   its grouping/finalization windows, vendor frame batching, and collector
   processing interval.
