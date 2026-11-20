@@ -1,0 +1,72 @@
+{
+  "connection": {
+    "ip": "192.168.0.13",
+    "port": 27013,
+    "load_calibration": true,
+    "calibration_dir": "resources/calib/Crate_PIONEER_N1_LPNHE",
+    "threshold_volts": 0.15,
+    "use_external_clock": false,
+    "use_external_trigger": false
+  },
+  "external_trigger": {
+    "type": "EXT_SIG",
+    "edge": "RISING",
+    "signal_level": "TTL",
+    "sync_edge": "RISING",
+    "sync_signal_level": "TTL"
+  },
+  "readout": {
+    "prepare_interval": 100,
+    "max_loops": 10000,
+    "retry_sleep_us": 100
+  },
+  "timing": {
+    "sample_duration_s": 2.0,
+    "samples_per_combo": 1,
+    "cooldown_between_combos_s": 0.0
+  },
+  "start_retry": {
+    "max_attempts": 5,
+    "initial_delay_s": 2.0,
+    "backoff": 2.0
+  },
+  "scan": {
+    "digitizer_rates_mhz": [6400, 4252, 3200, 2133, 1600],
+    "lecroy_rates_hz": [1000.0],
+    "channels": [3, 14, 15],
+    "board_index": 0
+  },
+  "lecroy": {
+    "ip": "10.0.1.102",
+    "port": 1234,
+    "channel": "A",
+    "frequency_hz": 1000.0,
+    "amplitude_v": 2.49,
+    "baseline_v": -0.69,
+    "width_ns": 10.0,
+    "lead_ns": 6.0,
+    "trail_ns": 6.0,
+    "trigger_mode": "NORMAL",
+    "trigger_slope": "POS",
+    "trigger_level_volts": 0.15,
+    "output_main": true,
+    "output_inverse": false,
+    "double_pulse_enabled": false,
+    "initial_delay_ns": 0.0,
+    "manual_trigger": false,
+    "manual_trigger_interval_s": 0.001,
+    "settle_delay_s": 0.0
+  },
+  "binary_search": {
+    "min_ns": 10.0,
+    "max_ns": 10000.0,
+    "start_ns": 1000.0,
+    "tolerance_ns": 10.0,
+    "max_iterations": 1,
+    "ratio_threshold": 1.5
+  },
+  "output": {
+    "results_path": "scripts/tools/sampic_tests/data/sampling_frequency_waveform_scan/unused.jsonl"
+  },
+  "notes": "Crate N1 connection settings for the passive Agilent waveform scan. The scan does not configure the generator."
+}

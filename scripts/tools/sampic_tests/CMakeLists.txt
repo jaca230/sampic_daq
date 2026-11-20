@@ -1,0 +1,312 @@
+cmake_minimum_required(VERSION 3.18)
+project(sampic_tests LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(SAMPIC_LIBRARY_VERSION "3.2" CACHE STRING "SAMPIC library version used by the root build")
+set_property(CACHE SAMPIC_LIBRARY_VERSION PROPERTY STRINGS 3.2 3.1)
+set(SAMPIC_TRANSPORT_ROOT "${PROJECT_ROOT}/external/sampic_256ch_lib" CACHE PATH "Transport library installation or vendor package")
+if(SAMPIC_LIBRARY_VERSION STREQUAL "3.2")
+  set(SAMPIC_SOURCE_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib_3_2)
+elseif(SAMPIC_LIBRARY_VERSION STREQUAL "3.1")
+  set(SAMPIC_SOURCE_ROOT ${PROJECT_ROOT}/external/sampic_256ch_lib)
+else()
+  message(FATAL_ERROR "Unsupported SAMPIC_LIBRARY_VERSION='${SAMPIC_LIBRARY_VERSION}'")
+endif()
+set(SAMPIC_VENDOR_INCLUDE ${SAMPIC_SOURCE_ROOT}/include_lib)
+set(SAMPIC_VENDOR_LIB_DIR ${PROJECT_ROOT}/build/lib)
+set(LPDEVC_INCLUDE_DIR ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/include)
+set(LPDEVC_LIB_DIR ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install/lib)
+if(NOT IS_DIRECTORY "${LPDEVC_INCLUDE_DIR}")
+  set(LPDEVC_INCLUDE_DIR "${SAMPIC_TRANSPORT_ROOT}/include")
+endif()
+if(NOT IS_DIRECTORY "${LPDEVC_LIB_DIR}")
+  set(LPDEVC_LIB_DIR "${SAMPIC_TRANSPORT_ROOT}/lib")
+endif()
+
+include(${PROJECT_ROOT}/cmake/CPM.cmake)
+
+foreach(path ${SAMPIC_VENDOR_INCLUDE} ${LPDEVC_INCLUDE_DIR} ${LPDEVC_LIB_DIR} ${SAMPIC_VENDOR_LIB_DIR})
+  if(NOT EXISTS ${path})
+    message(FATAL_ERROR "Required vendor component missing: ${path}. Build the vendor library first.")
+  endif()
+endforeach()
+
+find_library(FTD2XX_LIB_PATH
+  NAMES ftd2xx libftd2xx.so libftd2xx.so.1.4.33 libftd2xx.so.1.4.8
+  PATHS
+    ${SAMPIC_TRANSPORT_ROOT}/lpdevc_install
+    ${LPDEVC_LIB_DIR}
+  NO_DEFAULT_PATH)
+if(NOT FTD2XX_LIB_PATH)
+  message(FATAL_ERROR "Unable to locate libftd2xx. Run the vendor installer.")
+endif()
+get_filename_component(FTD2XX_LIB_DIR ${FTD2XX_LIB_PATH} DIRECTORY)
+
+find_package(Threads REQUIRED)
+
+# Diagnostic preload shim: request a configurable receive buffer on UDP
+# sockets created inside the closed vendor transport library.
+add_library(sampic_udp_rcvbuf_preload SHARED
+  src/tools/udp_receive_buffer_preload.cpp)
+target_link_libraries(sampic_udp_rcvbuf_preload PRIVATE dl)
+set_target_properties(sampic_udp_rcvbuf_preload PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
+CPMAddPackage(
+  NAME nlohmann_json
+  GITHUB_REPOSITORY nlohmann/json
+  VERSION 3.11.2
+)
+
+CPMAddPackage(
+  NAME spdlog
+  GITHUB_REPOSITORY gabime/spdlog
+  VERSION 1.12.0
+  OPTIONS "SPDLOG_INSTALL OFF"
+)
+
+add_executable(sampic_deadtime_scan
+  src/app/main.cpp
+  src/app/mode_registry.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  src/modes/crate_smoke/crate_smoke_mode.cpp
+  src/modes/deadtime/config.cpp
+  src/modes/deadtime/mode.cpp
+  src/modes/deadtime/scan_runner.cpp
+  src/modes/deadtime/sampic_session.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/mode.cpp
+  src/modes/double_pulse/scan_runner.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/modes/calibration/calibration_mode.cpp
+  src/modes/occupancy/occupancy_mode.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp
+  src/modes/pulser/pulser_mode.cpp)
+
+add_executable(lecroy_test
+  src/tests/lecroy_test.cpp
+  src/lecroy/lecroy_client.cpp)
+
+add_executable(delay_separation_test
+  src/tests/delay_separation_test.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
+add_executable(double_pulse_timestamp_scan
+  src/tests/double_pulse_timestamp_scan.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
+add_executable(lecroy_routing_probe
+  src/tests/lecroy_routing_probe.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
+add_executable(external_trigger_probe
+  src/tests/external_trigger_probe.cpp
+  src/batching_scan/acquisition_scheme.cpp
+  src/batching_scan/batching_scan_config.cpp
+  src/modes/double_pulse/config.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  ${PROJECT_ROOT}/src/processing/sampic_processing/collector/modes/external_trigger/external_trigger_hit_associator.cpp)
+
+add_executable(trigger_startup_readiness_test
+  src/tests/trigger_startup_readiness_test.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp)
+
+add_executable(sampling_frequency_waveform_scan
+  src/tests/sampling_frequency_waveform_scan.cpp
+  src/modes/double_pulse/config.cpp)
+
+add_executable(sampling_frequency_order_test
+  src/tests/sampling_frequency_order_test.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/lecroy_output_gate.cpp)
+
+# Keep native crash diagnostics useful even in the release tools build. This
+# probe exercises a prebuilt vendor library where ordinary C++ exceptions
+# cannot report segmentation faults.
+target_compile_options(external_trigger_probe PRIVATE -g)
+target_link_options(external_trigger_probe PRIVATE -rdynamic)
+
+add_executable(l2_external_gate_probe
+  src/tests/l2_external_gate_probe.cpp
+  src/lecroy/lecroy_client.cpp)
+
+add_executable(double_pulse_smoke
+  src/tests/double_pulse_smoke.cpp
+  src/modes/double_pulse/config.cpp
+  src/modes/double_pulse/sampic_session.cpp
+  src/lecroy/lecroy_client.cpp
+  src/lecroy/manual_trigger_controller.cpp
+  src/common/scan_types.cpp
+  src/common/time_utils.cpp)
+
+add_executable(board_probe
+  src/tests/board_probe.cpp)
+
+add_executable(sampic_hit_dump
+  src/tests/sampic_hit_dump.cpp)
+
+target_include_directories(sampic_deadtime_scan PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${spdlog_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
+target_include_directories(lecroy_test PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${nlohmann_json_SOURCE_DIR}/include)
+
+target_include_directories(delay_separation_test PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(double_pulse_timestamp_scan PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(lecroy_routing_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(external_trigger_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
+target_include_directories(trigger_startup_readiness_test PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tests
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
+target_include_directories(sampling_frequency_waveform_scan PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tests
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
+target_include_directories(sampling_frequency_order_test PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${PROJECT_ROOT}/include)
+
+target_include_directories(l2_external_gate_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(double_pulse_smoke PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${nlohmann_json_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(sampic_hit_dump PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_include_directories(board_probe PRIVATE
+  ${SAMPIC_VENDOR_INCLUDE}
+  ${LPDEVC_INCLUDE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+set(SAMPIC_VENDOR_LIBS
+  ${SAMPIC_VENDOR_LIB_DIR}/libsampic256ch.so
+  ${LPDEVC_LIB_DIR}/liblpdevC.so
+  ${LPDEVC_LIB_DIR}/liblpdev.so
+  ${FTD2XX_LIB_PATH})
+
+set(SAMPIC_TEST_TARGETS
+  sampic_deadtime_scan
+  delay_separation_test
+  double_pulse_timestamp_scan
+  lecroy_routing_probe
+  external_trigger_probe
+  trigger_startup_readiness_test
+  sampling_frequency_waveform_scan
+  sampling_frequency_order_test
+  l2_external_gate_probe
+  double_pulse_smoke
+  sampic_hit_dump
+  board_probe)
+
+foreach(target ${SAMPIC_TEST_TARGETS})
+  target_link_libraries(${target} PRIVATE
+    ${SAMPIC_VENDOR_LIBS}
+    Threads::Threads
+    dl rt pthread m)
+  target_link_options(${target} PRIVATE "LINKER:--disable-new-dtags")
+endforeach()
+
+foreach(target ${SAMPIC_TEST_TARGETS})
+  set_target_properties(${target} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    BUILD_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}"
+    INSTALL_RPATH "${SAMPIC_VENDOR_LIB_DIR};${LPDEVC_LIB_DIR};${FTD2XX_LIB_DIR}")
+endforeach()
+
+set_target_properties(lecroy_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+set_target_properties(external_trigger_probe PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+set_target_properties(double_pulse_smoke PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+set_target_properties(sampic_hit_dump PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+install(TARGETS ${SAMPIC_TEST_TARGETS} lecroy_test external_trigger_probe sampic_hit_dump RUNTIME DESTINATION bin)

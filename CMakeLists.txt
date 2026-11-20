@@ -328,3 +328,51 @@ if(SAMPIC_BUILD_THRESHOLD_SCAN)
     target_compile_options(sampic_threshold_scan_worker PRIVATE -O3)
   endif()
 endif()
+option(SAMPIC_BUILD_BANK_TESTS "Build hardware-free event-bank serialization tests" OFF)
+if(SAMPIC_BUILD_BANK_TESTS)
+  enable_testing()
+  set(SAMPIC_BANK_TEST_SOURCES
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data_verbose.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits_verbose.cpp
+    src/processing/sampic_processing/collector/frontend_event.cpp
+    src/integration/sampic/collector/sampic_event.cpp)
+  add_executable(fixed_time_bins_test tests/fixed_time_bins_test.cpp ${SAMPIC_BANK_TEST_SOURCES}
+    src/processing/sampic_processing/collector/modes/fixed_time_bins/fixed_time_bins_mode.cpp
+    src/processing/sampic_processing/collector/modes/periodic_readout/periodic_readout_mode.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.cpp
+    src/processing/sampic_processing/collector/frontend_diagnostics.cpp
+    src/processing/sampic_processing/collector/frontend_event_buffer.cpp
+    src/processing/sampic_processing/collector/frontend_event_collector.cpp
+    src/integration/sampic/collector/sampic_event_buffer.cpp
+    src/core/threading/polling_worker.cpp)
+  target_include_directories(fixed_time_bins_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(fixed_time_bins_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME fixed_time_bins COMMAND fixed_time_bins_test)
+  add_executable(timestamp_rollover_test tests/timestamp_rollover_test.cpp ${SAMPIC_BANK_TEST_SOURCES})
+  target_include_directories(timestamp_rollover_test PRIVATE "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(timestamp_rollover_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME timestamp_rollover COMMAND timestamp_rollover_test)
+  add_executable(compact_event_banks_test tests/compact_event_banks_test.cpp ${SAMPIC_BANK_TEST_SOURCES})
+  add_executable(compact_event_banks_benchmark tests/compact_event_banks_benchmark.cpp ${SAMPIC_BANK_TEST_SOURCES})
+  target_include_directories(compact_event_banks_benchmark PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(compact_event_banks_benchmark PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  target_compile_options(compact_event_banks_benchmark PRIVATE -O3)
+  target_include_directories(compact_event_banks_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(compact_event_banks_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME compact_event_banks COMMAND compact_event_banks_test "${CMAKE_BINARY_DIR}/bank_test_fixtures")
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set_tests_properties(compact_event_banks PROPERTIES FIXTURES_SETUP bank_payloads)
+  add_test(NAME compact_bank_python_decoder COMMAND "${Python3_EXECUTABLE}"
+    "${PROJECT_SOURCE_ROOT}/tests/test_hit_bank_decoder.py" "${CMAKE_BINARY_DIR}/bank_test_fixtures")
+  set_tests_properties(compact_bank_python_decoder PROPERTIES
+    FIXTURES_REQUIRED bank_payloads SKIP_RETURN_CODE 77)
+  add_test(NAME threshold_scan_engine COMMAND "${Python3_EXECUTABLE}"
+    "${PROJECT_SOURCE_ROOT}/tests/test_threshold_scan.py")
+
+
+endif()
