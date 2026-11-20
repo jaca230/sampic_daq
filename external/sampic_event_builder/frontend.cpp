@@ -2,6 +2,8 @@
 
 #include "residual_compression/cpu_rice_golomb_codec.h"
 #include "sampic_event_builder/pipeline/event_builder_pipeline.h"
+#include "sampic_event_builder/stages/building/fixed_time_bin_event_builder.h"
+#include "sampic_event_builder/stages/building/periodic_readout_event_builder.h"
 #include "sampic_event_builder/stages/building/time_window_event_builder.h"
 #include "sampic_event_builder/stages/compression/residual_compression_stage.h"
 #include "sampic_event_builder/stages/compression/uncompressed_stage.h"
@@ -14,6 +16,7 @@
 #include "template_fitter/cpu_least_squares_fitter.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -22,7 +25,9 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -76,6 +81,76 @@ T odb_value(const char* path, T default_value, DWORD type) {
         return default_value;
     }
     return value;
+}
+
+std::string odb_string(const char* path, std::string default_value) {
+    std::vector<char> value(std::max<std::size_t>(256, default_value.size() + 1), '\0');
+    std::memcpy(value.data(), default_value.data(), default_value.size());
+    INT size = static_cast<INT>(value.size());
+    const INT status = db_get_value(
+        hDB, 0, path, value.data(), &size, TID_STRING, TRUE);
+    if (status != DB_SUCCESS) {
+        cm_msg(MERROR, frontend_name, "Cannot read ODB setting %s (%d)", path, status);
+        return default_value;
+    }
+    return value.data();
+}
+
+std::unique_ptr<EventBuildingStage> collection_strategy(
+    std::string mode,
+    std::size_t expected_crates) {
+    std::ranges::transform(mode, mode.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    std::ranges::replace(mode, '-', '_');
+
+    if (mode == "default" || mode == "time_grouping") {
+        const auto window_ns = odb_value<INT>(
+            "/Equipment/SAMPIC Builder/Settings/Time grouping/Event window ns",
+            200, TID_INT);
+        const auto allowed_lateness_ns = odb_value<INT>(
+            "/Equipment/SAMPIC Builder/Settings/Time grouping/Allowed lateness ns",
+            2000, TID_INT);
+        return std::make_unique<TimeWindowEventBuilder>(
+            TimeWindowEventBuilderConfig{
+                static_cast<std::uint64_t>(std::max(1, window_ns)),
+                static_cast<std::uint64_t>(std::max(0, allowed_lateness_ns)),
+                expected_crates});
+    }
+    if (mode == "fixed_time_bins") {
+        const auto width_ns = odb_value<std::uint64_t>(
+            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Bin width ns",
+            10'000, TID_QWORD);
+        const auto origin_ns = odb_value<std::uint64_t>(
+            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Bin origin ns",
+            0, TID_QWORD);
+        const auto allowed_lateness_ns = odb_value<std::uint64_t>(
+            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Allowed lateness ns",
+            1'000'000, TID_QWORD);
+        const BOOL emit_empty = odb_value<BOOL>(
+            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Emit empty bins",
+            TRUE, TID_BOOL);
+        const auto maximum_per_build = odb_value<INT>(
+            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Maximum bins per build",
+            256, TID_INT);
+        return std::make_unique<FixedTimeBinEventBuilder>(
+            FixedTimeBinEventBuilderConfig{
+                std::max<std::uint64_t>(1, width_ns), origin_ns,
+                allowed_lateness_ns, expected_crates, emit_empty != FALSE,
+                static_cast<std::size_t>(std::max(1, maximum_per_build))});
+    }
+    if (mode == "periodic_readout") {
+        const auto period_ns = odb_value<std::uint64_t>(
+            "/Equipment/SAMPIC Builder/Settings/Periodic readout/Period ns",
+            10'000, TID_QWORD);
+        const BOOL emit_empty = odb_value<BOOL>(
+            "/Equipment/SAMPIC Builder/Settings/Periodic readout/Emit empty readouts",
+            TRUE, TID_BOOL);
+        return std::make_unique<PeriodicReadoutEventBuilder>(
+            PeriodicReadoutEventBuilderConfig{
+                std::max<std::uint64_t>(1, period_ns), emit_empty != FALSE});
+    }
+    throw std::invalid_argument("unknown collection strategy: " + mode);
 }
 
 waveform::fitting::CubicPulseTemplate pulse_template(std::size_t samples) {
@@ -319,10 +394,9 @@ INT frontend_init() {
     cm_set_transition_sequence(TR_START, 400);
     cm_set_transition_sequence(TR_STOP, 600);
 
-    const auto window_ns = odb_value<INT>(
-        "/Equipment/SAMPIC Builder/Settings/Event window ns", 200, TID_INT);
-    const auto allowed_lateness_ns = odb_value<INT>(
-        "/Equipment/SAMPIC Builder/Settings/Allowed lateness ns", 2000, TID_INT);
+    const auto collection_mode = odb_string(
+        "/Equipment/SAMPIC Builder/Settings/Collection strategy",
+        "time_grouping");
     const auto expected_crates = odb_value<INT>(
         "/Equipment/SAMPIC Builder/Settings/Expected crates", 1, TID_INT);
     const auto plane_count = odb_value<INT>(
@@ -383,13 +457,22 @@ INT frontend_init() {
         compression = std::make_unique<UncompressedStage>();
     }
 
+    std::unique_ptr<EventBuildingStage> builder;
+    try {
+        builder = collection_strategy(
+            collection_mode,
+            static_cast<std::size_t>(std::max(1, expected_crates)));
+    } catch (const std::exception& error) {
+        cm_msg(MERROR, frontend_name, "Invalid collection strategy: %s", error.what());
+        return FE_ERR_ODB;
+    }
+    cm_msg(MINFO, frontend_name,
+           "Collection strategy '%s' configured for %d SAMPIC stream(s)",
+           collection_mode.c_str(), std::max(1, expected_crates));
+
     pipeline = std::make_unique<EventBuilderPipeline>(
-        std::move(input), std::make_unique<TimeWindowEventBuilder>(
-            TimeWindowEventBuilderConfig{
-                static_cast<std::uint64_t>(std::max(1, window_ns)),
-                static_cast<std::uint64_t>(std::max(0, allowed_lateness_ns)),
-                static_cast<std::size_t>(std::max(1, expected_crates))}),
-        std::move(selection), std::move(fitting), std::move(compression),
+        std::move(input), std::move(builder), std::move(selection),
+        std::move(fitting), std::move(compression),
         std::make_unique<ProductBankFinalizationStage>());
 
     INT status = bm_open_buffer(kInputBuffer, 2 * max_event_size, &input_buffer);

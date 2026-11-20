@@ -26,6 +26,39 @@ input -> build events -> select -> fit -> compress -> finalize
 can replace any stage without changing the others. Concrete stage configuration
 lives beside that implementation; there is no monolithic configuration struct.
 
+## Multi-frontend collection
+
+Each crate frontend remains independently useful and retains all of its
+existing collection modes. For centralized event building, run each crate in
+`vendor_raw_passthrough` mode. Its `SRnn` bank contains the crate number in the
+bank suffix and preserves the ordered integer ADC samples needed by fitting and
+lossless compression. The event-builder frontend subscribes to every such bank,
+decodes it into the common `Hit` model, and then applies one replaceable
+`EventBuildingStage` across all crate streams.
+
+The event-builder frontend provides these collection strategies through
+`/Equipment/SAMPIC Builder/Settings/Collection strategy`:
+
+- `time_grouping` (or `default`) clusters hardware timestamps into relative
+  windows. Per-crate watermarks prevent a fast stream from closing an event
+  before a slower stream can contribute.
+- `fixed_time_bins` assigns all streams to common absolute hardware-time bin
+  boundaries. It can retain empty bins and uses the slowest expected crate as
+  its completion watermark.
+- `periodic_readout` drains all hits received from every stream on a software
+  steady-clock period.
+
+Set `/Equipment/SAMPIC Builder/Settings/Expected crates` to the number of
+independent crate frontends. Strategy-specific settings live under the
+`Time grouping`, `Fixed time bins`, and `Periodic readout` subdirectories.
+
+`external_gated_trigger` is not exposed at this layer yet: the current `SRnn`
+input contract intentionally carries hits, not the external-trigger records
+needed for association. `vendor_passthrough` is a source-boundary policy rather
+than a multi-stream event-building policy. Supporting either centrally requires
+adding explicit source-event/trigger metadata to the input contract; it should
+not be inferred from MIDAS delivery order.
+
 Fitting and compression are independent switches. Supported compositions are:
 
 | Fitting | Compression | Stored waveform payload |

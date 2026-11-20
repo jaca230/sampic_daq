@@ -24,7 +24,9 @@ void TimeWindowEventBuilder::validate() const {
 std::vector<Event> TimeWindowEventBuilder::build(std::vector<Hit> hits)
 {
     std::ranges::sort(hits, {}, &Hit::timestamp_ns);
-    if (allowed_lateness_ns_ == 0) {
+    // Preserve the low-overhead single-stream path, but never bypass the
+    // per-crate watermarks when this stage is combining multiple frontends.
+    if (allowed_lateness_ns_ == 0 && expected_crates_ == 1) {
         std::vector<Event> events;
         for (auto& hit : hits) {
             if (events.empty() ||

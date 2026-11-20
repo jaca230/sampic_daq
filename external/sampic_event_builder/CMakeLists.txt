@@ -29,6 +29,8 @@ add_library(sampic_event_builder_core
   src/pipeline/event_builder_pipeline.cpp
   src/serialization/product_bank_decoder.cpp
   src/serialization/product_bank_encoder.cpp
+  src/stages/building/fixed_time_bin_event_builder.cpp
+  src/stages/building/periodic_readout_event_builder.cpp
   src/stages/building/time_window_event_builder.cpp
   src/stages/compression/residual_compression_stage.cpp
   src/stages/compression/uncompressed_stage.cpp

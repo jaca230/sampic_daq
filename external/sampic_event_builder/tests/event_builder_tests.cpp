@@ -1,3 +1,5 @@
+#include "sampic_event_builder/stages/building/fixed_time_bin_event_builder.h"
+#include "sampic_event_builder/stages/building/periodic_readout_event_builder.h"
 #include "sampic_event_builder/stages/building/time_window_event_builder.h"
 #include "sampic_event_builder/stages/selection/topology_selection_stage.h"
 #include "sampic_event_builder/pipeline/event_builder_pipeline.h"
@@ -14,6 +16,7 @@
 #include "template_fitter/cpu_least_squares_fitter.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <cstdint>
 #include <vector>
@@ -43,6 +46,45 @@ int main()
     const auto flushed = held_builder.flush();
     assert(flushed.size() == 1);
     assert(flushed.front().hits.size() == 2);
+
+    TimeWindowEventBuilder zero_lateness_builder({100, 0, 2});
+    assert(zero_lateness_builder.build({
+        Hit{0, 0, 0, 110, {1000}, false},
+        Hit{0, 0, 1, 250, {1000}, false},
+    }).empty());
+    const auto zero_lateness_events = zero_lateness_builder.build({
+        Hit{1, 0, 2, 150, {1000}, false},
+        Hit{1, 0, 3, 260, {1000}, false},
+    });
+    assert(zero_lateness_events.size() == 1);
+    assert(zero_lateness_events.front().hits.size() == 2);
+
+    FixedTimeBinEventBuilder fixed_bins({100, 0, 0, 2, false, 256});
+    assert(fixed_bins.build({
+        Hit{0, 0, 0, 110, {1000}, false},
+        Hit{0, 0, 2, 250, {1000}, false},
+    }).empty());
+    auto fixed_events = fixed_bins.build({
+        Hit{1, 0, 1, 150, {1000}, false},
+        Hit{1, 0, 3, 260, {1000}, false},
+    });
+    assert(fixed_events.size() == 1);
+    assert(fixed_events.front().start_ns == 100);
+    assert(fixed_events.front().end_ns == 200);
+    assert(fixed_events.front().hits.size() == 2);
+
+    using Clock = PeriodicReadoutEventBuilder::Clock;
+    auto now = Clock::time_point{};
+    PeriodicReadoutEventBuilder periodic(
+        {10'000, true}, [&now] { return now; });
+    assert(periodic.build({
+        Hit{0, 0, 0, 110, {1000}, false},
+        Hit{1, 0, 1, 150, {1000}, false},
+    }).empty());
+    now += std::chrono::nanoseconds(10'000);
+    const auto periodic_events = periodic.build({});
+    assert(periodic_events.size() == 1);
+    assert(periodic_events.front().hits.size() == 2);
 
     std::vector<double> shape(64, 0);
     for (std::size_t index = 16; index < shape.size(); ++index) shape[index] = index - 16;
