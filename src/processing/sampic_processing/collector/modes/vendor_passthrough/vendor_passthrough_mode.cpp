@@ -1,3 +1,4 @@
+#include "processing/sampic_processing/collector/banks/frontend_event_hit_banks.h"
 #include "processing/sampic_processing/collector/modes/vendor_passthrough/vendor_passthrough_mode.h"
 
 #include "core/registry/mode/mode_auto_registration.h"
@@ -21,15 +22,11 @@ SAMPIC_REGISTER_MODE(
     "vendor_passthrough",
     "One MIDAS event per decoded vendor event",
     [](const FrontendCollectorModeVendorPassthroughConfig& config) {
+        validateFrontendHitBanks(config, {
+            {config.event_timing_bank_enabled, config.event_timing_bank_prefix},
+            {config.trigger_bank_enabled, config.trigger_bank_prefix}});
         if (config.wait_timeout_ms == 0) {
             throw std::invalid_argument("wait timeout must be positive");
-        }
-        if (config.advanced_bank_prefix.size() != 2) {
-            throw std::invalid_argument("advanced bank prefix must contain exactly 2 characters");
-        }
-        if (config.advanced_bank_enabled &&
-            config.advanced_bank_prefix == config.data_bank_prefix) {
-            throw std::invalid_argument("advanced and data bank prefixes must differ");
         }
     });
 
@@ -77,20 +74,8 @@ bool FrontendCollectorModeVendorPassthrough::collect() {
 
         auto frontend_event =
             std::make_shared<FrontendEvent>(parent_ref->timestamp());
-        if (mode_cfg_.data_bank_enabled) {
-            std::vector<std::shared_ptr<SampicEvent>> parents{parent_ref};
-            auto data_bank =
-                std::make_unique<FrontendEventBankData>(std::move(parents), hits);
-            data_bank->setBankPrefix(mode_cfg_.data_bank_prefix);
-            frontend_event->addBank(std::move(data_bank));
-        }
-
-        if (mode_cfg_.advanced_bank_enabled) {
-            auto advanced_bank =
-                std::make_unique<FrontendEventBankAdvancedHits>(hits);
-            advanced_bank->setBankPrefix(mode_cfg_.advanced_bank_prefix);
-            frontend_event->addBank(std::move(advanced_bank));
-        }
+        std::vector<std::shared_ptr<SampicEvent>> parents{parent_ref};
+        addFrontendHitBanks(*frontend_event, parents, hits, mode_cfg_);
 
         if (mode_cfg_.trigger_bank_enabled) {
             auto trigger_bank = std::make_unique<FrontendEventBankVendorTriggers>(

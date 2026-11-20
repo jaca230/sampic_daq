@@ -37,17 +37,11 @@ FrontendEventBankAdvancedHits::FrontendEventBankAdvancedHits(
         }
 
         const Record record{
-            hit->AdvancedParams.SampicDataHeader,
-            hit->AdvancedParams.FirstTriggerPositionCell,
-            hit->AdvancedParams.TriggerPositionCell,
             hit->AdvancedParams.PhysicalCell0TimeStamp,
             hit->AdvancedParams.SampicTimeStampA,
             hit->AdvancedParams.SampicTimeStampB,
             static_cast<std::uint64_t>(hit->AdvancedParams.FPGATimeStamp),
-            hit->AdvancedParams.ADCCounter_LatchedAtEndOfConv,
-            hit->AdvancedParams.StartOfADCRamp,
             trigger_position_mask,
-            hit->AdvancedParams.TimePhysicalIndex,
         };
         std::memcpy(destination, &record, sizeof(record));
         destination += sizeof(record);

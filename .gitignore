@@ -137,4 +137,5 @@ recycled/
 recycling_bin/
 
 # Development-only tools retained on develop
-/scripts/tools/
+/scripts/tools/sampic_tests/
+/scripts/tools/sampic_playground/

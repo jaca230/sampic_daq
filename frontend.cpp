@@ -218,6 +218,11 @@ INT end_of_run(INT, char *error) {
     try {
         auto& runtime = frontend::runtime::Runtime::instance();
 
+        // Stop periodic production before stopping the writer or waiting for
+        // hardware shutdown: otherwise empty readouts fill a stalled queue.
+        // Remaining/in-flight vendor data is processed by the bounded EOR drain.
+        if (runtime.collector) runtime.collector->stop();
+
         // mfe disables readout before invoking this callback. Fully stop the
         // asynchronous writer so it cannot race the synchronous EOR flush.
         stop_event_writer();
@@ -230,7 +235,14 @@ INT end_of_run(INT, char *error) {
             stop_status = runtime.controller->stopCollector();
         }
 
-        if (runtime.collector && !runtime.collector->drain()) {
+        constexpr std::size_t kMaxEndOfRunEvents = 100'000;
+        const auto drain_output = [&]() {
+            return integration::midas::FrontendSupport::flushEndOfRun(
+                runtime.collector->buffer(), equipment[0], event_buffer,
+                get_event_rbh(0), runtime, kMaxEndOfRunEvents) == SUCCESS;
+        };
+
+        if (runtime.collector && !runtime.collector->drain(10'000, drain_output)) {
             std::strcpy(
                 error,
                 "Failed to drain SAMPIC events through the frontend collector");
@@ -238,7 +250,6 @@ INT end_of_run(INT, char *error) {
             return FE_ERR_HW;
         }
 
-        constexpr std::size_t kMaxEndOfRunEvents = 100'000;
         if (runtime.collector) {
             const INT flush_status =
                 integration::midas::FrontendSupport::flushEndOfRun(

@@ -19,6 +19,7 @@ struct FrontendCollectorModeExternalTriggerConfig {
     std::string event_timing_bank_prefix = "ST";
     bool trigger_metadata_bank_enabled = true;
     std::string trigger_metadata_bank_prefix = "SG";
+    bool verbose_banks = false;
 };
 
 #endif
