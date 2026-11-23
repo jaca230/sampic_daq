@@ -58,7 +58,7 @@ private:
     std::unique_ptr<SampicEventBuffer> buffer_;
     std::unique_ptr<SampicCollectorMode> mode_;
 
-    PollingWorker worker_{{"sampic_collector", 0, 12}};
+    PollingWorker worker_{{.name = "sampic_collector", .realtime_priority = 12}};
 };
 
 #endif // SAMPIC_COLLECTOR_H

@@ -261,6 +261,7 @@ add_executable(sampic_frontend
 target_include_directories(sampic_frontend PRIVATE
   "${PROJECT_SOURCE_ROOT}/include"
   "${PROJECT_SOURCE_ROOT}/src"
+  "${PROJECT_SOURCE_ROOT}/external/sampic_event_builder/include"
   ${MIDASSYS_INCLUDE_DIRS}
   ${CPM_HEADER_INCLUDE_DIRS}
 )
@@ -328,7 +329,6 @@ if(SAMPIC_BUILD_THRESHOLD_SCAN)
     target_compile_options(sampic_threshold_scan_worker PRIVATE -O3)
   endif()
 endif()
-
 option(SAMPIC_BUILD_BANK_TESTS "Build hardware-free event-bank serialization tests" OFF)
 if(SAMPIC_BUILD_BANK_TESTS)
   enable_testing()
@@ -339,6 +339,22 @@ if(SAMPIC_BUILD_BANK_TESTS)
     src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits_verbose.cpp
     src/processing/sampic_processing/collector/frontend_event.cpp
     src/integration/sampic/collector/sampic_event.cpp)
+  add_executable(acquisition_timing_bank_test tests/acquisition_timing_bank_test.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_acquisition_timing.cpp
+    src/integration/sampic/collector/sampic_event.cpp)
+  target_include_directories(acquisition_timing_bank_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" "${PROJECT_SOURCE_ROOT}/external/sampic_event_builder/include"
+    ${CPM_HEADER_INCLUDE_DIRS})
+  target_compile_options(acquisition_timing_bank_test PRIVATE -UNDEBUG)
+  target_link_libraries(acquisition_timing_bank_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME acquisition_timing_bank COMMAND acquisition_timing_bank_test)
+  add_executable(queue_capacity_test tests/queue_capacity_test.cpp ${SAMPIC_BANK_TEST_SOURCES}
+    src/processing/sampic_processing/collector/frontend_event_buffer.cpp
+    src/integration/sampic/collector/sampic_event_buffer.cpp)
+  target_include_directories(queue_capacity_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" ${CPM_HEADER_INCLUDE_DIRS})
+  target_link_libraries(queue_capacity_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME queue_capacity COMMAND queue_capacity_test)
   add_executable(fixed_time_bins_test tests/fixed_time_bins_test.cpp ${SAMPIC_BANK_TEST_SOURCES}
     src/processing/sampic_processing/collector/modes/fixed_time_bins/fixed_time_bins_mode.cpp
     src/processing/sampic_processing/collector/modes/periodic_readout/periodic_readout_mode.cpp

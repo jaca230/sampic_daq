@@ -56,9 +56,6 @@ compile_commands.json
 # ------------------------------------------------------------------
 # Tool outputs
 # ------------------------------------------------------------------
-scripts/tools/**/build/
-scripts/tools/**/generated/
-scripts/tools/sampic_tests/data/*
 !scripts/tools/sampic_tests/data/README.md
 
 # ------------------------------------------------------------------
@@ -138,3 +135,7 @@ deprecated/
 recycle/
 recycled/
 recycling_bin/
+
+# Development-only tools retained on develop
+/scripts/tools/sampic_tests/
+/scripts/tools/sampic_playground/

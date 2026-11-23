@@ -5,6 +5,7 @@
 #include "integration/sampic/collector/modes/simulator/simulator_config.h"
 
 #include <array>
+#include <random>
 
 /**
  * @brief Software-only SAMPIC collector used for throughput testing.
@@ -29,7 +30,8 @@ private:
                      std::uint32_t hit_index,
                      std::uint32_t waveform_length,
                      std::uint32_t channel_offset,
-                     double event_start_time_ns);
+                     double event_start_time_ns,
+                     bool punch_through);
 
     void prepareWaveformTemplate();
     std::uint32_t clampWaveformLength(std::uint32_t requested) const;
@@ -41,6 +43,11 @@ private:
     double baseline_level_{0.05};
     double signal_amplitude_{0.8};
     double tot_value_ns_{120.0};
+    std::mt19937 random_;
+    std::normal_distribution<double> noise_{0.0, 3.0};
+    std::normal_distribution<double> amplitude_jitter_{1.0, 0.05};
+    std::normal_distribution<double> trigger_jitter_{0.0, 1.25};
+    std::uint64_t event_sequence_{0};
     std::array<unsigned short, kMaxWaveformSamples> raw_waveform_template_{};
     std::array<float, kMaxWaveformSamples> corrected_waveform_template_{};
 };
