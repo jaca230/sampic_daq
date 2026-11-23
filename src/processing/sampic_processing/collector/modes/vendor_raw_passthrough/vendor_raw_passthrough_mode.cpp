@@ -1,7 +1,7 @@
 #include "processing/sampic_processing/collector/modes/vendor_raw_passthrough/vendor_raw_passthrough_mode.h"
 
 #include "core/registry/mode/mode_auto_registration.h"
-#include "processing/sampic_processing/collector/banks/frontend_event_bank_event_timing.h"
+#include "processing/sampic_processing/collector/banks/frontend_event_bank_acquisition_timing.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_ordered_raw.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_vendor_triggers.h"
 #include "processing/sampic_processing/collector/frontend_event.h"
@@ -22,14 +22,17 @@ SAMPIC_REGISTER_MODE(
             throw std::invalid_argument("wait timeout must be positive");
         }
         if (config.raw_data_bank_prefix.size() != 2 ||
-            config.event_timing_bank_prefix.size() != 2 ||
+            config.acquisition_timing_bank_prefix.size() != 2 ||
             config.trigger_bank_prefix.size() != 2) {
             throw std::invalid_argument("bank prefixes must contain exactly 2 characters");
         }
-        if (config.raw_data_bank_enabled && config.event_timing_bank_enabled &&
-            config.raw_data_bank_prefix == config.event_timing_bank_prefix) {
+        if (config.raw_data_bank_enabled && config.acquisition_timing_bank_enabled &&
+            config.raw_data_bank_prefix == config.acquisition_timing_bank_prefix) {
             throw std::invalid_argument("raw-data and timing bank prefixes must differ");
         }
+        if (config.acquisition_timing_bank_enabled && config.trigger_bank_enabled &&
+            config.acquisition_timing_bank_prefix == config.trigger_bank_prefix)
+            throw std::invalid_argument("timing and trigger bank prefixes must differ");
         if (config.raw_data_bank_enabled && config.trigger_bank_enabled &&
             config.raw_data_bank_prefix == config.trigger_bank_prefix) {
             throw std::invalid_argument("raw-data and trigger bank prefixes must differ");
@@ -81,14 +84,13 @@ bool FrontendCollectorModeVendorRawPassthrough::collect() {
             bank->setBankPrefix(mode_cfg_.trigger_bank_prefix);
             output->addBank(std::move(bank));
         }
-        if (mode_cfg_.event_timing_bank_enabled) {
-            std::vector<SampicEvent*> timing_parents{parent.get()};
-            auto bank = std::make_unique<FrontendEventBankEventTiming>(
-                parent->timestamp(), static_cast<std::uint32_t>(hit_count),
-                timing_parents);
-            bank->setBankPrefix(mode_cfg_.event_timing_bank_prefix);
+        if (mode_cfg_.acquisition_timing_bank_enabled) {
+            auto bank = std::make_unique<FrontendEventBankAcquisitionTiming>(
+                *parent, next_acquisition_id_, hits.size());
+            bank->setBankPrefix(mode_cfg_.acquisition_timing_bank_prefix);
             output->addBank(std::move(bank));
         }
+        ++next_acquisition_id_;
         output->finalize();
         frontend_buffer_.push(output);
         ++produced_events;

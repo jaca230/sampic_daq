@@ -1,118 +1,146 @@
 # SAMPIC event builder
 
-This project builds time-coincident events from independent SAMPIC crate
-streams. Crate frontends remain one-process-per-crate and publish vendor-mode
-MIDAS banks. The event builder merges those banks by their shared hardware
-clock, applies optional event selection, and optionally processes waveforms.
+The builder runs `collection -> optional cuts -> finalization`, preserving raw
+signed int16 samples. Crate frontends use `vendor_raw_passthrough` and publish
+`SRnn` waveform banks with `SAnn` acquisition timing.
 
-## Project boundaries
+## Build and run
 
-- `../template_fitter`: sibling data-agnostic waveform-fitting project. The first backend
-  is `cpu-least-squares`; CUDA fitting can implement the same interface.
-- `../residual_compression`: sibling data-agnostic signed-integer-coding project. The
-  first backend is `cpu-rice-golomb`; GPU ANS belongs here as another codec.
-- `include/sampic_event_builder` and `src`: replaceable pipeline stages,
-  time grouping, selection, output-product serialization, and telemetry.
-- `benchmarks` and `tests/support`: synthetic inputs and timing tools that are
-  not linked into the production event builder.
-
-The fixed pipeline order is:
-
-```text
-input -> build events -> select -> fit -> compress -> finalize
-```
-
-`EventBuilderPipeline` owns one implementation of each abstract stage type and
-can replace any stage without changing the others. Concrete stage configuration
-lives beside that implementation; there is no monolithic configuration struct.
-
-## Multi-frontend collection
-
-Each crate frontend remains independently useful and retains all of its
-existing collection modes. For centralized event building, run each crate in
-`vendor_raw_passthrough` mode. Its `SRnn` bank contains the crate number in the
-bank suffix and preserves the ordered integer ADC samples needed by fitting and
-lossless compression. The event-builder frontend subscribes to every such bank,
-decodes it into the common `Hit` model, and then applies one replaceable
-`EventBuildingStage` across all crate streams.
-
-The event-builder frontend provides these collection strategies through
-`/Equipment/SAMPIC Builder/Settings/Collection strategy`:
-
-- `time_grouping` (or `default`) clusters hardware timestamps into relative
-  windows. Per-crate watermarks prevent a fast stream from closing an event
-  before a slower stream can contribute.
-- `fixed_time_bins` assigns all streams to common absolute hardware-time bin
-  boundaries. It can retain empty bins and uses the slowest expected crate as
-  its completion watermark.
-- `periodic_readout` drains all hits received from every stream on a software
-  steady-clock period.
-
-Set `/Equipment/SAMPIC Builder/Settings/Expected crates` to the number of
-independent crate frontends. Strategy-specific settings live under the
-`Time grouping`, `Fixed time bins`, and `Periodic readout` subdirectories.
-
-`external_gated_trigger` is not exposed at this layer yet: the current `SRnn`
-input contract intentionally carries hits, not the external-trigger records
-needed for association. `vendor_passthrough` is a source-boundary policy rather
-than a multi-stream event-building policy. Supporting either centrally requires
-adding explicit source-event/trigger metadata to the input contract; it should
-not be inferred from MIDAS delivery order.
-
-Fitting and compression are independent switches. Supported compositions are:
-
-| Fitting | Compression | Stored waveform payload |
-|---|---|---|
-| off | off | original `int16` samples |
-| on | off | fit parameters plus exact `int32` residuals |
-| off | on | encoded original sample integers |
-| on | on | fit parameters plus encoded residuals |
-
-The versioned output-bank header stores flags, fitter ID, codec ID, template
-ID, sample count, fit parameters, payload byte/bit counts, channel identity,
-and timestamp. Reconstruction therefore does not depend on the event builder's
-current ODB settings.
-
-The CPU template fitter uses a cubic-interpolated pulse template and scans a
-configurable sub-sample time grid. At each time displacement it solves
-amplitude and pedestal together as a two-parameter linear regression. Every
-waveform product records chi-squared and degrees of freedom. Fits above
-`Fitting/Maximum reduced chi squared` are flagged and retain their raw `int16`
-samples; `Compression/Compress rejected fits` controls whether such fallbacks
-may still be sent to a codec. `CubicPulseTemplate::from_aligned_waveforms()`
-constructs a normalized template from a time-aligned calibration set. The
-simulator benchmark uses the corresponding oversampled noiseless pulse truth.
-
-The streaming simulator marks 75% of generated time groups as punch-through
-positron candidates by producing low-amplitude hits across all eight ATAR
-planes. `TopologyEventSelector` rejects an event only when the first and last
-planes (and every intervening plane) are occupied and the mean integrated pulse
-is below its configured threshold. Selection runs before fitting and
-compression, making it the primary data-volume reduction stage.
-
-## Build and test
+From the repository root with MIDAS and the crate frontend dependencies installed:
 
 ```bash
-./scripts/build.sh
-./scripts/run_benchmark.sh --crates 2 --hits 100000 --fit 1 --compress 1
-python3 scripts/run_rate_sweep.py --crates 1,2,4
-python3 benchmarks/run_midas_stage_matrix.py --crates 2 --rate-hz 1000
+export MIDASSYS=/home/jack/software/midas
+./scripts/build.sh -j 4
+./external/sampic_event_builder/scripts/build.sh
+./external/sampic_event_builder/scripts/run.sh
 ```
 
-The in-process report replaces `.artifacts/rate-tests/latest/report.md`. The
-full MIDAS benchmark replaces the canonical
-`.artifacts/midas-streaming-benchmark/{current,stage-matrix}` outputs.
-The stage matrix includes `report.pdf`, with observed hits/s and MB/s for every
-representation boundary plus the isolated service capacity of every stage.
-For the full saturation and punch-through study run:
+The launcher forwards frontend arguments and respects `MIDAS_EXPTAB`,
+`MIDAS_EXPT_NAME`, and `SAMPIC_EVENT_BUILDER_BUILD_DIR`.
+
+Each crate's `/Equipment/SAMPIC nn/Common/Buffer` must be `SBUFnn`, with event
+ID 1. The builder subscribes with `GET_ALL` to the comma-separated
+`/Equipment/SAMPIC Builder/Settings/Input buffers`, defaulting to
+`SBUF00,SBUF01,...` for `Settings/Expected crates`. Reads are polled fairly.
+Input buffers must be unique, separate from output, and match the crate count.
+
+The builder publishes event ID 2 to `SYSTEM`. Configure the logger for event ID
+2 so raw crate events are not duplicated in the output. Frontends preserve ODB
+Common settings; configure them before startup. The simulator launcher initializes
+the Common settings for both crates and builder.
+
+Input and output event limits are 16 MiB. Output size is checked before copying,
+including the MIDAS event header, bank headers, and 8-byte bank padding. An
+oversized event produces an explicit failure; it is not split automatically.
+Time-grouped events can exceed this limit.
+
+## Collection and cuts
+
+`Settings/Collection strategy` accepts `time_grouping` (or `default`),
+`fixed_time_bins`, or `periodic_readout`. Parameters live under `Time grouping`,
+`Fixed time bins`, and `Periodic readout`. Set `Expected crates` to the number
+of source streams. External-trigger association is not supported by this input.
+
+Cuts are disabled by default. `Settings/Selection/Enabled` enables the existing
+punch-through positron rejection: all configured planes occupied and mean
+integrated pulse per hit below `Maximum punch integral per hit`. Plane count
+and channels per plane are configurable in the same settings directory.
+
+## BD00 waveform format
+
+Each retained event has one `BD00` bank of type `TID_UINT8`. Version 3 uses
+packed little-endian fields; older product versions are rejected.
+
+The event header is 28 bytes:
+
+| Offset | Field | Type |
+|---:|---|---|
+| 0 | magic (`0x31424553`, bytes `SEB1`) | uint32 |
+| 4 | version (`3`) | uint16 |
+| 6 | reserved (`0`) | uint16 |
+| 8 | waveform_count | uint32 |
+| 12 | start_ns | uint64 |
+| 20 | end_ns | uint64 |
+
+Each waveform has an 18-byte header followed by `sample_count` int16 samples:
+
+| Offset | Field | Type |
+|---:|---|---|
+| 0 | crate | uint16 |
+| 2 | board | uint16 |
+| 4 | channel | uint16 |
+| 6 | timestamp_ns | uint64 |
+| 14 | sample_count | uint32 |
+
+A 64-sample waveform uses 146 bytes, plus the shared event header and MIDAS
+framing. Samples are raw ADC counts. Time grouping stores the first and last hit
+hardware timestamps (inclusive end); fixed bins store hardware bin boundaries
+(exclusive end). Periodic readout stores host steady-clock intervals relative
+to its collection origin (exclusive end). Waveform timestamps always use
+hardware ns. Event bounds are not wall-clock timestamps.
+
+## Timing banks
+
+Timing is enabled by default. Raw passthrough emits `SAnn` per acquisition;
+other frontend modes retain their existing `STnn` and `SCnn` layouts.
+The builder consumes `SAnn` and emits separate diagnostic events on event ID 2
+in `SYSTEM`, containing `BTnn` summaries and `BC00` collector timing, without
+`BD00`. Summaries are independent of waveform grouping and cuts.
+
+All timing records start with four-byte magic, uint16 version (1), and uint16
+record size, followed by uint64 fields in the order below. Sizes exclude MIDAS
+framing. Definitions are in `include/sampic_event_builder/diagnostics/timing_format.h`.
+
+| Bank | Bytes | Fields after the format header |
+|---|---:|---|
+| `SAnn` (`SAT1`) | 72 | Acquisition ID, source-host steady-clock completion ns, hit count, prepare/read/decode/total us, retries |
+| `BTnn` (`BTS1`) | 128 | Cycle ID, read count, hit count, prepare/read/decode/total sums (us), corresponding maxima (us), retries sum/max, first/last acquisition IDs |
+| `BC00` (`BCT1`) | 128 | Cycle ID, cycle start ns since run start, input events/hits, output physics events/hits, selected/rejected events, input-read/build/cuts/finalize/output-wait/total ns, flags |
+
+`BC00` flag bit 0 marks an end-of-run flush. Empty idle polls emit no diagnostics.
+Total cycle time ends before constructing/sending diagnostics; output-wait times
+physics submission. Host timestamps are not hardware timestamps and should not
+be compared across hosts. Acquisition read durations may include vendor retries;
+individual retries and empty hardware polls are not recorded. IDs reset each run.
+Missing/malformed timing, acquisition ID gaps, and SR/SA hit-count mismatches are
+fatal input errors.
+
+Source settings are `vendor_raw_passthrough/acquisition_timing_bank_enabled` and
+`acquisition_timing_bank_prefix` (default `SA`, expected by the builder). To disable
+timing, disable the source setting on each crate and set builder
+`Settings/Timing/Enabled` false before starting the builder.
+
+## Simulator, tests, and benchmarks
+
+From the repository root after building both frontends:
 
 ```bash
-python3 benchmarks/run_midas_saturation.py \
-  --rates 500,1000,2000,4000,8000,16000,32000,64000,128000
+# Two simulated crates and a local MIDAS webpage; Ctrl+C stops everything.
+/usr/bin/python3 external/sampic_event_builder/tests/scripts/run_simulator.py --crates 2 --port 8080
+
+# Record an uncompressed MIDAS file using the logger; validate its contents.
+/usr/bin/python3 external/sampic_event_builder/tests/scripts/record_simulator.py --duration 10 --rate-hz 100
+
+# Two-crate software chain, including MIDAS transport and an output sink.
+/usr/bin/python3 external/sampic_event_builder/tests/benchmarks/run_midas_benchmark.py \
+  --crates 2 --duration 10 --rate-hz 8000 --hits-per-event 256
+
+# Unit tests and software benchmarks, including MIDAS size tests when enabled.
+./external/sampic_event_builder/tests/scripts/build.sh
+
+# Fatal frontend queue-overflow checks.
+/usr/bin/python3 external/sampic_event_builder/tests/scripts/test_queue_overflow.py
 ```
 
-This replaces `.artifacts/midas-streaming-benchmark/saturation/report.pdf`.
+The webpage is http://localhost:8080. Launchers use isolated experiments under
+`.artifacts/` and leave the normal ODB unchanged. Simulator waveforms contain
+pulses, Gaussian noise, amplitude variation and trigger jitter. Cuts default off;
+`--select` enables them. The recording script saves counters, an ODB snapshot and
+a QA manifest alongside the file. No manifests are required for production.
 
-Draft integration notes and historical design material are kept under the
-ignored `.artifacts/` and `.context/` directories. They are not distributed as
-project documentation.
+Benchmarks exclude disk logging. With cuts disabled, finalized/input hit counts
+and received/summarized acquisition counts must match after STOP. Queue overflow
+or malformed input fails the benchmark. This accounting check does not compare
+every output sample; the recording script additionally validates bank layouts.
+Benchmark sources are under `tests/benchmarks/`, scripts under `tests/scripts/`.
+Workers have no default CPU affinity; the optional core-hint API remains available.

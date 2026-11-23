@@ -8,8 +8,8 @@ struct FrontendCollectorModeVendorRawPassthroughConfig {
     std::uint32_t wait_timeout_ms = 1000;
     bool raw_data_bank_enabled = true;
     std::string raw_data_bank_prefix = "SR";
-    bool event_timing_bank_enabled = true;
-    std::string event_timing_bank_prefix = "ST";
+    bool acquisition_timing_bank_enabled = true;
+    std::string acquisition_timing_bank_prefix = "SA";
     bool trigger_bank_enabled = true;
     std::string trigger_bank_prefix = "SV";
 };

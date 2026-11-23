@@ -18,7 +18,7 @@ class VendorRawPassthroughProfile(OdbProfile):
         parser.add_argument("--wait-timeout-ms", type=int, default=1000)
         parser.add_argument("--raw-bank-prefix", default="SR")
         parser.add_argument("--omit-trigger-records", action="store_true")
-        parser.add_argument("--omit-event-timing-bank", action="store_true")
+        parser.add_argument("--omit-acquisition-timing-bank", action="store_true")
 
     def build_writes(self, arguments: Namespace) -> Sequence[OdbWrite]:
         if arguments.sampic_buffer_size <= 0 or arguments.frontend_buffer_size <= 0:
@@ -54,8 +54,10 @@ class VendorRawPassthroughProfile(OdbProfile):
             OdbWrite(f"{mode_root}/trigger_bank_enabled",
                      not arguments.omit_trigger_records,
                      "Retain vendor trigger records."),
-            OdbWrite(f"{mode_root}/event_timing_bank_enabled",
-                     not arguments.omit_event_timing_bank,
+            OdbWrite(f"{mode_root}/acquisition_timing_bank_prefix", "SA",
+                     "Use the event-builder acquisition timing contract."),
+            OdbWrite(f"{mode_root}/acquisition_timing_bank_enabled",
+                     not arguments.omit_acquisition_timing_bank,
                      "Retain frontend timing metadata."),
         ]
 

@@ -38,7 +38,19 @@ class StreamingSimulatorProfile(OdbProfile):
         frontend = f"{root}/Frontend Event Collector"
         simulator = f"{collector}/modes/simulator"
         raw = f"{frontend}/modes/vendor_raw_passthrough"
+        # Common may be created before mfe registers equipment. Supply the
+        # operational fields too: generic MIDAS record defaults are disabled.
+        common = f"/Equipment/SAMPIC {arguments.frontend_index:02d}/Common"
         return [
+            OdbWrite(f"{common}/Event ID", 1, "Raw SAMPIC event identifier.", "WORD"),
+            OdbWrite(f"{common}/Type", 256, "MIDAS EQ_USER equipment."),
+            OdbWrite(f"{common}/Format", "MIDAS", "Banked MIDAS events."),
+            OdbWrite(f"{common}/Enabled", True, "Enable the simulated source."),
+            OdbWrite(f"{common}/Read on", 1, "Read while running."),
+            OdbWrite(f"{common}/Period", 100, "Equipment scheduler period in ms."),
+            OdbWrite(f"/Equipment/SAMPIC {arguments.frontend_index:02d}/Common/Buffer",
+                     f"SBUF{arguments.frontend_index:02d}",
+                     "Send raw crate events only to the dedicated builder input buffer."),
             OdbWrite(f"{controller}/init_mode", "simulator",
                      "Bypass hardware discovery."),
             OdbWrite(f"{controller}/apply_mode", "simulator",
@@ -96,8 +108,10 @@ class StreamingSimulatorProfile(OdbProfile):
                      "Write SRnn ordered-raw banks."),
             OdbWrite(f"{raw}/raw_data_bank_prefix", "SR",
                      "Use the event-builder raw-bank contract."),
-            OdbWrite(f"{raw}/event_timing_bank_enabled", False,
-                     "Exclude unrelated timing payload from rate tests."),
+            OdbWrite(f"{raw}/acquisition_timing_bank_prefix", "SA",
+                     "Use the event-builder acquisition timing contract."),
+            OdbWrite(f"{raw}/acquisition_timing_bank_enabled", True,
+                     "Emit one SA acquisition timing record per vendor event."),
             OdbWrite(f"{raw}/trigger_bank_enabled", False,
                      "Exclude empty trigger payload from rate tests."),
         ]

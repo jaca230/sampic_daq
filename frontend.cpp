@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <atomic>
+#include <utility>
 
 // MIDAS
 #include "midas.h"
@@ -40,9 +41,7 @@ const char *frontend_name       = "SAMPIC_Frontend";
 const char *frontend_file_name  = __FILE__;
 BOOL        frontend_call_loop  = FALSE;
 INT         display_period      = 0;
-// One maximal 8192-hit/64-sample SAMPIC event is well below this. The former
-// 128 MiB/640 MiB allocation per crate wasted substantial memory in multi-crate
-// tests and on readout hosts.
+// Maximum serialized MIDAS event size; collection windows can exceed it.
 INT         max_event_size      = 16 * 1024 * 1024;
 INT         max_event_size_frag = 0;
 INT         event_buffer_size   = 64 * 1024 * 1024;
@@ -73,7 +72,7 @@ static void request_fatal_shutdown(const char* reason);
 // ======================================================================
 // Equipment definition
 // ======================================================================
-BOOL equipment_common_overwrite = TRUE;
+BOOL equipment_common_overwrite = FALSE;
 
 EQUIPMENT equipment[] = {
     {"SAMPIC %02d",
@@ -291,7 +290,7 @@ INT end_of_run(INT, char *error) {
 
 INT pause_run(INT, char*)  { return SUCCESS; }
 INT resume_run(INT, char*) { return SUCCESS; }
-INT frontend_loop()        { return SUCCESS; }
+INT frontend_loop() { return SUCCESS; }
 
 INT frontend_exit() {
     shutdown_frontend_runtime("MIDAS frontend exit");

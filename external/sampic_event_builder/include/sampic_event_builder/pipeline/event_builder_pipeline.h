@@ -2,9 +2,7 @@
 
 #include "sampic_event_builder/pipeline/pipeline_event.h"
 #include "sampic_event_builder/stages/building/event_building_stage.h"
-#include "sampic_event_builder/stages/compression/compression_stage.h"
 #include "sampic_event_builder/stages/finalization/finalization_stage.h"
-#include "sampic_event_builder/stages/fitting/fitting_stage.h"
 #include "sampic_event_builder/stages/input/input_stage.h"
 #include "sampic_event_builder/stages/selection/selection_stage.h"
 
@@ -25,12 +23,9 @@ struct PipelineStageTotals {
 struct PipelineMetrics {
     PipelineStageTotals event_building;
     PipelineStageTotals selection;
-    PipelineStageTotals fitting;
-    PipelineStageTotals compression;
     PipelineStageTotals finalization;
     std::uint64_t selected_events = 0;
     std::uint64_t rejected_events = 0;
-    std::uint64_t rejected_fits = 0;
 };
 
 class EventBuilderPipeline {
@@ -38,8 +33,6 @@ public:
     EventBuilderPipeline(std::unique_ptr<InputStage> input,
                          std::unique_ptr<EventBuildingStage> builder,
                          std::unique_ptr<SelectionStage> selection,
-                         std::unique_ptr<FittingStage> fitting,
-                         std::unique_ptr<CompressionStage> compression,
                          std::unique_ptr<FinalizationStage> finalization);
     std::vector<FinalizedEvent> run_once();
     std::vector<FinalizedEvent> process_hits(std::span<const Hit> hits);
@@ -50,16 +43,12 @@ public:
     void replace_input(std::unique_ptr<InputStage> stage);
     void replace_builder(std::unique_ptr<EventBuildingStage> stage);
     void replace_selection(std::unique_ptr<SelectionStage> stage);
-    void replace_fitting(std::unique_ptr<FittingStage> stage);
-    void replace_compression(std::unique_ptr<CompressionStage> stage);
     void replace_finalization(std::unique_ptr<FinalizationStage> stage);
 
 private:
     std::unique_ptr<InputStage> input_;
     std::unique_ptr<EventBuildingStage> builder_;
     std::unique_ptr<SelectionStage> selection_;
-    std::unique_ptr<FittingStage> fitting_;
-    std::unique_ptr<CompressionStage> compression_;
     std::unique_ptr<FinalizationStage> finalization_;
     PipelineMetrics metrics_;
 

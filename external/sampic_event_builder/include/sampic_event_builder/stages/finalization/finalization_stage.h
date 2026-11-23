@@ -7,7 +7,7 @@ namespace sampic::event_builder {
 
 class FinalizationStage : public Stage {
 public:
-    virtual FinalizedEvent finalize(const PipelineEvent& event) const = 0;
+    virtual FinalizedEvent finalize(const Event& event) const = 0;
 };
 
 } // namespace sampic::event_builder

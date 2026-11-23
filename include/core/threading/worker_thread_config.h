@@ -5,7 +5,7 @@
 
 struct WorkerThreadConfig {
     std::string name;
-    int core_hint = -1;
+    int core_hint = -1; // No affinity by default; nonnegative values explicitly select a core.
     int realtime_priority = 0;
 };
 

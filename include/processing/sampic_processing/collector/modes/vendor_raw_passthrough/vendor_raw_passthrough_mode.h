@@ -18,6 +18,7 @@ public:
     bool collect() override;
 
 private:
+    std::uint64_t next_acquisition_id_{0};
     FrontendCollectorModeVendorRawPassthroughConfig mode_cfg_;
     std::chrono::milliseconds wait_timeout_;
     std::chrono::steady_clock::time_point last_timestamp_{

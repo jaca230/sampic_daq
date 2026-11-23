@@ -2,19 +2,8 @@
 
 ## Related in-tree projects
 
-The `external/` directory contains three sibling CMake projects used to
-prototype the multi-crate processing path:
-
-- `sampic_event_builder`: MIDAS-facing event building, selection, waveform
-  processing composition, product-bank format, simulation, and benchmarks;
-- `template_fitter`: MIDAS- and SAMPIC-agnostic waveform fitting;
-- `residual_compression`: MIDAS- and SAMPIC-agnostic integer residual codecs.
-
-They intentionally remain normal directories in this repository for now, not
-Git submodules. Each has its own public headers, sources, tests, and
-`CMakeLists.txt`, so it can be extracted into a separate repository later
-without redesigning its API. Building `sampic_event_builder` includes its two
-sibling libraries by default:
+`external/sampic_event_builder` is a standalone CMake project for multi-crate
+collection, optional cuts, and raw waveform output. Build its MIDAS frontend:
 
 ```bash
 ./external/sampic_event_builder/scripts/build.sh
@@ -136,7 +125,7 @@ are:
   retains the vendor trigger records.
 - `vendor_raw_passthrough`: preserve the vendor `EventStruct` boundary but
   emit ordered, pre-correction integer ADC samples in a versioned `SR` bank.
-  This is the event-builder/compression input contract and leaves `SD`
+  This is the event-builder input contract and leaves `SD`
   unchanged.
 
 Every frontend collector bank has a mode-specific `*_bank_enabled` setting.
@@ -151,7 +140,7 @@ written to MIDAS. The available switches are:
 - `vendor_passthrough`: `data_bank_enabled`, `advanced_bank_enabled`,
   `event_timing_bank_enabled`, and `trigger_bank_enabled`.
 - `vendor_raw_passthrough`: `raw_data_bank_enabled`,
-  `event_timing_bank_enabled`, and `trigger_bank_enabled`.
+  `acquisition_timing_bank_enabled`, and `trigger_bank_enabled`.
 
 `time_grouping`, `external_gated_trigger`, and `vendor_passthrough` also accept
 an `advanced_bank_prefix` setting. With the default switches, every emitted
@@ -260,3 +249,10 @@ occupancy scan:
 ```
 
 Both commands are dry-run by default; add `--apply` after reviewing them.
+
+## Queue overflow
+
+A full input or output queue fails immediately with the queue name and capacity.
+The affected frontend stops and cleans up hardware; it does not request a global
+MIDAS run STOP. Existing queued events are never evicted. `tryPush()` remains
+retryable backpressure.

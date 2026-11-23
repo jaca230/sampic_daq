@@ -21,21 +21,15 @@ EventBuilderPipeline::EventBuilderPipeline(
     std::unique_ptr<InputStage> input,
     std::unique_ptr<EventBuildingStage> builder,
     std::unique_ptr<SelectionStage> selection,
-    std::unique_ptr<FittingStage> fitting,
-    std::unique_ptr<CompressionStage> compression,
     std::unique_ptr<FinalizationStage> finalization)
     : input_(std::move(input)),
       builder_(std::move(builder)),
       selection_(std::move(selection)),
-      fitting_(std::move(fitting)),
-      compression_(std::move(compression)),
       finalization_(std::move(finalization))
 {
     require_stage(input_, "input");
     require_stage(builder_, "builder");
     require_stage(selection_, "selection");
-    require_stage(fitting_, "fitting");
-    require_stage(compression_, "compression");
     require_stage(finalization_, "finalization");
 }
 
@@ -95,39 +89,11 @@ std::vector<FinalizedEvent> EventBuilderPipeline::process_events(
         }
         ++metrics_.selected_events;
 
-        PipelineEvent event{std::move(source), {}};
         start = std::chrono::steady_clock::now();
-        fitting_->fit(event);
+        auto finalized = finalization_->finalize(source);
         elapsed = std::chrono::steady_clock::now() - start;
-        std::uint64_t fit_bytes = 0;
-        for (const auto& waveform : event.waveforms) {
-            fit_bytes += waveform.values.size() * sizeof(std::int32_t);
-            metrics_.rejected_fits +=
-                (waveform.product.flags & ProcessingFlags::fit_rejected) != 0;
-        }
-        metrics_.fitting.hits += event.waveforms.size();
-        metrics_.fitting.input_bytes += raw_bytes;
-        metrics_.fitting.output_bytes += fit_bytes;
-        metrics_.fitting.processing_nanoseconds +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
-
-        start = std::chrono::steady_clock::now();
-        compression_->compress(event);
-        elapsed = std::chrono::steady_clock::now() - start;
-        std::uint64_t compressed_bytes = 0;
-        for (const auto& waveform : event.waveforms)
-            compressed_bytes += waveform.product.payload.size();
-        metrics_.compression.hits += event.waveforms.size();
-        metrics_.compression.input_bytes += fit_bytes;
-        metrics_.compression.output_bytes += compressed_bytes;
-        metrics_.compression.processing_nanoseconds +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
-
-        start = std::chrono::steady_clock::now();
-        auto finalized = finalization_->finalize(event);
-        elapsed = std::chrono::steady_clock::now() - start;
-        metrics_.finalization.hits += event.waveforms.size();
-        metrics_.finalization.input_bytes += compressed_bytes;
+        metrics_.finalization.hits += source.hits.size();
+        metrics_.finalization.input_bytes += raw_bytes;
         metrics_.finalization.output_bytes += finalized.product_bank.size();
         metrics_.finalization.processing_nanoseconds +=
             std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
@@ -152,18 +118,6 @@ void EventBuilderPipeline::replace_selection(std::unique_ptr<SelectionStage> sta
 {
     require_stage(stage, "selection");
     selection_ = std::move(stage);
-}
-
-void EventBuilderPipeline::replace_fitting(std::unique_ptr<FittingStage> stage)
-{
-    require_stage(stage, "fitting");
-    fitting_ = std::move(stage);
-}
-
-void EventBuilderPipeline::replace_compression(std::unique_ptr<CompressionStage> stage)
-{
-    require_stage(stage, "compression");
-    compression_ = std::move(stage);
 }
 
 void EventBuilderPipeline::replace_finalization(std::unique_ptr<FinalizationStage> stage)
