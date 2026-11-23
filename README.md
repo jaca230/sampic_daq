@@ -1,5 +1,14 @@
 # Sampic Data Acquisition Midas Frontend
 
+## Related in-tree projects
+
+`external/sampic_event_builder` is a standalone CMake project for multi-crate
+collection, optional cuts, and raw waveform output. Build its MIDAS frontend:
+
+```bash
+./external/sampic_event_builder/scripts/build.sh
+```
+
 ## External Dependencies
 
 SAMPIC library 3.2 is vendored as source in
@@ -114,6 +123,10 @@ are:
   `EventStruct`, without time grouping or trigger-based splitting. Its `SD`
   bank contains all corrected hits from that vendor event and its `SV` bank
   retains the vendor trigger records.
+- `vendor_raw_passthrough`: preserve the vendor `EventStruct` boundary but
+  emit ordered, pre-correction integer ADC samples in a versioned `SR` bank.
+  This is the event-builder input contract and leaves `SD`
+  unchanged.
 
 Every frontend collector bank has a mode-specific `*_bank_enabled` setting.
 All banks are enabled by default. Disabled banks are neither constructed nor
@@ -126,6 +139,8 @@ written to MIDAS. The available switches are:
   `event_timing_bank_enabled`, and `trigger_metadata_bank_enabled`;
 - `vendor_passthrough`: `data_bank_enabled`, `advanced_bank_enabled`,
   `event_timing_bank_enabled`, and `trigger_bank_enabled`.
+- `vendor_raw_passthrough`: `raw_data_bank_enabled`,
+  `acquisition_timing_bank_enabled`, and `trigger_bank_enabled`.
 
 `time_grouping`, `external_gated_trigger`, and `vendor_passthrough` also accept
 an `advanced_bank_prefix` setting. With the default switches, every emitted
@@ -180,6 +195,7 @@ Profiles are dry-run by default:
 ./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger
 ./scripts/odb_tools/profiles/apply_profile.py l2_external_trigger --apply
 ./scripts/odb_tools/profiles/apply_profile.py vendor_passthrough --apply
+./scripts/odb_tools/profiles/apply_profile.py vendor_raw_passthrough --apply
 ./scripts/odb_tools/profiles/apply_profile.py time_grouped --apply
 ```
 
@@ -233,3 +249,10 @@ occupancy scan:
 ```
 
 Both commands are dry-run by default; add `--apply` after reviewing them.
+
+## Queue overflow
+
+A full input or output queue fails immediately with the queue name and capacity.
+The affected frontend stops and cleans up hardware; it does not request a global
+MIDAS run STOP. Existing queued events are never evicted. `tryPush()` remains
+retryable backpressure.

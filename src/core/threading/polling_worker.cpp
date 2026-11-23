@@ -1,6 +1,9 @@
 #include "core/threading/polling_worker.h"
 
 #include <spdlog/spdlog.h>
+#include <csignal>
+#include <cstdio>
+#include <stdexcept>
 
 #ifdef __linux__
 #include <pthread.h>
@@ -20,13 +23,14 @@ void PollingWorker::start(Work work,
                           LifecycleCallback on_started,
                           LifecycleCallback on_stopped) {
     if (running_.exchange(true)) return;
+    if (thread_.joinable()) thread_.join();
     thread_ = std::thread(
         &PollingWorker::run, this, std::move(work), interval,
         std::move(on_started), std::move(on_stopped));
 }
 
 void PollingWorker::stop() {
-    if (!running_.exchange(false)) return;
+    running_ = false;
     if (thread_.joinable()) thread_.join();
 }
 
@@ -41,14 +45,27 @@ void PollingWorker::run(Work work,
     configureCurrentThread();
     if (on_started) on_started();
 
-    while (running_) {
-        if (!work()) {
-            spdlog::warn("{}: polling operation returned false", config_.name);
+    bool overflow = false;
+    try {
+        while (running_) {
+            if (!work()) {
+                spdlog::warn("{}: polling operation returned false", config_.name);
+            }
+            if (interval.count() > 0) std::this_thread::sleep_for(interval);
         }
-        if (interval.count() > 0) std::this_thread::sleep_for(interval);
+    } catch (const std::overflow_error& error) {
+        running_ = false;
+        overflow = true;
+        spdlog::critical("{}: {}; terminating frontend", config_.name, error.what());
+        std::fprintf(stderr, "FATAL %s: %s; terminating frontend\n", config_.name.c_str(), error.what());
+        std::fflush(stderr);
     }
 
     if (on_stopped) on_stopped();
+    // MIDAS already handles SIGTERM on its main thread. The failing worker
+    // has stopped immediately; its lifecycle callback stops hardware when it
+    // owns acquisition. Main-thread frontend_exit cleans up the other workers.
+    if (overflow) std::raise(SIGTERM);
 }
 
 void PollingWorker::configureCurrentThread() const {

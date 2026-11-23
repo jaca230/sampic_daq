@@ -21,7 +21,7 @@ class SampicEventBuffer {
 public:
     explicit SampicEventBuffer(size_t capacity);
 
-    /** @brief Add a new event to the buffer. Drops oldest if full. */
+    /** @brief Add a new event to the buffer. Throws std::overflow_error if full. */
     void push(std::unique_ptr<SampicEvent> ev);
     void push(std::shared_ptr<SampicEvent> ev);
 
@@ -47,6 +47,7 @@ public:
 
     /** @brief Number of events currently in the buffer. */
     size_t size() const;
+
 
     /** @brief Return true if the buffer is empty. */
     bool empty() const;

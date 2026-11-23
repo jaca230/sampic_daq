@@ -14,6 +14,12 @@ struct SampicCollectorModeSimulatorConfig {
     double baseline_level = 0.05;
     double signal_amplitude = 0.8;
     double tot_value_ns = 120.0;
+    double noise_rms_adc = 3.0;
+    double amplitude_jitter_fraction = 0.05;
+    double trigger_jitter_samples = 1.25;
+    double punch_through_fraction = 0.75;
+    double punch_amplitude_fraction = 0.20;
+    std::uint32_t random_seed = 1;
 };
 
 #endif

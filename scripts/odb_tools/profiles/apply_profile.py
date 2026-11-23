@@ -106,7 +106,12 @@ def main() -> int:
 
     try:
         for write in writes:
-            client.odb_set(write.path, write.value)
+            if write.midas_type:
+                import midas
+                client.odb_set(write.path, write.value,
+                               explicit_new_midas_type=getattr(midas, 'TID_'+write.midas_type))
+            else:
+                client.odb_set(write.path, write.value)
             print(
                 f"{write.path} <- {write.value!r}"
                 f"  # {write.description}"

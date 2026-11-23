@@ -53,7 +53,7 @@ private:
     std::unique_ptr<FrontendCollectorMode> mode_;
     std::unique_ptr<frontend::collector::FrontendDiagnostics> diagnostics_;
 
-    PollingWorker worker_{{"fe_collector", 1, 10}};
+    PollingWorker worker_{{.name = "fe_collector", .realtime_priority = 10}};
 };
 
 #endif // FRONTEND_EVENT_COLLECTOR_H

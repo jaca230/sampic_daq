@@ -1,5 +1,7 @@
 #include "processing/sampic_processing/collector/frontend_event_buffer.h"
 #include <spdlog/spdlog.h>
+#include <stdexcept>
+#include <string>
 
 // ------------------------------------------------------------------
 // Constructor
@@ -7,7 +9,9 @@
 
 FrontendEventBuffer::FrontendEventBuffer(size_t capacity)
     : capacity_(capacity),
-      last_timestamp_(std::chrono::steady_clock::time_point::min()) {}
+      last_timestamp_(std::chrono::steady_clock::time_point::min()) {
+    if (!capacity_) throw std::invalid_argument("queue capacity must be positive");
+}
 
 // ------------------------------------------------------------------
 // Producer interface
@@ -19,7 +23,8 @@ void FrontendEventBuffer::push(const std::shared_ptr<FrontendEvent>& ev) {
     std::unique_lock<std::mutex> lock(mtx_);
 
     if (buffer_.size() >= capacity_) {
-        buffer_.pop_front();
+        throw std::overflow_error("Frontend output queue overflow (capacity=" +
+            std::to_string(capacity_) + "): incoming event cannot be queued; data incomplete");
     }
 
     const auto ts = ev->timestamp();

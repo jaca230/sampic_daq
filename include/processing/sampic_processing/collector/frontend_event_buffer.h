@@ -22,7 +22,7 @@ class FrontendEventBuffer {
 public:
     /**
      * @brief Construct a new FrontendEventBuffer with the given capacity.
-     * @param capacity Maximum number of events stored before oldest are dropped.
+     * @param capacity Maximum number of queued events. Zero is invalid.
      */
     explicit FrontendEventBuffer(size_t capacity);
 
@@ -33,8 +33,8 @@ public:
     /**
      * @brief Add a new event to the buffer.
      * 
-     * If the buffer is full, the oldest event is removed. This function
-     * signals any threads waiting on new data.
+     * If full, throws std::overflow_error immediately. Existing queued events
+     * are never evicted.
      *
      * @param ev Shared pointer to the FrontendEvent to push.
      */
@@ -106,6 +106,7 @@ public:
      */
     size_t size() const;
 
+
     /**
      * @brief Check if the buffer is empty.
      * @return True if no events are stored.
@@ -120,7 +121,7 @@ public:
     void pruneUpTo(std::chrono::steady_clock::time_point t);
 
 private:
-    size_t capacity_; ///< Maximum number of events before oldest are dropped.
+    size_t capacity_;
     mutable std::mutex mtx_; ///< Mutex for thread safety.
     std::condition_variable cv_; ///< Condition variable for push notifications.
     std::deque<std::pair<std::shared_ptr<FrontendEvent>,

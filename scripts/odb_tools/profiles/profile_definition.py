@@ -13,6 +13,7 @@ class OdbWrite:
     path: str
     value: Any
     description: str
+    midas_type: str | None = None
 
 
 class OdbProfile(ABC):
