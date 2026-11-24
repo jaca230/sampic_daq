@@ -2,21 +2,19 @@
 
 #include "core/registry/mode/mode_auto_registration.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_acquisition_timing.h"
-#include "processing/sampic_processing/collector/banks/frontend_event_bank_ordered_raw.h"
+#include "processing/sampic_processing/collector/banks/frontend_event_bank_raw.h"
 #include "processing/sampic_processing/collector/banks/frontend_event_bank_vendor_triggers.h"
 #include "processing/sampic_processing/collector/frontend_event.h"
 
-#include <algorithm>
 #include <stdexcept>
 #include <utility>
-#include <vector>
 
 SAMPIC_REGISTER_MODE(
     FrontendCollectorModeRegistry,
     FrontendCollectorModeVendorRawPassthrough,
     FrontendCollectorModeVendorRawPassthroughConfig,
     "vendor_raw_passthrough",
-    "One MIDAS event per vendor event with ordered pre-correction ADC samples",
+    "One MIDAS event per vendor event with complete vendor hit data",
     [](const FrontendCollectorModeVendorRawPassthroughConfig& config) {
         if (config.wait_timeout_ms == 0) {
             throw std::invalid_argument("wait timeout must be positive");
@@ -63,18 +61,12 @@ bool FrontendCollectorModeVendorRawPassthrough::collect() {
             continue;
         }
         const EventStruct& vendor_event = *parent->data();
-        const int hit_count = std::clamp(
-            vendor_event.NbOfHitsInEvent, 0,
-            static_cast<int>(MAX_EXPECTED_FRAMES));
-        std::vector<const HitStruct*> hits;
-        hits.reserve(static_cast<std::size_t>(hit_count));
-        for (int index = 0; index < hit_count; ++index) {
-            hits.push_back(&vendor_event.Hit[index]);
-        }
-
+        const int hit_count = vendor_event.NbOfHitsInEvent;
+        if (hit_count < 0 || hit_count > MAX_EXPECTED_FRAMES)
+            throw std::runtime_error("invalid vendor event hit count");
         auto output = std::make_shared<FrontendEvent>(parent->timestamp());
         if (mode_cfg_.raw_data_bank_enabled) {
-            auto bank = std::make_unique<FrontendEventBankOrderedRaw>(hits);
+            auto bank = std::make_unique<FrontendEventBankRaw>(parent);
             bank->setBankPrefix(mode_cfg_.raw_data_bank_prefix);
             output->addBank(std::move(bank));
         }
@@ -86,7 +78,7 @@ bool FrontendCollectorModeVendorRawPassthrough::collect() {
         }
         if (mode_cfg_.acquisition_timing_bank_enabled) {
             auto bank = std::make_unique<FrontendEventBankAcquisitionTiming>(
-                *parent, next_acquisition_id_, hits.size());
+                *parent, next_acquisition_id_, static_cast<std::size_t>(hit_count));
             bank->setBankPrefix(mode_cfg_.acquisition_timing_bank_prefix);
             output->addBank(std::move(bank));
         }

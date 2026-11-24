@@ -32,6 +32,12 @@ std::vector<Event> PeriodicReadoutEventBuilder::build(std::vector<Hit> hits) {
     return readout(false);
 }
 
+std::vector<Event> PeriodicReadoutEventBuilder::finish(std::vector<Hit> hits) {
+    pending_.insert(pending_.end(),std::make_move_iterator(hits.begin()),std::make_move_iterator(hits.end()));
+    if (!origin_) origin_=now_();
+    return flush();
+}
+
 std::vector<Event> PeriodicReadoutEventBuilder::flush() {
     if (!origin_) {
         return {};
@@ -55,13 +61,7 @@ std::vector<Event> PeriodicReadoutEventBuilder::readout(bool final) {
     if (!final && completed <= next_tick_) {
         return {};
     }
-    if (final && pending_.empty()) {
-        return {};
-    }
-    if (!config_.emit_empty_readouts && pending_.empty()) {
-        next_tick_ = completed;
-        return {};
-    }
+    if (final && elapsed == next_tick_ * config_.readout_period_ns && pending_.empty()) return {};
 
     const auto start = next_tick_ * config_.readout_period_ns;
     const auto end = final ? elapsed : completed * config_.readout_period_ns;

@@ -1,7 +1,7 @@
 #pragma once
 #include "processing/sampic_processing/collector/banks/frontend_event_bank.h"
 #include "integration/sampic/collector/sampic_event.h"
-#include "sampic_event_builder/diagnostics/timing_format.h"
+#include "sampic_event_builder/banks/acquisition_timing_bank.h"
 
 // Exactly one vendor acquisition, without parent aggregation.
 class FrontendEventBankAcquisitionTiming final : public FrontendEventBank {

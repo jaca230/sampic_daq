@@ -105,3 +105,9 @@ void SampicEventBuffer::pruneUpTo(std::chrono::steady_clock::time_point t) {
         buffer_.pop_front();
     }
 }
+
+bool SampicEventBuffer::waitForNewUntil(std::chrono::steady_clock::time_point after,
+                                      std::chrono::steady_clock::time_point deadline) {
+    std::unique_lock<std::mutex> lock(mtx_);
+    return cv_.wait_until(lock, deadline, [&] { return last_timestamp_ > after; });
+}

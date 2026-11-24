@@ -15,6 +15,7 @@ struct FrontendEventCollectorConfig {
     uint32_t buffer_size = 512;
 
     /// Microseconds to sleep between collection cycles.
+    /// Deadline-driven periodic readout waits for input/deadlines instead.
     uint32_t sleep_time_us = 1000;
 
     FrontendCollectorDiagnosticsConfig diagnostics;

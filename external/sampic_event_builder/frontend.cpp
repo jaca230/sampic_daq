@@ -1,4 +1,7 @@
+#include "sampic_event_builder/banks/selection_summary_bank.h"
 #include "mfe.h"
+#include "sampic_event_builder/stages/selection/cut_chain.h"
+#include "sampic_event_builder/stages/selection/dummy_selection_stage.h"
 #include "sampic_event_builder/serialization/midas_bank_writer.h"
 #include "sampic_event_builder/diagnostics/timing_accumulator.h"
 #include <csignal>
@@ -49,6 +52,8 @@ BOOL equipment_common_overwrite = FALSE;
 // the C++ standard library used by the pipeline.
 int rb_get_wp(int handle, void** pointer, int timeout_ms);
 int rb_increment_wp(int handle, int size);
+int rb_get_rp(int handle, void** pointer, int timeout_ms);
+int rb_increment_rp(int handle, int size);
 
 namespace {
 
@@ -73,6 +78,11 @@ std::atomic<std::uint64_t> product_bytes_written{0};
 std::mutex pipeline_mutex;
 std::vector<FinalizedEvent> pending_products;
 std::chrono::steady_clock::time_point run_started_at;
+// Protected by pipeline_mutex; retained for the final partial window at EOR.
+std::chrono::steady_clock::time_point accounting_start, accounting_run;
+PipelineMetrics accounting_before{};
+std::uint64_t accounting_events = 0, accounting_hits = 0, accounting_input_ns = 0;
+bool accounting_active = false;
 
 template <typename T>
 T odb_value(const char* path, T default_value, DWORD type) {
@@ -108,52 +118,27 @@ std::unique_ptr<EventBuildingStage> collection_strategy(
     });
     std::ranges::replace(mode, '-', '_');
 
-    if (mode == "default" || mode == "time_grouping") {
-        const auto window_ns = odb_value<INT>(
-            "/Equipment/SAMPIC Builder/Settings/Time grouping/Event window ns",
-            200, TID_INT);
-        const auto allowed_lateness_ns = odb_value<INT>(
-            "/Equipment/SAMPIC Builder/Settings/Time grouping/Allowed lateness ns",
-            2000, TID_INT);
-        return std::make_unique<TimeWindowEventBuilder>(
-            TimeWindowEventBuilderConfig{
-                static_cast<std::uint64_t>(std::max(1, window_ns)),
-                static_cast<std::uint64_t>(std::max(0, allowed_lateness_ns)),
-                expected_crates});
-    }
-    if (mode == "fixed_time_bins") {
-        const auto width_ns = odb_value<std::uint64_t>(
-            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Bin width ns",
-            10'000, TID_QWORD);
-        const auto origin_ns = odb_value<std::uint64_t>(
-            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Bin origin ns",
-            0, TID_QWORD);
-        const auto allowed_lateness_ns = odb_value<std::uint64_t>(
-            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Allowed lateness ns",
-            1'000'000, TID_QWORD);
-        const BOOL emit_empty = odb_value<BOOL>(
-            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Emit empty bins",
-            TRUE, TID_BOOL);
-        const auto maximum_per_build = odb_value<INT>(
-            "/Equipment/SAMPIC Builder/Settings/Fixed time bins/Maximum bins per build",
-            256, TID_INT);
-        return std::make_unique<FixedTimeBinEventBuilder>(
-            FixedTimeBinEventBuilderConfig{
-                std::max<std::uint64_t>(1, width_ns), origin_ns,
-                allowed_lateness_ns, expected_crates, emit_empty != FALSE,
-                static_cast<std::size_t>(std::max(1, maximum_per_build))});
-    }
-    if (mode == "periodic_readout") {
-        const auto period_ns = odb_value<std::uint64_t>(
-            "/Equipment/SAMPIC Builder/Settings/Periodic readout/Period ns",
-            10'000, TID_QWORD);
-        const BOOL emit_empty = odb_value<BOOL>(
-            "/Equipment/SAMPIC Builder/Settings/Periodic readout/Emit empty readouts",
-            TRUE, TID_BOOL);
-        return std::make_unique<PeriodicReadoutEventBuilder>(
-            PeriodicReadoutEventBuilderConfig{
-                std::max<std::uint64_t>(1, period_ns), emit_empty != FALSE});
-    }
+    const std::string root="/Equipment/SAMPIC Builder/Settings/Collection_strategies/";
+    // Register every strategy's settings, including inactive strategies.
+    const auto grouping_window=odb_value<INT>((root+"time_grouping/Event window ns").c_str(),200,TID_INT);
+    const auto grouping_lateness=odb_value<INT>((root+"time_grouping/Allowed lateness ns").c_str(),2000,TID_INT);
+    const auto bin_width=odb_value<std::uint64_t>((root+"fixed_time_bins/Bin width ns").c_str(),10'000,TID_QWORD);
+    const auto bin_origin=odb_value<std::uint64_t>((root+"fixed_time_bins/Bin origin ns").c_str(),0,TID_QWORD);
+    const auto bin_lateness=odb_value<std::uint64_t>((root+"fixed_time_bins/Allowed lateness ns").c_str(),1'000'000,TID_QWORD);
+    const auto bin_empty=odb_value<BOOL>((root+"fixed_time_bins/Emit empty bins").c_str(),TRUE,TID_BOOL);
+    const auto bin_max=odb_value<INT>((root+"fixed_time_bins/Maximum bins per build").c_str(),256,TID_INT);
+    const auto period=odb_value<std::uint64_t>((root+"periodic_readout/Period ns").c_str(),10'000'000,TID_QWORD);
+    if (mode=="default" || mode=="time_grouping")
+        return std::make_unique<TimeWindowEventBuilder>(TimeWindowEventBuilderConfig{
+            static_cast<std::uint64_t>(std::max(1,grouping_window)),
+            static_cast<std::uint64_t>(std::max(0,grouping_lateness)),expected_crates});
+    if (mode=="fixed_time_bins")
+        return std::make_unique<FixedTimeBinEventBuilder>(FixedTimeBinEventBuilderConfig{
+            std::max<std::uint64_t>(1,bin_width),bin_origin,bin_lateness,expected_crates,bin_empty!=FALSE,
+            static_cast<std::size_t>(std::max(1,bin_max))});
+    if (mode=="periodic_readout")
+        return std::make_unique<PeriodicReadoutEventBuilder>(PeriodicReadoutEventBuilderConfig{
+            std::max<std::uint64_t>(1,period)});
     throw std::invalid_argument("unknown collection strategy: " + mode);
 }
 
@@ -176,7 +161,7 @@ bool ingest_input_event(void* event_payload) {
             if (samples) {
                 if (!raw.emplace(crate, std::make_pair(name, bytes)).second)
                     throw std::runtime_error("duplicate SR bank in source event");
-            } else if (!clocks.emplace(crate, timing::decode_acquisition(bytes)).second) {
+            } else if (!clocks.emplace(crate, banks::AcquisitionTimingBank::decode(bytes)).second) {
                 throw std::runtime_error("duplicate SA bank in source event");
             }
         }
@@ -213,13 +198,6 @@ EQUIPMENT equipment[] = {
 
 namespace {
 
-template<class Record>
-std::vector<std::uint8_t> record_bytes(const Record& record) {
-    std::vector<std::uint8_t> bytes(sizeof(record));
-    std::memcpy(bytes.data(), &record, sizeof(record));
-    return bytes;
-}
-
 std::uint64_t elapsed_ns(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now()-start).count();
@@ -246,12 +224,15 @@ timing::CollectorCycle cycle_record(std::chrono::steady_clock::time_point start,
 
 FinalizedEvent diagnostic_event(const timing::CollectorCycle& cycle) {
     FinalizedEvent result;
-    for (const auto& [crate, summary] : acquisition_timings.take(cycle.cycle_id)) {
-        char name[5] = {'B', 'T', static_cast<char>('0' + crate / 10), static_cast<char>('0' + crate % 10), '\0'};
-        result.diagnostic_banks.push_back({name, record_bytes(summary)});
-        summarized_reads += summary.read_count;
+    if (timing_enabled) {
+        for (const auto& [crate, summary] : acquisition_timings.take(cycle.cycle_id)) {
+            result.diagnostic_banks.push_back({banks::AcquisitionSummaryBank::name(crate),
+                banks::AcquisitionSummaryBank::encode(summary)});
+            summarized_reads+=summary.read_count;
+        }
+        result.diagnostic_banks.push_back({banks::CollectionTimingBank::name,banks::CollectionTimingBank::encode(cycle)});
     }
-    result.diagnostic_banks.push_back({"BC00", record_bytes(cycle)});
+    result.diagnostic_banks.push_back({banks::SelectionSummaryBank::name,banks::SelectionSummaryBank::encode(cycle.cycle_id,pipeline->take_cut_summaries())});
     return result;
 }
 
@@ -295,6 +276,26 @@ bool write_to_ring(const FinalizedEvent& built, int ring_handle) {
     return true;
 }
 
+// MFE drains this ring on its main thread, but not while end_of_run() runs.
+// Drain it here before direct transition sends, preserving serial/cycle order.
+bool drain_ring_before_transition() {
+    const int handle=get_event_rbh(0);
+    if (!handle) return true;
+    while (true) {
+        EVENT_HEADER* event=nullptr;
+        const auto status=rb_get_rp(handle,reinterpret_cast<void**>(&event),0);
+        if (status==DB_TIMEOUT) return true;
+        if (status!=DB_SUCCESS || !event) return false;
+        const auto size=static_cast<INT>(sizeof(EVENT_HEADER)+event->data_size);
+        if (rpc_send_event(equipment[0].buffer_handle,event,size,BM_WAIT,rpc_mode)!=BM_SUCCESS)
+            return false;
+        equipment[0].bytes_sent+=size;
+        ++equipment[0].events_sent;
+        ++equipment[0].events_collected;
+        if (rb_increment_rp(handle,size)!=DB_SUCCESS) return false;
+    }
+}
+
 bool send_from_transition(const FinalizedEvent& built) try {
     std::vector<std::uint8_t> storage(
         static_cast<std::size_t>(max_event_size));
@@ -314,6 +315,9 @@ bool send_from_transition(const FinalizedEvent& built) try {
                "Cannot send flushed event-builder product (%d)", status);
         return false;
     }
+    equipment[0].bytes_sent+=sizeof(EVENT_HEADER)+event->data_size;
+    ++equipment[0].events_sent;
+    ++equipment[0].events_collected;
     count_output(built);
     return true;
 } catch (const std::overflow_error& error) {
@@ -362,6 +366,13 @@ void publish_run_counters() {
             counters.emplace_back(root + "/Output bytes", stage->output_bytes);
             counters.emplace_back(root + "/Processing ns", stage->processing_nanoseconds);
         }
+        for (const auto& cut:pipeline->cut_totals()) {
+            const auto root=std::string("/Equipment/SAMPIC Builder/Variables/Selection/")+cut.id;
+            counters.emplace_back(root+"/Evaluated events",cut.evaluated_events);
+            counters.emplace_back(root+"/Rejected events",cut.rejected_events);
+            counters.emplace_back(root+"/Evaluated hits",cut.evaluated_hits);
+            counters.emplace_back(root+"/Rejected hits",cut.rejected_hits);
+        }
         counters.emplace_back(
             "/Equipment/SAMPIC Builder/Variables/Selection kept events",
             metrics.selected_events);
@@ -381,6 +392,8 @@ void pipeline_worker_loop() {
     const int ring_handle = get_event_rbh(thread_index);
     std::vector<std::uint8_t> input_event(static_cast<std::size_t>(max_event_size));
     auto last_metrics_publish = std::chrono::steady_clock::now();
+    bool idle = false;
+    std::size_t first_source = 0;
     const auto send_or_preserve = [&](FinalizedEvent event) {
         while (!worker_stop.load() && run_active.load() && readout_enabled()) {
             if (write_to_ring(event, ring_handle)) return;
@@ -397,13 +410,31 @@ void pipeline_worker_loop() {
             std::lock_guard lock(pipeline_mutex);
             if (!run_active.load()) continue;
             const auto start = std::chrono::steady_clock::now();
+            if (accounting_run != run_started_at) {
+                accounting_run = run_started_at;
+                accounting_active = false;
+                accounting_events = accounting_hits = accounting_input_ns = 0;
+            }
             const auto before = pipeline->metrics();
+            if (!accounting_active) {
+                accounting_start = start;
+                accounting_before = before;
+                accounting_active = true;
+            }
+            const auto deadline_before = pipeline->readout_deadline();
             const auto hits_before = raw_input->hits_received();
             std::uint64_t input_events = 0;
-            for (const auto& source : input_buffers) {
+            for (std::size_t index = 0; index < input_buffers.size(); ++index) {
+                const auto& source = input_buffers[(first_source + index) % input_buffers.size()];
                 for (std::size_t count = 0; count < std::max<std::size_t>(1, max_input_batch/input_buffers.size()); ++count) {
                     INT input_size = static_cast<INT>(input_event.size());
-                    const INT status = bm_receive_event(source.handle, input_event.data(), &input_size, BM_NO_WAIT);
+                    // Wait only after an idle iteration, on one rotating source.
+                    // The millisecond MIDAS timeout bounds other-crate latency.
+                    int timeout = BM_NO_WAIT;
+                    if (idle && index == 0 && count == 0 && deadline_before &&
+                        *deadline_before - std::chrono::steady_clock::now() >= std::chrono::milliseconds(1))
+                        timeout = 1;
+                    const INT status = bm_receive_event(source.handle, input_event.data(), &input_size, timeout);
                     if (status == BM_ASYNC_RETURN) break;
                     if (status != BM_SUCCESS || !ingest_input_event(reinterpret_cast<EVENT_HEADER*>(input_event.data())+1)) {
                         cm_msg(MERROR, frontend_name, "Stopping builder after invalid source event (status=%d)", status);
@@ -415,19 +446,42 @@ void pipeline_worker_loop() {
                     ++input_events;
                 }
             }
+            first_source = (first_source + 1) % input_buffers.size();
             const auto input_ns = elapsed_ns(start);
             auto events = pipeline->run_once();
-            if (!input_events && events.empty()) {
+            const auto deadline_after = pipeline->readout_deadline();
+            const bool periodic = deadline_after.has_value();
+            const bool window_closed = deadline_before && deadline_after &&
+                *deadline_after != *deadline_before;
+            accounting_events += input_events;
+            accounting_hits += raw_input->hits_received() - hits_before;
+            accounting_input_ns += input_ns;
+            idle = input_events == 0;
+            if (periodic && !window_closed) {
+                if (idle && deadline_after) {
+                    // Below MIDAS timeout resolution, sleep directly to the boundary.
+                    const auto now = std::chrono::steady_clock::now();
+                    if (*deadline_after > now && *deadline_after - now < std::chrono::milliseconds(1))
+                        std::this_thread::sleep_until(*deadline_after);
+                }
+                continue;
+            }
+            if (!periodic && !input_events && events.empty() &&
+                pipeline->metrics().rejected_events == before.rejected_events) {
+                accounting_active = false;
+                accounting_events = accounting_hits = accounting_input_ns = 0;
                 std::this_thread::sleep_for(std::chrono::microseconds(100));
                 continue;
             }
-            auto cycle = cycle_record(start, before, input_events,
-                raw_input->hits_received()-hits_before, input_ns, events.size());
+            auto cycle = cycle_record(accounting_start, accounting_before,
+                accounting_events, accounting_hits, accounting_input_ns, events.size());
             const auto output_start = std::chrono::steady_clock::now();
             for (auto& event : events) send_or_preserve(std::move(event));
             cycle.output_wait_ns = elapsed_ns(output_start);
-            cycle.total_ns = elapsed_ns(start);
-            if (timing_enabled) send_or_preserve(diagnostic_event(cycle));
+            cycle.total_ns = elapsed_ns(accounting_start);
+            send_or_preserve(diagnostic_event(cycle));
+            accounting_active = false;
+            accounting_events = accounting_hits = accounting_input_ns = 0;
             const auto metrics_now = std::chrono::steady_clock::now();
             if (metrics_now-last_metrics_publish >= std::chrono::milliseconds(250)) {
                 publish_run_counters(); last_metrics_publish = metrics_now;
@@ -453,31 +507,32 @@ INT frontend_init() {
 
     timing_enabled = odb_value<BOOL>("/Equipment/SAMPIC Builder/Settings/Timing/Enabled", TRUE, TID_BOOL) != FALSE;
     const auto collection_mode = odb_string(
-        "/Equipment/SAMPIC Builder/Settings/Collection strategy",
-        "time_grouping");
+        "/Equipment/SAMPIC Builder/Settings/Collection_strategies/Active strategy",
+        "periodic_readout");
     const auto expected_crates = odb_value<INT>(
         "/Equipment/SAMPIC Builder/Settings/Expected crates", 1, TID_INT);
-    const auto plane_count = odb_value<INT>(
-        "/Equipment/SAMPIC Builder/Settings/Selection/Plane count", 8, TID_INT);
-    const auto channels_per_plane = odb_value<INT>(
-        "/Equipment/SAMPIC Builder/Settings/Selection/Channels per plane", 32, TID_INT);
-    const auto maximum_punch_integral = odb_value<INT>(
-        "/Equipment/SAMPIC Builder/Settings/Selection/Maximum punch integral per hit",
-        3000, TID_INT);
-    const BOOL selection_enabled = odb_value<BOOL>(
-        "/Equipment/SAMPIC Builder/Settings/Selection/Enabled", FALSE, TID_BOOL);
-    auto input = std::make_unique<MidasRawInputStage>();
-    raw_input = input.get();
-
-    std::unique_ptr<SelectionStage> selection;
-    if (selection_enabled) {
-        selection = std::make_unique<TopologyEventSelector>(TopologySelectorConfig{
-            static_cast<std::size_t>(std::max(2, plane_count)),
-            static_cast<std::size_t>(std::max(1, channels_per_plane)),
-            maximum_punch_integral});
-    } else {
-        selection = std::make_unique<PassthroughSelectionStage>();
-    }
+    auto input=std::make_unique<MidasRawInputStage>(); raw_input=input.get();
+    auto selection=std::make_unique<CutChain>();
+    const auto cut_root=[](std::string_view id) {
+        return std::string("/Equipment/SAMPIC Builder/Settings/Selection/")+std::string(id);
+    };
+    // Each cut registers under its own required ID, including when disabled.
+    const auto register_cut=[&](std::unique_ptr<SelectionStage> cut) {
+        const auto root=cut_root(cut->id());
+        cut->set_enabled(odb_value<BOOL>((root+"/Enabled").c_str(),FALSE,TID_BOOL)!=FALSE);
+        cut->set_priority(odb_value<INT>((root+"/Priority").c_str(),cut->default_priority(),TID_INT));
+        selection->add(std::move(cut));
+    };
+    const auto topology=cut_root(TopologyEventSelector::kId);
+    const auto planes=odb_value<INT>((topology+"/Plane count").c_str(),8,TID_INT);
+    const auto channels=odb_value<INT>((topology+"/Channels per plane").c_str(),32,TID_INT);
+    const auto integral=odb_value<INT>((topology+"/Maximum punch integral per hit").c_str(),3000,TID_INT);
+    register_cut(std::make_unique<TopologyEventSelector>(TopologySelectorConfig{
+        static_cast<std::size_t>(std::max(2,planes)),static_cast<std::size_t>(std::max(1,channels)),integral}));
+    const auto dummy=cut_root(DummyEventSelector::kId);
+    const auto every=odb_value<INT>((dummy+"/Reject every N events").c_str(),2,TID_INT);
+    if (every<1) { cm_msg(MERROR,frontend_name,"Dummy cut interval must be positive"); return FE_ERR_ODB; }
+    register_cut(std::make_unique<DummyEventSelector>(static_cast<std::uint64_t>(every)));
 
     std::unique_ptr<EventBuildingStage> builder;
     try {
@@ -568,6 +623,8 @@ INT begin_of_run(INT, char*) {
     acquisition_timings.reset(); timing_cycle_id = 0; summarized_reads = 0;
     diagnostic_events_written = 0; diagnostic_bytes_written = 0;
     if (pipeline) pipeline->reset_metrics();
+    accounting_active = false;
+    accounting_events = accounting_hits = accounting_input_ns = 0;
     run_started_at = std::chrono::steady_clock::now();
     publish_run_counters();
     run_active = true;
@@ -578,9 +635,13 @@ INT begin_of_run(INT, char*) {
 INT end_of_run(INT, char*) {
     run_active = false;
     std::lock_guard lock(pipeline_mutex);
+    if (!drain_ring_before_transition()) {
+        cm_msg(MERROR,frontend_name,"Cannot drain queued builder output before final window");
+        return FE_ERR_HW;
+    }
     if (pipeline) {
-        const auto start = std::chrono::steady_clock::now();
-        const auto before = pipeline->metrics();
+        const auto start = accounting_active ? accounting_start : std::chrono::steady_clock::now();
+        const auto before = accounting_active ? accounting_before : pipeline->metrics();
         const auto hits_before = raw_input->hits_received();
         const bool had_pending = !pending_products.empty();
         for (const auto& event : pending_products)
@@ -600,19 +661,21 @@ INT end_of_run(INT, char*) {
             }
         }
         const auto input_ns = elapsed_ns(input_start);
-        auto events = pipeline->run_once();
-        auto tail = pipeline->flush();
-        events.insert(events.end(), std::make_move_iterator(tail.begin()), std::make_move_iterator(tail.end()));
-        if (input_events || !events.empty() || had_pending) {
-            auto cycle = cycle_record(start, before, input_events,
-                raw_input->hits_received()-hits_before, input_ns, events.size());
+        auto events = pipeline->drain_and_flush();
+        if (accounting_events || input_events || !events.empty() || had_pending ||
+            pipeline->metrics().rejected_events!=before.rejected_events) {
+            auto cycle = cycle_record(start, before, accounting_events + input_events,
+                accounting_hits + raw_input->hits_received()-hits_before,
+                accounting_input_ns + input_ns, events.size());
             const auto output_start = std::chrono::steady_clock::now();
             for (const auto& event : events) if (!send_from_transition(event)) return FE_ERR_HW;
             cycle.output_wait_ns = elapsed_ns(output_start);
             cycle.total_ns = elapsed_ns(start); cycle.flags = 1;
-            if (timing_enabled && !send_from_transition(diagnostic_event(cycle))) return FE_ERR_HW;
+            if (!send_from_transition(diagnostic_event(cycle))) return FE_ERR_HW;
         }
     }
+    accounting_active = false;
+    accounting_events = accounting_hits = accounting_input_ns = 0;
     publish_run_counters();
     cm_msg(MINFO, frontend_name, "Run totals: input banks=%llu, input hits=%llu, output products=%llu, diagnostic events=%llu",
         static_cast<unsigned long long>(raw_input ? raw_input->banks_received() : 0),

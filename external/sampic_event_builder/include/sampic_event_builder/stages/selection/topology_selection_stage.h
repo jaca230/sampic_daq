@@ -15,8 +15,11 @@ struct TopologySelectorConfig {
 
 class TopologyEventSelector final : public SelectionStage {
 public:
+    static constexpr std::string_view kId="topology";
+    std::int32_t default_priority() const override { return 100; }
+    std::string_view id() const override { return kId; }
     explicit TopologyEventSelector(TopologySelectorConfig config);
-    EventDecision select(const Event& event) const override;
+    EventDecision select(Event& event) const override;
     std::string_view type() const override { return "topology"; }
 
 private:

@@ -45,14 +45,14 @@ std::vector<FinalizedEvent> EventBuilderPipeline::process_hits(std::span<const H
 }
 
 std::vector<FinalizedEvent> EventBuilderPipeline::process_owned_hits(
-    std::vector<Hit> hits)
+    std::vector<Hit> hits, bool final)
 {
 
     std::uint64_t bytes = 0;
-    for (const auto& hit : hits) bytes += hit.waveform.size() * sizeof(std::int16_t);
+    for (const auto& hit : hits) bytes += hit.sample_count() * sizeof(std::int16_t);
     const auto hit_count = hits.size();
     const auto start = std::chrono::steady_clock::now();
-    auto events = builder_->build(std::move(hits));
+    auto events = final ? builder_->finish(std::move(hits)) : builder_->build(std::move(hits));
     const auto elapsed = std::chrono::steady_clock::now() - start;
     metrics_.event_building.hits += hit_count;
     metrics_.event_building.input_bytes += bytes;
@@ -60,6 +60,10 @@ std::vector<FinalizedEvent> EventBuilderPipeline::process_owned_hits(
     metrics_.event_building.processing_nanoseconds +=
         std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
     return process_events(std::move(events));
+}
+
+std::vector<FinalizedEvent> EventBuilderPipeline::drain_and_flush() {
+    return process_owned_hits(input_->read_available(),true);
 }
 
 std::vector<FinalizedEvent> EventBuilderPipeline::flush()
@@ -74,26 +78,26 @@ std::vector<FinalizedEvent> EventBuilderPipeline::process_events(
     for (auto& source : events) {
         std::uint64_t raw_bytes = 0;
         for (const auto& hit : source.hits)
-            raw_bytes += hit.waveform.size() * sizeof(std::int16_t);
+            raw_bytes += hit.sample_count() * sizeof(std::int16_t);
         auto start = std::chrono::steady_clock::now();
-        const auto decision = selection_->select(source);
+        const auto initial_hits = source.hits.size();
+        selection_->apply(source);
         auto elapsed = std::chrono::steady_clock::now() - start;
         metrics_.selection.hits += source.hits.size();
         metrics_.selection.input_bytes += raw_bytes;
-        metrics_.selection.output_bytes += decision == EventDecision::keep ? raw_bytes : 0;
+        for (const auto& hit : source.hits)
+            metrics_.selection.output_bytes += hit.sample_count() * sizeof(std::int16_t);
         metrics_.selection.processing_nanoseconds +=
             std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
-        if (decision != EventDecision::keep) {
-            ++metrics_.rejected_events;
-            continue;
-        }
-        ++metrics_.selected_events;
+        if (source.hits.size() < initial_hits) ++metrics_.rejected_events;
+        else ++metrics_.selected_events;
 
         start = std::chrono::steady_clock::now();
         auto finalized = finalization_->finalize(source);
         elapsed = std::chrono::steady_clock::now() - start;
         metrics_.finalization.hits += source.hits.size();
-        metrics_.finalization.input_bytes += raw_bytes;
+        for (const auto& hit : source.hits)
+            metrics_.finalization.input_bytes += hit.sample_count() * sizeof(std::int16_t);
         metrics_.finalization.output_bytes += finalized.product_bank.size();
         metrics_.finalization.processing_nanoseconds +=
             std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();

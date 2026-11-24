@@ -6,14 +6,7 @@
 #include <stdexcept>
 namespace sampic::event_builder::timing {
 static_assert(std::endian::native == std::endian::little);
-Acquisition decode_acquisition(std::span<const std::uint8_t> bytes) {
-    if (bytes.size() != sizeof(Acquisition)) throw std::runtime_error("invalid SA bank length");
-    Acquisition record;
-    std::memcpy(&record, bytes.data(), sizeof(record));
-    if (std::memcmp(record.magic, "SAT1", 4) || record.version != 1 || record.record_size != sizeof(record))
-        throw std::runtime_error("unsupported SA bank format");
-    return record;
-}
+
 namespace {
 void add_checked(std::uint64_t& sum, std::uint64_t value) {
     if (value > std::numeric_limits<std::uint64_t>::max()-sum)

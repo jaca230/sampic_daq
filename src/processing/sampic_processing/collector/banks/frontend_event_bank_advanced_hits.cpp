@@ -29,20 +29,7 @@ FrontendEventBankAdvancedHits::FrontendEventBankAdvancedHits(
             continue;
         }
 
-        std::uint64_t trigger_position_mask = 0;
-        for (int sample = 0; sample < 64; ++sample) {
-            if (hit->AdvancedParams.TriggerPosition[sample] != FALSE) {
-                trigger_position_mask |= (std::uint64_t{1} << sample);
-            }
-        }
-
-        const Record record{
-            hit->AdvancedParams.PhysicalCell0TimeStamp,
-            hit->AdvancedParams.SampicTimeStampA,
-            hit->AdvancedParams.SampicTimeStampB,
-            static_cast<std::uint64_t>(hit->AdvancedParams.FPGATimeStamp),
-            trigger_position_mask,
-        };
+        const auto record = sampic::wire::compact_advanced(*hit);
         std::memcpy(destination, &record, sizeof(record));
         destination += sizeof(record);
     }
