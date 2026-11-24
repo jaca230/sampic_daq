@@ -29,6 +29,8 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--samples", type=int, default=64)
     parser.add_argument("--warmup", type=float, default=1.0, help="warmup seconds before the measurement interval")
     parser.add_argument("--window-ns", type=int, default=200)
+    parser.add_argument("--collection-strategy",choices=["periodic_readout","time_grouping","fixed_time_bins"],default="periodic_readout")
+    parser.add_argument("--period-ns",type=int,default=10_000_000)
     parser.add_argument("--select", action="store_true")
     parser.add_argument("--profile-builder", action="store_true",
                         help="Record a perf profile of the MIDAS builder.")
@@ -166,7 +168,10 @@ def configure(environment: dict[str, str], project: Path, args: argparse.Namespa
 import midas.client
 c = midas.client.MidasClient('configure_sampic_builder')
 values = %s
-for path, value in values.items(): c.odb_set(path, value)
+for path, value in values.items():
+    if path.endswith('/periodic_readout/Period ns'):
+        c.odb_set(path,value,explicit_new_midas_type=midas.TID_QWORD)
+    else: c.odb_set(path,value)
 common = '/Equipment/SAMPIC Builder/Common'
 c.odb_set(common+'/Event ID', 2, explicit_new_midas_type=midas.TID_WORD)
 for key,value in {'Trigger mask': 0, 'Buffer': 'SYSTEM', 'Type': 256,
@@ -176,15 +181,17 @@ for key,value in {'Trigger mask': 0, 'Buffer': 'SYSTEM', 'Type': 256,
     c.odb_set(common+'/'+key,value)
 c.disconnect()
 """ % repr({
-        "/Equipment/SAMPIC Builder/Settings/Time grouping/Event window ns": args.window_ns,
-        "/Equipment/SAMPIC Builder/Settings/Time grouping/Allowed lateness ns":
+        "/Equipment/SAMPIC Builder/Settings/Collection_strategies/time_grouping/Event window ns": args.window_ns,
+        "/Equipment/SAMPIC Builder/Settings/Collection_strategies/time_grouping/Allowed lateness ns":
             max(2000, args.window_ns * 4),
+        "/Equipment/SAMPIC Builder/Settings/Collection_strategies/Active strategy": getattr(args,"collection_strategy","periodic_readout"),
+        "/Equipment/SAMPIC Builder/Settings/Collection_strategies/periodic_readout/Period ns": getattr(args,"period_ns",10_000_000),
         "/Equipment/SAMPIC Builder/Settings/Expected crates": args.crates,
         "/Equipment/SAMPIC Builder/Settings/Input buffers": ','.join(f'SBUF{i:02d}' for i in range(args.crates)),
-        "/Equipment/SAMPIC Builder/Settings/Selection/Enabled": args.select,
-        "/Equipment/SAMPIC Builder/Settings/Selection/Plane count": 8,
-        "/Equipment/SAMPIC Builder/Settings/Selection/Channels per plane": 32,
-        "/Equipment/SAMPIC Builder/Settings/Selection/Maximum punch integral per hit": 3000,
+        "/Equipment/SAMPIC Builder/Settings/Selection/topology/Enabled": args.select,
+        "/Equipment/SAMPIC Builder/Settings/Selection/topology/Plane count": 8,
+        "/Equipment/SAMPIC Builder/Settings/Selection/topology/Channels per plane": 32,
+        "/Equipment/SAMPIC Builder/Settings/Selection/topology/Maximum punch integral per hit": 3000,
     })
     run(environment, SYSTEM_PYTHON, "-c", script)
 

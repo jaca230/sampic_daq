@@ -1,5 +1,5 @@
 #pragma once
-#include "sampic_event_builder/serialization/product_bank_encoder.h"
+#include "sampic_event_builder/banks/data_bank.h"
 #include "sampic_event_builder/stages/finalization/finalization_stage.h"
 #include <string>
 #include <utility>

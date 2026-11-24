@@ -339,6 +339,22 @@ if(SAMPIC_BUILD_BANK_TESTS)
     src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits_verbose.cpp
     src/processing/sampic_processing/collector/frontend_event.cpp
     src/integration/sampic/collector/sampic_event.cpp)
+  add_executable(raw_passthrough_test tests/raw_passthrough_test.cpp
+    src/integration/sampic/collector/sampic_event.cpp
+    external/sampic_event_builder/src/stages/selection/topology_selection_stage.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_raw.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_data.cpp
+    src/processing/sampic_processing/collector/banks/frontend_event_bank_advanced_hits.cpp
+    external/sampic_event_builder/src/stages/input/midas_raw_input_stage.cpp
+    external/sampic_event_builder/src/stages/building/periodic_readout_event_builder.cpp
+    external/sampic_event_builder/src/banks/data_bank_encoder.cpp
+    external/sampic_event_builder/src/banks/data_bank_decoder.cpp)
+  target_include_directories(raw_passthrough_test PRIVATE
+    "${PROJECT_SOURCE_ROOT}/include" "${PROJECT_SOURCE_ROOT}/external/sampic_event_builder/include"
+    ${CPM_HEADER_INCLUDE_DIRS})
+  target_compile_options(raw_passthrough_test PRIVATE -UNDEBUG)
+  target_link_libraries(raw_passthrough_test PRIVATE sampic256ch ${CPM_LINK_TARGETS} Threads::Threads)
+  add_test(NAME raw_passthrough COMMAND raw_passthrough_test)
   add_executable(acquisition_timing_bank_test tests/acquisition_timing_bank_test.cpp
     src/processing/sampic_processing/collector/banks/frontend_event_bank_acquisition_timing.cpp
     src/integration/sampic/collector/sampic_event.cpp)

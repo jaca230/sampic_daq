@@ -1,42 +1,19 @@
 #include "sampic_event_builder/stages/input/midas_raw_input_stage.h"
 
 #include <cstring>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <utility>
+#include <type_traits>
 
 namespace sampic::event_builder {
 namespace {
 
-constexpr std::uint32_t kMagic = 0x31575253U; // "SRW1"
-constexpr std::uint16_t kVersion = 1;
-
-#pragma pack(push, 1)
-struct BankHeader {
-    std::uint32_t magic;
-    std::uint16_t version;
-    std::uint16_t header_size;
-    std::uint32_t hit_count;
-};
-
-struct RawHitHeader {
-    std::uint32_t record_size;
-    std::int16_t fe_board_index;
-    std::int16_t sampic_index;
-    std::int16_t channel_index;
-    std::int16_t channel;
-    std::int32_t hit_number;
-    std::int32_t cell_info;
-    std::int32_t first_cell_physical_index;
-    std::uint16_t sample_count;
-    std::uint16_t reserved;
-    double time_instant_ns;
-    double first_cell_timestamp_ns;
-};
-#pragma pack(pop)
-
-static_assert(sizeof(BankHeader) == 12);
-static_assert(sizeof(RawHitHeader) == 44);
+using BankHeader = wire::RawBankHeader;
+using RawHit = HitStruct;
+static_assert(std::is_trivially_copyable_v<RawHit>);
+static_assert(MAX_NB_OF_SAMPLES==64);
 
 std::uint16_t crate_from_name(std::string_view name) {
     if (name.size() != 4 || name[0] != 'S' || name[1] != 'R' ||
@@ -58,10 +35,11 @@ T read_at(std::span<const std::uint8_t> payload, std::size_t offset) {
     return value;
 }
 
-std::uint64_t timestamp(const RawHitHeader& record) {
-    const double value = record.first_cell_timestamp_ns != 0.0
-        ? record.first_cell_timestamp_ns
-        : record.time_instant_ns;
+std::uint64_t timestamp(const RawHit& record) {
+    const double value = record.FirstCellTimeStamp != 0.0
+        ? record.FirstCellTimeStamp
+        : record.TimeInstant;
+    if (!std::isfinite(value)) throw std::runtime_error("nonfinite SAMPIC grouping timestamp");
     if (value <= 0.0) {
         return 0;
     }
@@ -80,38 +58,29 @@ void MidasRawInputStage::ingest(
     try {
         const auto crate = crate_from_name(bank_name);
         const auto header = read_at<BankHeader>(payload, 0);
-        if (header.magic != kMagic || header.version != kVersion ||
-            header.header_size < sizeof(BankHeader) ||
-            header.header_size > payload.size()) {
+        if (header.magic != wire::raw_magic || header.version != wire::raw_version ||
+            header.header_size != sizeof(BankHeader) || header.record_size != sizeof(RawHit))
             throw std::runtime_error("unsupported raw SAMPIC bank header");
-        }
-
-        std::size_t offset = header.header_size;
+        if (header.hit_count > (payload.size()-sizeof(BankHeader))/sizeof(RawHit) ||
+            payload.size()-sizeof(BankHeader) != static_cast<std::size_t>(header.hit_count)*sizeof(RawHit))
+            throw std::runtime_error("invalid raw SAMPIC bank length/count");
+        // One ownership/copy operation for the entire bank. MIDAS may reuse
+        // its receive buffer immediately after ingest returns. Each Hit shares
+        // this batch's control block while pointing at its own vendor record.
+        auto batch=std::shared_ptr<RawHit[]>(new RawHit[header.hit_count]);
+        if (header.hit_count)
+            std::memcpy(batch.get(),payload.data()+header.header_size,header.hit_count*sizeof(RawHit));
         decoded.reserve(header.hit_count);
-        for (std::uint32_t index = 0; index < header.hit_count; ++index) {
-            const auto record = read_at<RawHitHeader>(payload, offset);
-            const std::size_t samples_size =
-                static_cast<std::size_t>(record.sample_count) * sizeof(std::uint16_t);
-            const std::size_t minimum_size = sizeof(RawHitHeader) + samples_size;
-            if (record.record_size < minimum_size ||
-                offset > payload.size() ||
-                payload.size() - offset < record.record_size) {
-                throw std::runtime_error("invalid raw SAMPIC hit record size");
-            }
-
+        for (std::uint32_t index=0; index<header.hit_count; ++index) {
+            const auto& record=batch[index];
+            wire::validate_hit(record);
             Hit hit;
-            hit.crate = crate;
-            hit.board = static_cast<std::uint16_t>(record.fe_board_index);
-            hit.channel = static_cast<std::uint16_t>(record.channel);
-            hit.timestamp_ns = timestamp(record);
-            hit.waveform.resize(record.sample_count);
-            const std::uint8_t* samples =
-                payload.data() + offset + sizeof(RawHitHeader);
-            // SR banks use the host-native little-endian uint16 representation;
-            // SAMPIC ADC values fit in int16, so the bitwise copy is lossless.
-            std::memcpy(hit.waveform.data(), samples, samples_size);
+            hit.crate=crate;
+            hit.board=static_cast<std::uint16_t>(record.FeBoardIndex);
+            hit.channel=static_cast<std::uint16_t>(record.Channel);
+            hit.timestamp_ns=timestamp(record);
+            hit.raw=std::shared_ptr<const RawHit>(batch,&record);
             decoded.push_back(std::move(hit));
-            offset += record.record_size;
         }
     } catch (...) {
         std::lock_guard lock(mutex_);

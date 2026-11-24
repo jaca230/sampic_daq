@@ -11,17 +11,18 @@ TopologyEventSelector::TopologyEventSelector(TopologySelectorConfig config) : co
         throw std::invalid_argument("ATAR topology dimensions must be positive");
 }
 
-EventDecision TopologyEventSelector::select(const Event& event) const
+EventDecision TopologyEventSelector::select(Event& event) const
 {
-    std::int64_t integral = 0;
+    double integral = 0;
     std::vector<bool> occupied(config_.plane_count, false);
     for (const auto& hit : event.hits) {
-        if (hit.waveform.empty()) continue;
-        const auto baseline_count = std::min<std::size_t>(8, hit.waveform.size());
-        std::int64_t baseline = 0;
-        for (std::size_t index = 0; index < baseline_count; ++index) baseline += hit.waveform[index];
-        baseline /= static_cast<std::int64_t>(baseline_count);
-        for (const auto sample : hit.waveform) integral += std::max<std::int64_t>(0, sample - baseline);
+        if (hit.sample_count()==0) continue;
+        const auto baseline_count = std::min<std::size_t>(8, hit.sample_count());
+        double baseline = 0;
+        for (std::size_t index = 0; index < baseline_count; ++index) baseline += hit.corrected_sample(index);
+        baseline /= static_cast<double>(baseline_count);
+        for (std::size_t index=0; index<hit.sample_count(); ++index)
+            integral += std::max(0.0,hit.corrected_sample(index)-baseline);
         const auto global_channel =
             static_cast<std::size_t>(hit.board) * 64 + hit.channel;
         const auto plane = global_channel / config_.channels_per_plane;
@@ -31,11 +32,13 @@ EventDecision TopologyEventSelector::select(const Event& event) const
     const bool traverses_atar = occupied.front() && occupied.back() &&
         occupied_planes == static_cast<std::ptrdiff_t>(config_.plane_count);
     const bool low_amplitude = !event.hits.empty() &&
-        integral / static_cast<std::int64_t>(event.hits.size()) <=
+        integral / static_cast<double>(event.hits.size()) <=
             config_.maximum_punch_through_integral_per_hit;
-    return traverses_atar && low_amplitude
-        ? EventDecision::reject_through_going
-        : EventDecision::keep;
+    if (traverses_atar && low_amplitude) {
+        event.hits.clear();
+        return EventDecision::reject_through_going;
+    }
+    return EventDecision::keep;
 }
 
 } // namespace sampic::event_builder

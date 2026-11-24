@@ -31,6 +31,10 @@ public:
      */
     virtual bool collect() = 0;
 
+    /// Modes with deadlines wait for input/deadline instead of the generic sleep.
+    virtual bool managesWait() const { return false; }
+    virtual void waitForInput() {}
+
     /// Called on the collection worker when acquisition starts, before any hits.
     virtual void onStart() {}
 

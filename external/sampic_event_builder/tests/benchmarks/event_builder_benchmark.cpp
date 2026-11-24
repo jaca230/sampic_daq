@@ -3,7 +3,7 @@
 #include "sampic_event_builder/stages/selection/topology_selection_stage.h"
 #include "sampic_event_builder/stages/selection/passthrough_selection_stage.h"
 #include "sampic_event_builder/stages/finalization/product_bank_finalization_stage.h"
-#include "sampic_event_builder/serialization/product_bank_decoder.h"
+#include "sampic_event_builder/banks/data_bank.h"
 #include "sampic_event_builder/testing/crate_simulator.h"
 #include "sampic_event_builder/testing/vector_input_stage.h"
 #include <algorithm>
@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     std::size_t output_bytes=0, retained=0;
     for(const auto& event:output) {
         output_bytes+=event.product_bank.size();
-        const auto decoded=ProductBankDecoder{}.decode(event.product_bank);
+        const auto decoded=banks::DataBank{}.decode(event.product_bank);
         for(const auto& hit:decoded.hits) {
             const auto original=originals.find({hit.crate,hit.board,hit.channel,hit.timestamp_ns});
             if(original==originals.end() || original->second!=hit.waveform)

@@ -11,7 +11,6 @@ namespace sampic::event_builder {
 
 struct PeriodicReadoutEventBuilderConfig {
     std::uint64_t readout_period_ns = 10'000;
-    bool emit_empty_readouts = true;
 };
 
 /// Mirrors the frontend's software-periodic readout, but drains hits already
@@ -27,6 +26,11 @@ public:
 
     std::vector<Event> build(std::vector<Hit> hits) override;
     std::vector<Event> flush() override;
+    std::vector<Event> finish(std::vector<Hit> hits) override;
+    std::optional<Clock::time_point> readout_deadline() const override {
+        if (!origin_) return {};
+        return *origin_ + std::chrono::nanoseconds((next_tick_ + 1) * config_.readout_period_ns);
+    }
     std::string_view type() const override { return "periodic_readout"; }
 
 private:

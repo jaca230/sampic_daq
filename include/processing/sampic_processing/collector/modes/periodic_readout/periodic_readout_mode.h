@@ -13,6 +13,8 @@ public:
         FrontendCollectorModePeriodicReadoutConfig config, Now now = Clock::now);
     void onStart() override;
     bool collect() override;
+    bool managesWait() const override { return true; }
+    void waitForInput() override;
     bool flush() override;
     bool hasPendingOutput() const override { return !ready_.empty() || !hits_.empty(); }
     static void validate(const FrontendCollectorModePeriodicReadoutConfig& config);

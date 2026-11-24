@@ -5,7 +5,6 @@
 struct FrontendCollectorModePeriodicReadoutConfig {
     std::uint64_t readout_period_ns = 10000;
     std::uint32_t max_pending_readouts = 1024;
-    bool emit_empty_readouts = true;
     bool data_bank_enabled = true;
     std::string data_bank_prefix = "SD";
     bool advanced_bank_enabled = true;
