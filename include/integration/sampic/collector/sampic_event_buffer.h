@@ -45,6 +45,9 @@ public:
     bool waitForNew(std::chrono::steady_clock::time_point t,
                     std::chrono::milliseconds timeout);
 
+    bool waitForNewUntil(std::chrono::steady_clock::time_point after,
+                         std::chrono::steady_clock::time_point deadline);
+
     /** @brief Number of events currently in the buffer. */
     size_t size() const;
 

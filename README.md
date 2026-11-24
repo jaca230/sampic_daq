@@ -124,7 +124,8 @@ are:
   bank contains all corrected hits from that vendor event and its `SV` bank
   retains the vendor trigger records.
 - `vendor_raw_passthrough`: preserve the vendor `EventStruct` boundary but
-  emit ordered, pre-correction integer ADC samples in a versioned `SR` bank.
+  emit every vendor hit field (including raw, ordered and corrected sample
+  arrays, flags and advanced timing) in a versioned `SR` bank.
   This is the event-builder input contract and leaves `SD`
   unchanged.
 

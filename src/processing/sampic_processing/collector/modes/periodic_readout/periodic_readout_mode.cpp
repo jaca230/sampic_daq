@@ -26,8 +26,8 @@ FrontendCollectorModePeriodicReadout::FrontendCollectorModePeriodicReadout(
 void FrontendCollectorModePeriodicReadout::onStart() {
     if (!zero_) {
         zero_ = now_();
-        spdlog::info("Periodic software readout started: period={} ns, host steady-clock origin, empty_readouts={}",
-            config_.readout_period_ns, config_.emit_empty_readouts);
+        spdlog::info("Periodic software readout started: period={} ns, host steady-clock origin",
+            config_.readout_period_ns);
     }
 }
 void FrontendCollectorModePeriodicReadout::receive() {
@@ -58,7 +58,6 @@ void FrontendCollectorModePeriodicReadout::readout(bool final) {
     if (!final && completed <= next_tick_) return;
     const auto start = next_tick_ * config_.readout_period_ns;
     if (final && elapsed == start && hits_.empty()) return;
-    if (!config_.emit_empty_readouts && hits_.empty()) { next_tick_ = completed; return; }
     if (ready_.size() >= config_.max_pending_readouts)
         throw std::runtime_error("periodic readout output backlog limit exceeded");
     if (hits_.size() > std::numeric_limits<std::uint32_t>::max()) throw std::runtime_error("too many hits in a software readout");
@@ -98,4 +97,13 @@ bool FrontendCollectorModePeriodicReadout::flush() {
     onStart();send();
     if (!flushed_) { receive();readout(true);flushed_ = true; }
     send();return true;
+}
+
+void FrontendCollectorModePeriodicReadout::waitForInput() {
+    onStart();
+    // Bound stop latency without delaying an earlier readout deadline.
+    const auto deadline = *zero_ + std::chrono::nanoseconds(
+        (next_tick_ + 1) * config_.readout_period_ns);
+    sampic_buffer_.waitForNewUntil(last_input_,
+        std::min(deadline, Clock::now() + std::chrono::milliseconds(10)));
 }

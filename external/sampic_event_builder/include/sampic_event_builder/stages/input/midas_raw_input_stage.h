@@ -19,7 +19,7 @@ public:
     void ingest(std::string_view bank_name,
                 std::span<const std::uint8_t> payload);
     std::vector<Hit> read_available() override;
-    std::string_view type() const override { return "midas-ordered-raw"; }
+    std::string_view type() const override { return "midas-raw"; }
 
     std::uint64_t banks_received() const;
     std::uint64_t hits_received() const;

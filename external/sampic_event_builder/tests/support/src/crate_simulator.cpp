@@ -45,7 +45,7 @@ Hit CrateSimulator::make_hit(bool physics)
     const auto selected_channel = channel(random_);
     hit.crate = config_.crate;
     hit.board = static_cast<std::uint16_t>(selected_channel / 64);
-    hit.channel = static_cast<std::uint16_t>(selected_channel);
+    hit.channel = static_cast<std::uint16_t>(selected_channel % 64);
     hit.timestamp_ns = timestamp_ns_;
     hit.simulated_physics = physics;
     hit.waveform.resize(config_.samples);

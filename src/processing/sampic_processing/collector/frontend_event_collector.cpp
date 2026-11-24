@@ -55,8 +55,8 @@ int FrontendEventCollector::applySettings(const ConfigStore& store) {
 
 void FrontendEventCollector::start() {
     worker_.start(
-        [this] { return mode_->collect(); },
-        std::chrono::microseconds(cfg_.sleep_time_us),
+        [this] { mode_->waitForInput(); return mode_->collect(); },
+        std::chrono::microseconds(mode_->managesWait() ? 0 : cfg_.sleep_time_us),
         [this] {
             mode_->onStart();
             spdlog::info(

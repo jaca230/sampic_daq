@@ -1,5 +1,6 @@
 #pragma once
 #include "sampic_event_builder/pipeline/pipeline_event.h"
+#include "sampic_event_builder/banks/data_bank.h"
 #include <midas.h>
 #include <cstring>
 #include <stdexcept>
@@ -24,7 +25,7 @@ inline INT write_midas_banks(char* destination, const FinalizedEvent& event,
                 "); data incomplete");
         remaining -= overhead + bytes.size();
     };
-    if (!event.product_bank.empty()) check("BD00", event.product_bank);
+    if (!event.product_bank.empty()) check(banks::DataBank::name, event.product_bank);
     for (const auto& bank : event.diagnostic_banks) check(bank.name, bank.payload);
 
     bk_init32(destination);
@@ -34,7 +35,7 @@ inline INT write_midas_banks(char* destination, const FinalizedEvent& event,
         if (!bytes.empty()) std::memcpy(data, bytes.data(), bytes.size());
         bk_close(destination, data + bytes.size());
     };
-    if (!event.product_bank.empty()) add("BD00", event.product_bank);
+    if (!event.product_bank.empty()) add(banks::DataBank::name, event.product_bank);
     for (const auto& bank : event.diagnostic_banks) add(bank.name.c_str(), bank.payload);
     return bk_size(destination);
 }

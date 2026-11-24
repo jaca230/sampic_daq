@@ -4,6 +4,7 @@
 #include "processing/sampic_processing/collector/banks/frontend_event_bank.h"
 #include <SAMPIC_256Ch_Type.h>
 #include <vector>
+#include "processing/sampic_processing/collector/banks/sampic_hit_format.h"
 
 // Versioned, packed SD format. Integers/floats use the host's little-endian wire order.
 class FrontendEventBankData : public FrontendEventBank {
@@ -24,26 +25,7 @@ public:
         std::uint16_t record_size;
         std::uint32_t hit_count;
     };
-    struct Record {
-        std::uint8_t feb_index;
-        std::uint8_t channel;
-        std::int32_t hit_number; // Vendor-event-local number, not a run-global identifier.
-        std::uint8_t sampic_index;
-        std::uint8_t sampic_channel_index;
-        std::uint8_t waveform_size;
-        std::uint8_t flags;
-        std::uint8_t cell_info;
-        std::uint8_t first_cell_physical_index;
-        // ADC_CORRECTED: 0.1 mV/count (volts = value / 10000); otherwise ADC counts.
-        // One signed representation serves both units: calibrated voltages may be
-        // negative, while unsigned raw ADC counts (at most 12 bits: 0..4095) fit
-        // comfortably in int16. Time-corrected ADC counts can be fractional and
-        // are rounded; interpolation overshoot is covered by the clipping flag.
-        std::int16_t waveform[64];
-        std::uint16_t raw_tot;
-        float calibrated_tot_ns;
-        double first_cell_timestamp_ns;
-    };
+    using Record = sampic::wire::CompactData;
 #pragma pack(pop)
     explicit FrontendEventBankData(const std::vector<const HitStruct*>& hits);
     const std::uint8_t* data() const override { return payload_.data(); }

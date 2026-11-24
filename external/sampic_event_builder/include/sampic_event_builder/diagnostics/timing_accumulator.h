@@ -1,12 +1,13 @@
 #pragma once
-#include "sampic_event_builder/diagnostics/timing_format.h"
+#include "sampic_event_builder/banks/acquisition_timing_bank.h"
+#include "sampic_event_builder/banks/acquisition_summary_bank.h"
+#include "sampic_event_builder/banks/collection_timing_bank.h"
 #include <map>
 #include <optional>
 #include <span>
 #include <vector>
 
 namespace sampic::event_builder::timing {
-Acquisition decode_acquisition(std::span<const std::uint8_t> bytes);
 class Accumulator {
 public:
     void add(std::uint16_t crate, const Acquisition& acquisition);

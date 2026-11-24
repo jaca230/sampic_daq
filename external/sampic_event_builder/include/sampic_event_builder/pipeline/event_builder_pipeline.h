@@ -35,10 +35,14 @@ public:
                          std::unique_ptr<SelectionStage> selection,
                          std::unique_ptr<FinalizationStage> finalization);
     std::vector<FinalizedEvent> run_once();
+    auto readout_deadline() const { return builder_->readout_deadline(); }
     std::vector<FinalizedEvent> process_hits(std::span<const Hit> hits);
     std::vector<FinalizedEvent> flush();
+    std::vector<FinalizedEvent> drain_and_flush();
     [[nodiscard]] const PipelineMetrics& metrics() const noexcept { return metrics_; }
-    void reset_metrics() noexcept { metrics_ = {}; }
+    void reset_metrics() noexcept { metrics_ = {}; selection_->reset_counters(); }
+    std::vector<selection::Summary> take_cut_summaries() { return selection_->summaries(true); }
+    std::vector<selection::Summary> cut_totals() const { return selection_->summaries(false); }
 
     void replace_input(std::unique_ptr<InputStage> stage);
     void replace_builder(std::unique_ptr<EventBuildingStage> stage);
@@ -53,7 +57,7 @@ private:
     PipelineMetrics metrics_;
 
     std::vector<FinalizedEvent> process_events(std::vector<Event> events);
-    std::vector<FinalizedEvent> process_owned_hits(std::vector<Hit> hits);
+    std::vector<FinalizedEvent> process_owned_hits(std::vector<Hit> hits, bool final=false);
 };
 
 } // namespace sampic::event_builder

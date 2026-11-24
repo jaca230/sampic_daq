@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include "processing/sampic_processing/collector/banks/sampic_hit_format.h"
 
 /// Optimized maximum timing metadata (32 bytes/hit).
 /// Record i corresponds to hit i in the event's regular data bank.
@@ -22,13 +23,7 @@ public:
         std::uint32_t hit_count;
     };
 
-    struct Record {
-        double physical_cell0_timestamp_ns;
-        std::int32_t sampic_timestamp_a;
-        std::int32_t sampic_timestamp_b;
-        std::uint64_t fpga_timestamp;
-        std::uint64_t trigger_position_mask;
-    };
+    using Record = sampic::wire::CompactAdvanced;
 #pragma pack(pop)
 
     explicit FrontendEventBankAdvancedHits(const std::vector<const HitStruct*>& hits);

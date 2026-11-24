@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--midas-root", type=Path, default=Path(os.environ.get("MIDASSYS", "/home/jack/software/midas")))
     parser.add_argument("--producer", type=Path, default=PROJECT_ROOT / "build/bin/sampic_frontend")
     parser.add_argument("--builder", type=Path, default=Path(os.environ.get("SAMPIC_EVENT_BUILDER_BUILD_DIR", str(BUILDER_ROOT / "build"))) / "sampic_event_builder_frontend")
+    parser.add_argument('--collection-strategy',choices=['periodic_readout','time_grouping','fixed_time_bins'],default='periodic_readout')
+    parser.add_argument('--period-ns',type=int,default=10_000_000)
     args = parser.parse_args()
     if not 1 <= args.crates <= 100 or args.rate_hz <= 0 or not 1 <= args.samples <= 64 or args.hits_per_event <= 0 or args.window_ns <= 0:
         parser.error("crates must be 1-100, samples 1-64, and rate/hits/window positive")

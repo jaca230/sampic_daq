@@ -165,6 +165,38 @@ int main(int argc, char** argv) {
             check(events==2 && hits==4,"rollover must not create hours of spurious empty bins");
         }
         {
+            SampicEventBuffer input(8); MemoryConfigStore store;
+            FrontendEventCollector::initializeOdb(store,"/modes");
+            auto settings=store.readJson("/modes/periodic_readout");
+            settings["readout_period_ns"]=10'000'000;
+            store.writeJson("/modes/periodic_readout",settings);
+            FrontendEventCollectorConfig cfg;cfg.mode="periodic_readout";
+            cfg.sleep_time_us=2'000'000; // Must not delay a 10 ms periodic deadline.
+            FrontendEventCollector collector(input,cfg,store,"/modes");
+            collector.start();
+            input.push(parent({999}));
+            const bool available=collector.buffer().waitForNew(
+                std::chrono::steady_clock::time_point::min(),std::chrono::milliseconds(500));
+            collector.stop();
+            check(available,"periodic worker must bypass generic sleep and wake at its deadline");
+            auto event=collector.buffer().pop();
+            check(event.has_value() && (*event)->findBankByPrefix("SD"),"deadline must emit collected data");
+        }
+        {
+            Fixture f;
+            const auto after = std::chrono::steady_clock::time_point::min();
+            bool woke = false;
+            std::thread waiter([&] {
+                woke = f.input.waitForNewUntil(after, std::chrono::steady_clock::now()+std::chrono::seconds(1));
+            });
+            f.input.push(parent({1}));
+            waiter.join();
+            check(woke, "new input must wake a deadline wait");
+            const auto latest = f.input.latest()->timestamp();
+            check(!f.input.waitForNewUntil(latest, std::chrono::steady_clock::now()),
+                  "expired deadline must return without new input");
+        }
+        {
             Fixture f;FrontendCollectorModePeriodicReadoutConfig c;
             auto time=std::chrono::steady_clock::time_point{};
             FrontendCollectorModePeriodicReadout mode(f.context,c,[&]{return time;});mode.onStart();
